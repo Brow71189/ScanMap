@@ -4,7 +4,13 @@ import logging
 import numpy as np
 # third party libraries
 # None
-import ViennaTools.ViennaTools as vt
+try:
+    import ViennaTools.ViennaTools as vt
+except:
+    try:
+        import ViennaTools as vt
+    except:
+        logging.warn('Could not import Vienna tools!')
 
 # local libraries
 from nion.swift import Panel
