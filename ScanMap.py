@@ -23,6 +23,7 @@ _ = gettext.gettext
 
 coord_dict = {'top-left': None, 'top-right': None, 'bottom-right': None, 'bottom-left': None}
 do_autofocus = False
+use_z_drive = False
 FOV = None
 Size = None
 Offset = None
@@ -83,13 +84,15 @@ class ScanMap(Panel.Panel):
         edit_row1 = ui.create_row_widget()
         
         edit_row1.add(ui.create_label_widget(_("FOV per Frame (nm)")))
-        edit_row1.add_spacing(12)
+        edit_row1.add_spacing(6)
         FOV_line_edit = ui.create_line_edit_widget()
         FOV_line_edit.on_editing_finished = FOV_finished
         edit_row1.add(FOV_line_edit)
+
+        edit_row1.add_spacing(6)
         
         edit_row1.add(ui.create_label_widget(_("Size in Pixels per Frame")))
-        edit_row1.add_spacing(12)
+        edit_row1.add_spacing(6)
         Size_line_edit = ui.create_line_edit_widget()
         Size_line_edit.on_editing_finished = Size_finished
         edit_row1.add(Size_line_edit)
@@ -99,13 +102,15 @@ class ScanMap(Panel.Panel):
         edit_row2 = ui.create_row_widget()
         
         edit_row2.add(ui.create_label_widget(_("Offset (images)")))
-        edit_row2.add_spacing(12)
+        edit_row2.add_spacing(6)
         Offset_line_edit = ui.create_line_edit_widget()
         Offset_line_edit.on_editing_finished = Offset_finished
         edit_row2.add(Offset_line_edit)
         
+        edit_row2.add_spacing(6)
+        
         edit_row2.add(ui.create_label_widget(_("Pixeltime (us)")))
-        edit_row2.add_spacing(12)
+        edit_row2.add_spacing(6)
         Time_line_edit = ui.create_line_edit_widget()
         Time_line_edit.on_editing_finished = Time_finished
         edit_row2.add(Time_line_edit)
@@ -115,13 +120,24 @@ class ScanMap(Panel.Panel):
 
         bottom_button_row = ui.create_row_widget()
         top_button_row = ui.create_row_widget()
+        autofocus_z_drive_button_row = ui.create_row_widget()
         done_button_row = ui.create_row_widget()
         tl_button = ui.create_push_button_widget(_("Top Left"))
         tr_button = ui.create_push_button_widget(_("Top Right"))
         bl_button = ui.create_push_button_widget(_("Bottom Left"))
         br_button = ui.create_push_button_widget(_("Bottom Right"))
+        drive_tl = ui.create_push_button_widget(_("Top Left"))
+        drive_tr = ui.create_push_button_widget(_("Top Right"))
+        drive_bl = ui.create_push_button_widget(_("Bottom Left"))
+        drive_br = ui.create_push_button_widget(_("Bottom Right"))
         done_button = ui.create_push_button_widget(_("Done"))
-        autofocus_button = ui.create_push_button_widget(_("Autofocus"))
+        z_drive_button = ui.create_push_button_widget(_("Use Z Drive (default: OFF)"))
+        autofocus_button = ui.create_push_button_widget(_("Autofocus (default: OFF)"))
+        
+        descriptor_row = ui.create_row_widget()
+        descriptor_row.add(ui.create_label_widget(_("Save Coordinates")))
+        descriptor_row.add_spacing(12)
+        descriptor_row.add(ui.create_label_widget(_("Goto Coordinates")))
 
         def tl_button_clicked():
             save_coords('top-left')
@@ -131,12 +147,21 @@ class ScanMap(Panel.Panel):
             save_coords('bottom-left')
         def br_button_clicked():
             save_coords('bottom-right')
+        def drive_tl_button_clicked():
+            drive_coords('top-left')
+        def drive_tr_button_clicked():
+            drive_coords('top-right')
+        def drive_bl_button_clicked():
+            drive_coords('bottom-left')
+        def drive_br_button_clicked():
+            drive_coords('bottom-right')
         def done_button_clicked():
             global FOV
             global Offset
             global Size
             global Time
             global do_autofocus
+            global use_z_drive
             
             logging.info('FOV: ' + str(FOV))
             logging.info('Offset: ' + str(Offset))
@@ -144,7 +169,7 @@ class ScanMap(Panel.Panel):
             logging.info('Time: ' + str(Time))
             
             if not None in coord_dict.viewvalues():
-                vt.SuperScan_mapping(coord_dict, do_autofocus=do_autofocus, imsize = FOV if FOV != None else 200, offset = Offset if Offset != None else 0.1, impix = Size if Size != None else 512, pixeltime = Time if Time != None else 4)
+                vt.SuperScan_mapping(coord_dict, do_autofocus=do_autofocus, imsize = FOV if FOV != None else 200, offset = Offset if Offset != None else 0.1, impix = Size if Size != None else 512, pixeltime = Time if Time != None else 4, use_z_drive=use_z_drive)
             else:
                 logging.warn('You din\'t set all 4 corners.')
 
@@ -157,45 +182,84 @@ class ScanMap(Panel.Panel):
             else:
                 do_autofocus = False
                 logging.info('Autofocus is now OFF')
+        
+        def z_drive_button_clicked():
+            global use_z_drive
+            
+            if use_z_drive is False:
+                use_z_drive = True
+                logging.info('Z Drive will be additionally used for focus adjusting.')
+            else:
+                use_z_drive = False
+                logging.info('Only fine focus adjustment.')
 
         tl_button.on_clicked = tl_button_clicked
         tr_button.on_clicked = tr_button_clicked
         bl_button.on_clicked = bl_button_clicked
         br_button.on_clicked = br_button_clicked
+        drive_tl.on_clicked = drive_tl_button_clicked
+        drive_tr.on_clicked = drive_tr_button_clicked
+        drive_bl.on_clicked = drive_bl_button_clicked
+        drive_br.on_clicked = drive_br_button_clicked
         done_button.on_clicked = done_button_clicked
         autofocus_button.on_clicked = autofocus_button_clicked
+        z_drive_button.on_clicked = z_drive_button_clicked
 
         bottom_button_row.add(tl_button)
-        top_button_row.add_spacing(8)
+        bottom_button_row.add_spacing(4)
         bottom_button_row.add(tr_button)
+        bottom_button_row.add_spacing(8)
+        bottom_button_row.add(drive_tl)
+        bottom_button_row.add_spacing(4)
+        bottom_button_row.add(drive_tr)
 
         top_button_row.add(bl_button)
-        top_button_row.add_spacing(8)
+        top_button_row.add_spacing(4)
         top_button_row.add(br_button)
-        
-        done_button_row.add(autofocus_button)
         top_button_row.add_spacing(8)
+        top_button_row.add(drive_bl)
+        top_button_row.add_spacing(4)
+        top_button_row.add(drive_br)
+        
+        autofocus_z_drive_button_row.add(autofocus_button)
+        autofocus_z_drive_button_row.add_spacing(4)
+        autofocus_z_drive_button_row.add(z_drive_button)
+        
         done_button_row.add(done_button)
 
         column.add(edit_row1)
         column.add_spacing(8)
         column.add(edit_row2)
         column.add_spacing(8)
+        column.add(descriptor_row)
+        column.add_spacing(8)
         column.add(bottom_button_row)
         column.add_spacing(8)
         column.add(top_button_row)
         column.add_spacing(8)
-        column.add(done_button_row)        
+        column.add(autofocus_z_drive_button_row)
+        column.add_spacing(8)
+        column.add(done_button_row) 
         column.add_stretch()
 
         self.widget = column
 
 
 workspace_manager = Workspace.WorkspaceManager()
-workspace_manager.register_panel(ScanMap, "scanmap-panel", _("Scan a Map"), ["left", "right"], "right" )
+workspace_manager.register_panel(ScanMap, "scanmap-panel", _("SuperScan Mapping"), ["left", "right"], "right" )
 
 def save_coords(position):
     global coord_dict
     coord_dict[position] = (vt.as2_get_control('StageOutX'), vt.as2_get_control('StageOutY'), vt.as2_get_control('StageOutZ'), vt.as2_get_control('EHTFocus'))
     logging.info('Saved x: '+str(vt.as2_get_control('StageOutX'))+', y: '+str(vt.as2_get_control('StageOutY'))+', z: '+str(vt.as2_get_control('StageOutZ'))+', focus: '+str(vt.as2_get_control('EHTFocus'))+' as '+position+' corner.')
-    
+
+def drive_coords(position):
+    global coord_dict
+    if coord_dict[position] is None:
+        logging.warn('You haven\'t set the '+position+' corner yet.')
+    else:
+        logging.info('Saved x: '+str('Going to '+position+' corner: x: '+str(coord_dict[position][0])+', y: '+str(coord_dict[position][1])+', z: '+str(coord_dict[position][2])+', focus: '+str(coord_dict[position][3])))
+        vt.as2_set_control('StageOutX', coord_dict[position][0])
+        vt.as2_set_control('StageOutY', coord_dict[position][1])
+        vt.as2_set_control('StageOutZ', coord_dict[position][2])
+        vt.as2_set_control('EHTFocus', coord_dict[position][3])
