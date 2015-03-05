@@ -17,13 +17,15 @@ from nion.swift import Panel
 from nion.swift import Workspace
 from nion.swift.model import DataItem
 from nion.ui import Binding
-
+#document_controller.ui is object of nion.ui.UserInterface.QtUserInterface
 
 _ = gettext.gettext
 
 coord_dict = {'top-left': None, 'top-right': None, 'bottom-right': None, 'bottom-left': None}
 do_autofocus = False
 use_z_drive = False
+auto_offset=False
+auto_rotation=False
 FOV = None
 Size = None
 Offset = None
@@ -120,8 +122,9 @@ class ScanMap(Panel.Panel):
 
         bottom_button_row = ui.create_row_widget()
         top_button_row = ui.create_row_widget()
-        autofocus_z_drive_button_row = ui.create_row_widget()
+        #autofocus_z_drive_button_row = ui.create_row_widget()
         done_button_row = ui.create_row_widget()
+        checkbox_row = ui.create_row_widget()
         tl_button = ui.create_push_button_widget(_("Top Left"))
         tr_button = ui.create_push_button_widget(_("Top Right"))
         bl_button = ui.create_push_button_widget(_("Bottom Left"))
@@ -131,13 +134,17 @@ class ScanMap(Panel.Panel):
         drive_bl = ui.create_push_button_widget(_("Bottom Left"))
         drive_br = ui.create_push_button_widget(_("Bottom Right"))
         done_button = ui.create_push_button_widget(_("Done"))
-        z_drive_button = ui.create_push_button_widget(_("Use Z Drive (default: OFF)"))
-        autofocus_button = ui.create_push_button_widget(_("Autofocus (default: OFF)"))
+   
+        z_drive_checkbox = ui.create_check_box_widget(_("Use Z Drive"))
+        autofocus_checkbox = ui.create_check_box_widget(_("Autofocus"))
+        auto_offset_checkbox = ui.create_check_box_widget(_("Auto Offset"))
+        auto_rotation_checkbox = ui.create_check_box_widget("Auto Rotation")
         
         descriptor_row = ui.create_row_widget()
         descriptor_row.add(ui.create_label_widget(_("Save Coordinates")))
         descriptor_row.add_spacing(12)
         descriptor_row.add(ui.create_label_widget(_("Goto Coordinates")))
+        
 
         def tl_button_clicked():
             save_coords('top-left')
@@ -162,14 +169,46 @@ class ScanMap(Panel.Panel):
             global Time
             global do_autofocus
             global use_z_drive
+            global auto_offset
+            global auto_rotation
+            
+            if z_drive_checkbox.check_state == 'checked':
+                logging.info('Using z drive in addition to Fine Focus for focus adjustment.')
+                use_z_drive = True
+            else:
+                logging.info('Using only Fine focus for focus adjustment')
+                use_z_drive = False
+                
+            if autofocus_checkbox.check_state == 'checked':
+                logging.info('Autofocus: ON')
+                do_autofocus = True
+            else:
+                logging.info('Autofocus: OFF')
+                do_autofocus = False
+            
+            if auto_rotation_checkbox.check_state == 'checked':
+                logging.info('Auto Rotation: ON')
+                auto_rotation= True
+            else:
+                logging.info('Auto Rotation: OFF')
+                auto_rotation = False
+            
+            if auto_offset_checkbox.check_state == 'checked':
+                logging.info('Auto Offset: ON')
+                auto_offset = True
+            else:
+                logging.info('Auto Offset: OFF')
+                auto_offset = False
             
             logging.info('FOV: ' + str(FOV))
             logging.info('Offset: ' + str(Offset))
             logging.info('Size: ' + str(Size))
             logging.info('Time: ' + str(Time))
             
+                        
+            
             if not None in coord_dict.viewvalues():
-                vt.SuperScan_mapping(coord_dict, do_autofocus=do_autofocus, imsize = FOV if FOV != None else 200, offset = Offset if Offset != None else 0.1, impix = Size if Size != None else 512, pixeltime = Time if Time != None else 4, use_z_drive=use_z_drive)
+                vt.SuperScan_mapping(coord_dict, do_autofocus=do_autofocus, imsize = FOV if FOV != None else 200, offset = Offset if Offset != None else 0.1, impix = Size if Size != None else 512, pixeltime = Time if Time != None else 4, use_z_drive=use_z_drive, auto_offset=auto_offset, auto_rotation=auto_rotation)
             else:
                 logging.warn('You din\'t set all 4 corners.')
 
@@ -192,6 +231,9 @@ class ScanMap(Panel.Panel):
             else:
                 use_z_drive = False
                 logging.info('Only fine focus adjustment.')
+        
+        def auto_rotation_checked(state):
+            logging.info(str(state))
 
         tl_button.on_clicked = tl_button_clicked
         tr_button.on_clicked = tr_button_clicked
@@ -202,9 +244,7 @@ class ScanMap(Panel.Panel):
         drive_bl.on_clicked = drive_bl_button_clicked
         drive_br.on_clicked = drive_br_button_clicked
         done_button.on_clicked = done_button_clicked
-        autofocus_button.on_clicked = autofocus_button_clicked
-        z_drive_button.on_clicked = z_drive_button_clicked
-
+        
         bottom_button_row.add(tl_button)
         bottom_button_row.add_spacing(4)
         bottom_button_row.add(tr_button)
@@ -221,12 +261,17 @@ class ScanMap(Panel.Panel):
         top_button_row.add_spacing(4)
         top_button_row.add(drive_br)
         
-        autofocus_z_drive_button_row.add(autofocus_button)
-        autofocus_z_drive_button_row.add_spacing(4)
-        autofocus_z_drive_button_row.add(z_drive_button)
+        checkbox_row.add(z_drive_checkbox)
+        checkbox_row.add_spacing(4)
+        checkbox_row.add(autofocus_checkbox)
+        checkbox_row.add_spacing(4)
+        checkbox_row.add(auto_rotation_checkbox)        
+        checkbox_row.add_spacing(4)
+        checkbox_row.add(auto_offset_checkbox)
+        checkbox_row.add_stretch()
         
         done_button_row.add(done_button)
-
+        
         column.add(edit_row1)
         column.add_spacing(8)
         column.add(edit_row2)
@@ -237,7 +282,7 @@ class ScanMap(Panel.Panel):
         column.add_spacing(8)
         column.add(top_button_row)
         column.add_spacing(8)
-        column.add(autofocus_z_drive_button_row)
+        column.add(checkbox_row)
         column.add_spacing(8)
         column.add(done_button_row) 
         column.add_stretch()
