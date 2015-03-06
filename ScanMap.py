@@ -30,6 +30,7 @@ FOV = None
 Size = None
 Offset = None
 Time = None
+Rotation = None
 
 class ScanMap(Panel.Panel):
 
@@ -81,6 +82,16 @@ class ScanMap(Panel.Panel):
                 logging.warn(text + ' is not a valid Time. Please input a floating point number.')
             
             Time_line_edit.select_all()
+            
+        def Rotation_finished(text):
+            global Rotation
+            try:
+                Rotation = float(text)
+                logging.info('Setting frame rotation to: ' + str(Rotation))
+            except:
+                logging.warn(text + ' is not a valid Frame Rotation. Please input a floating point number.')
+            
+            Time_line_edit.select_all()
         
         
         edit_row1 = ui.create_row_widget()
@@ -102,6 +113,14 @@ class ScanMap(Panel.Panel):
         edit_row1.add_stretch()
         
         edit_row2 = ui.create_row_widget()
+        
+        edit_row2.add(ui.create_label_widget(_("Scan roation (deg)")))
+        edit_row2.add_spacing(6)
+        Rotation_line_edit = ui.create_line_edit_widget()
+        Rotation_line_edit.on_editing_finished = Rotation_finished
+        edit_row2.add(Rotation_line_edit)
+        
+        edit_row2.add_spacing(6)
         
         edit_row2.add(ui.create_label_widget(_("Offset (images)")))
         edit_row2.add_spacing(6)
@@ -139,6 +158,7 @@ class ScanMap(Panel.Panel):
         autofocus_checkbox = ui.create_check_box_widget(_("Autofocus"))
         auto_offset_checkbox = ui.create_check_box_widget(_("Auto Offset"))
         auto_rotation_checkbox = ui.create_check_box_widget("Auto Rotation")
+        auto_rotation_checkbox.check_state = 'checked'
         
         descriptor_row = ui.create_row_widget()
         descriptor_row.add(ui.create_label_widget(_("Save Coordinates")))
@@ -167,6 +187,7 @@ class ScanMap(Panel.Panel):
             global Offset
             global Size
             global Time
+            global Rotation
             global do_autofocus
             global use_z_drive
             global auto_offset
@@ -200,15 +221,16 @@ class ScanMap(Panel.Panel):
                 logging.info('Auto Offset: OFF')
                 auto_offset = False
             
-            logging.info('FOV: ' + str(FOV))
-            logging.info('Offset: ' + str(Offset))
-            logging.info('Size: ' + str(Size))
-            logging.info('Time: ' + str(Time))
+            logging.info('FOV: ' + str(FOV)+' nm')
+            logging.info('Offset: ' + str(Offset)+' x image size')
+            logging.info('Frame Rotation: ' + str(Rotation)+' deg')
+            logging.info('Size: ' + str(Size)+' px')
+            logging.info('Time: ' + str(Time)+' us')
             
                         
             
             if not None in coord_dict.viewvalues():
-                vt.SuperScan_mapping(coord_dict, do_autofocus=do_autofocus, imsize = FOV if FOV != None else 200, offset = Offset if Offset != None else 0.1, impix = Size if Size != None else 512, pixeltime = Time if Time != None else 4, use_z_drive=use_z_drive, auto_offset=auto_offset, auto_rotation=auto_rotation)
+                vt.SuperScan_mapping(coord_dict, do_autofocus=do_autofocus, imsize = FOV if FOV != None else 200, offset = Offset if Offset != None else 0.0, rotation = Rotation if Rotation != None else 0.0, impix = Size if Size != None else 512, pixeltime = Time if Time != None else 4, use_z_drive=use_z_drive, auto_offset=auto_offset, auto_rotation=auto_rotation)
             else:
                 logging.warn('You din\'t set all 4 corners.')
 
