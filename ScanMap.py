@@ -227,7 +227,10 @@ class ScanMap(Panel.Panel):
             logging.info('Size: ' + str(Size)+' px')
             logging.info('Time: ' + str(Time)+' us')
             
-                        
+            try:
+                reload(vt)
+            except:
+                logging.warn('Couldn\'t reload ViennaTools!')
             
             if not None in coord_dict.viewvalues():
                 vt.SuperScan_mapping(coord_dict, do_autofocus=do_autofocus, imsize = FOV if FOV != None else 200, offset = Offset if Offset != None else 0.0, rotation = Rotation if Rotation != None else 0.0, impix = Size if Size != None else 512, pixeltime = Time if Time != None else 4, use_z_drive=use_z_drive, auto_offset=auto_offset, auto_rotation=auto_rotation)
@@ -325,7 +328,7 @@ def drive_coords(position):
     if coord_dict[position] is None:
         logging.warn('You haven\'t set the '+position+' corner yet.')
     else:
-        logging.info('Saved x: '+str('Going to '+position+' corner: x: '+str(coord_dict[position][0])+', y: '+str(coord_dict[position][1])+', z: '+str(coord_dict[position][2])+', focus: '+str(coord_dict[position][3])))
+        logging.info('Going to '+str(position)+' corner: x: '+str(coord_dict[position][0])+', y: '+str(coord_dict[position][1])+', z: '+str(coord_dict[position][2])+', focus: '+str(coord_dict[position][3]))
         vt.as2_set_control('StageOutX', coord_dict[position][0])
         vt.as2_set_control('StageOutY', coord_dict[position][1])
         vt.as2_set_control('StageOutZ', coord_dict[position][2])
