@@ -80,3 +80,20 @@ def find_shift(im1, im2, ratio=0.1):
     res = scipy.optimize.minimize(translated_correlation, start_value, method='Nelder-Mead', args=(im1,im2))
     return (res.x, -res.fun)
 
+def align(im1, im2, ratio=None):
+    if ratio is not None:
+        res = find_shift(im1, im2, ratio=ratio)
+    else:
+        res = find_shift(im1, im2, ratio=0.0)
+        counter = 1
+        while res[1] < 0.85 and counter < 10:
+            res = find_shift(im1, im2, ratio=counter*0.1)
+            counter += 1
+    
+    if res[1] < 0.85:
+        return (None, None)
+        
+    rotation = np.arctan2(-res[0][0], res[0][1])*180.0/np.pi
+    distance = np.sqrt(np.dot(res[0],res[0]))
+    
+    return (rotation, distance)

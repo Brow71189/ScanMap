@@ -19,6 +19,8 @@ from nion.swift.model import DataItem
 from nion.ui import Binding
 #document_controller.ui is object of nion.ui.UserInterface.QtUserInterface
 
+import maptools.mapper as mapper
+
 _ = gettext.gettext
 
 coord_dict = {'top-left': None, 'top-right': None, 'bottom-right': None, 'bottom-left': None}
@@ -232,8 +234,13 @@ class ScanMap(Panel.Panel):
             except:
                 logging.warn('Couldn\'t reload ViennaTools!')
             
+            try:
+                reload(mapper)
+            except:
+                logging.warn('Couldn\'t reload mapper')
+            
             if not None in coord_dict.viewvalues():
-                vt.SuperScan_mapping(coord_dict, do_autofocus=do_autofocus, imsize = FOV if FOV != None else 200, offset = Offset if Offset != None else 0.0, rotation = Rotation if Rotation != None else 0.0, impix = Size if Size != None else 512, pixeltime = Time if Time != None else 4, use_z_drive=use_z_drive, auto_offset=auto_offset, auto_rotation=auto_rotation)
+                mapper.SuperScan_mapping(coord_dict, do_autofocus=do_autofocus, imsize = FOV if FOV != None else 200, offset = Offset if Offset != None else 0.0, rotation = Rotation if Rotation != None else 0.0, impix = Size if Size != None else 512, pixeltime = Time if Time != None else 4, use_z_drive=use_z_drive, auto_offset=auto_offset, auto_rotation=auto_rotation)
             else:
                 logging.warn('You din\'t set all 4 corners.')
 

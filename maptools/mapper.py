@@ -187,7 +187,7 @@ def SuperScan_mapping(coord_dict, filepath='Z:\\ScanMap\\', do_autofocus=False, 
     if 'HAADF' in detectors:
         HAADF = True
     
-    #start with getting the corners of the area wich will be mapped
+    #start with getting the corners of the area that will be mapped
     corners = ('top-left', 'top-right', 'bottom-right', 'bottom-left')
     #list of tuples that contain the coordinates of the corners (x,y,z) in the same order as they are listed obove
     coords = []
@@ -212,7 +212,7 @@ def SuperScan_mapping(coord_dict, filepath='Z:\\ScanMap\\', do_autofocus=False, 
     if auto_offset or auto_rotation:
         #set scan parameters for finding rotation and offset
         ss.SS_Functions_SS_SetFrameParams(impix, impix, 0, 0, 2, imsize*1e9, 0, False, True, False, False)
-        #Go first some distance to the opposite direction to reduce the influence of backlash in the mechanics on the calibration
+        #Go first some distance into the opposite direction to reduce the influence of backlash in the mechanics on the calibration
         vt.as2_set_control('StageOutX', leftX-5.0*imsize)
         vt.as2_set_control('StageOutY', topY)
         time.sleep(3)
@@ -236,14 +236,12 @@ def SuperScan_mapping(coord_dict, filepath='Z:\\ScanMap\\', do_autofocus=False, 
         ss.SS_Functions_SS_WaitForEndOfFrame(frame_nr)
         im2 = np.asarray(ss.SS_Functions_SS_GetImageForFrame(frame_nr, 0))
         #find offset between the two images        
-        res = autoalign.find_shift(im1, im2)
+        frame_rotation, frame_distance = autoalign.align(im1, im2)
         #check if the correlation worked correctly and raise an error if not
-        if res[1] < 0.85:
+        if frame_rotation or frame_distance is None:
             logging.error('Could not find offset and/or rotation automatically. Please disable these two options and set values manually.')
             raise RuntimeError('Could not find offset and/or rotation automatically. Please disable these two options and set values manually.')
         
-        frame_rotation = np.arctan2(-res[0][0], res[0][1])
-        frame_distance = np.sqrt(np.dot(res[0],res[0]))
         logging.info('Found rotation between x-axis of stage and scan to be: '+str(frame_rotation*180/np.pi))
         logging.info('Found that the stage moves %.2f times the image size when setting the moving distance to the image size.' % (frame_distance*2.0/impix))
         if auto_offset:
@@ -347,7 +345,7 @@ def SuperScan_mapping(coord_dict, filepath='Z:\\ScanMap\\', do_autofocus=False, 
                 #and contains 'top-left' or 'top-right' at the left and right side of the scan area, respectively.
                 if new_focus_point[counter-1] != None:
                     #find amount of focus adjusting
-                    focus_adjusted = vt.autofocus(2.0*imsize, start_stepsize=2, end_stepsize=0.5)
+                    focus_adjusted = autotune.autofocus(start_stepsize=2, end_stepsize=0.5)
                     logging.info('Focus at x: ' + str(frame_coord[0]) + ' y: ' + str(frame_coord[1]) + 'adjusted by ' + str(focus_adjusted) + ' nm. (Originally: '+ str(frame_coord[3]*1e9) + ' nm)')
                     #update the respective coordinate with the new focus
                     new_point = np.array(coord_dict_sorted[new_focus_point[counter-1]])
