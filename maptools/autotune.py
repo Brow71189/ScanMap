@@ -12,6 +12,7 @@ import os
 import numpy as np
 import scipy.optimize
 import cv2
+import matplotlib as plt
 
 try:
     import ViennaTools.ViennaTools as vt
@@ -101,35 +102,68 @@ def image_grabber(defocus, im=None, start_def=None):
         return im.reshape(shape)
 
 
-#integrates over the 1100- and 1120-type reflections in the fft of the given image
-def check_focus(defocus, imsize, im=None):
-    im = image_grabber(defocus, im=im)
-    #ft = np.abs(np.fft.fftshift(np.fft.fft2(im))))
-    maxima = 0
+def check_tuning(imsize, defocus=0, astig=[0,0], im=None, check_astig=False):
+    if im is None:
+        im = image_grabber(defocus, astig, im=im)
     peaks = find_peaks(im, imsize)
-
-    if peaks is not None:
-        for coord in peaks:
-            maxima += coord[2]
-        return -maxima
+    if peaks is not None:    
+        coordinates = np.zeros((len(peaks), 2))
+        intensities = np.zeros(len(peaks))
+        for i in range(len(peaks)):
+            coordinates[i,:] = np.array(peaks[i][0:2], dtype='int')
+            intensities[i] = peaks[i][2]
     else:
         return 0
-
-    
+        
+    if check_astig:
+        center = np.array(np.shape(im))/2
+        if len(peaks) == 6:
+            max_pos = np.argmax(intensities)
+#find point with maximum intensitiy and its neighbours such that left < right < maximum
+            if max_pos != 0 and max_pos != 5:
+                if intensities[max_pos-1] < intensities[max_pos+1]:
+                    left = max_pos-1
+                    right  = max_pos+1
+                else:
+                    left = max_pos+1
+                    right = max_pos-1
+            elif max_pos == 0:
+                if intensities[5] < intensities[1]:
+                    left = 5
+                    right = 1
+                else:
+                    left = 1
+                    right = 5
+            else:
+                if intensities[4] < intensities[0]:
+                    left = 4
+                    right = 0
+                else:
+                    left = 0
+                    right = 4
+        #Empirical formula for finding the angle of the twofold astigmatism in an FFT-image
+        relative_astig_angle = (intensities[left]-intensities[right])/(1.9*(intensities[left]-intensities[max_pos]))
+        absolute_astig_angle = np.arctan2(coordinates[max_pos,0]-center[0],coordinates[max_pos,1]-center[1]) + relative_astig_angle*np.sign(np.arctan2(coordinates[right,0]-center[0],coordinates[right,1]-center[1])-np.arctan2(coordinates[max_pos,0]-center[0],coordinates[max_pos,1]-center[1]))
+        return (intensities, coordinates, absolute_astig_angle, relative_astig_angle)
+        
+    else:
+        return -np.sum(intensities)
+        
+        
 def optimize_focus(imsize, im=None, start_stepsize=4, end_stepsize=1):
     stepsize = start_stepsize
     defocus = 0
-    current = check_focus(defocus, imsize,  im=im)
+    current = check_tuning(imsize, im=im)
     
     while stepsize >= end_stepsize:
         #previous = current
         #last_defocus = defocus
         #initial = check_focus(defocus, im, shape)
-        plus = check_focus(defocus + stepsize, imsize, im=im)
-        minus = check_focus(defocus - stepsize, imsize, im=im)
+        plus = check_tuning(imsize, defocus=(defocus + stepsize), im=im)
+        minus = check_tuning(imsize, defocus=(defocus - stepsize), im=im)
         if plus < current and minus < current:
             logging.warn('Found ambigious focusing!')
-        #Find direction of optimization
+        
         if minus < plus and minus < current:
             defocus -= stepsize
             current = minus
@@ -142,7 +176,7 @@ def optimize_focus(imsize, im=None, start_stepsize=4, end_stepsize=1):
     return defocus
 
 
-def find_peaks(im, imsize, half_line_thickness = 2, position_tolerance = 1):
+def find_peaks(im, imsize, half_line_thickness = 5, position_tolerance = 3):
     """
         This function can find the 6 first-order peaks in the FFT of an atomic-resolution image of graphene.
         Input:
@@ -164,7 +198,7 @@ def find_peaks(im, imsize, half_line_thickness = 2, position_tolerance = 1):
     first_order = imsize/0.213
     #second_order = imsize/0.123
     
-    fft *= gaussian2D(np.mgrid[0:shape[0], 0:shape[1]], shape[1]/2, shape[0]/2, first_order/2, first_order/2, -1, 1).reshape(shape)
+    fft *= gaussian2D(np.mgrid[0:shape[0], 0:shape[1]], shape[1]/2, shape[0]/2, first_order, first_order, -1, 1).reshape(shape)
     
     #remove vertical and horizontal lines
     central_area = fft[shape[0]/2-half_line_thickness:shape[0]/2+half_line_thickness+1, shape[1]/2-half_line_thickness:shape[1]/2+half_line_thickness+1].copy()
@@ -176,11 +210,13 @@ def find_peaks(im, imsize, half_line_thickness = 2, position_tolerance = 1):
     vertical_popt, vertical_pcov = scipy.optimize.curve_fit(gaussian2D, np.mgrid[0:shape[1], 0:2*half_line_thickness+1],vertical.ravel(), p0=(half_line_thickness, shape[0]/2, 1, 1, np.amax(vertical),0))
     
     fft[shape[0]/2-half_line_thickness:shape[0]/2+half_line_thickness+1, :] /= gaussian2D(np.mgrid[0:2*half_line_thickness+1, 0:shape[1]], horizontal_popt[0], horizontal_popt[1], horizontal_popt[2], horizontal_popt[3], horizontal_popt[4], horizontal_popt[5]).reshape((2*half_line_thickness+1,shape[1])) #horizontal
+    fft[shape[0]/2-half_line_thickness:shape[0]/2+half_line_thickness+1, :] *= np.mean(fft)    
     fft[shape[0]/2-half_line_thickness:shape[0]/2+half_line_thickness+1, shape[1]/2-half_line_thickness:shape[1]/2+half_line_thickness+1] = central_area
     fft[:, shape[1]/2-half_line_thickness:shape[1]/2+half_line_thickness+1] /= gaussian2D(np.mgrid[0:shape[0], 0:2*half_line_thickness+1], vertical_popt[0], vertical_popt[1], vertical_popt[2], vertical_popt[3], vertical_popt[4], vertical_popt[5]).reshape((shape[0], 2*half_line_thickness+1)) #vertical
+    fft[:, shape[1]/2-half_line_thickness:shape[1]/2+half_line_thickness+1] *= np.mean(fft)
     
     
-    fft *= gaussian2D(np.mgrid[0:shape[0], 0:shape[1]], shape[1]/2, shape[0]/2, first_order, first_order, -1, 1).reshape(shape)
+    fft *= gaussian2D(np.mgrid[0:shape[0], 0:shape[1]], shape[1]/2, shape[0]/2, first_order*3.0, first_order*3.0, -1, 1).reshape(shape)
     
     #find peaks
     success = False
@@ -196,9 +232,11 @@ def find_peaks(im, imsize, half_line_thickness = 2, position_tolerance = 1):
         peaks = []
         first_peak = np.unravel_index(np.argmax(fft), shape)+(np.amax(fft), )
         #check if found peak is on cross
-        if first_peak[0] in range(center[0]-half_line_thickness,center[0]+half_line_thickness+1) or first_peak[1] in range(center[1]-half_line_thickness,center[1]+half_line_thickness+1):
+#        if first_peak[0] in range(center[0]-half_line_thickness,center[0]+half_line_thickness+1) or first_peak[1] in range(center[1]-half_line_thickness,center[1]+half_line_thickness+1):
+#            fft[first_peak[0]-position_tolerance:first_peak[0]+position_tolerance+1, first_peak[1]-position_tolerance:first_peak[1]+position_tolerance+1] = 0
+        if first_peak[2] < mean_fft + 6.0*std_dev_fft:
             fft[first_peak[0]-position_tolerance:first_peak[0]+position_tolerance+1, first_peak[1]-position_tolerance:first_peak[1]+position_tolerance+1] = 0
-        elif first_peak[2] < mean_fft + 6.0*std_dev_fft:
+        elif np.sqrt(np.sum((np.array(first_peak[0:2])-center)**2)) < first_order/1.5:
             fft[first_peak[0]-position_tolerance:first_peak[0]+position_tolerance+1, first_peak[1]-position_tolerance:first_peak[1]+position_tolerance+1] = 0
         else:
             try:            
@@ -209,14 +247,17 @@ def find_peaks(im, imsize, half_line_thickness = 2, position_tolerance = 1):
                     next_peak = np.rint(np.dot( rotation_matrix , (np.array(peaks[0][0:2])-center) ) + center).astype(int)
                     area_next_peak = fft[next_peak[0]-position_tolerance:next_peak[0]+position_tolerance+1, next_peak[1]-position_tolerance:next_peak[1]+position_tolerance+1]
                     max_next_peak = np.amax(area_next_peak)
-                    if  max_next_peak > peaks[0][2]/2:
-                        next_peak += np.array( np.unravel_index( np.argmax(area_next_peak), np.shape(area_next_peak) ) ) - 1
+#TODO: Find better criterion for deciding if peak at a position
+                    if  max_next_peak > mean_fft + 4.0*std_dev_fft:#peaks[0][2]/4:
+                        next_peak += np.array( np.unravel_index( np.argmax(area_next_peak), np.shape(area_next_peak) ) ) - position_tolerance
                         peaks.append(tuple(next_peak)+(max_next_peak,))
                 
                 if len(peaks) > 1:
                     success = True
-    #                for coord in peaks:
-    #                    fft[coord[0]-position_tolerance:coord[0]+position_tolerance+1, coord[1]-position_tolerance:coord[1]+position_tolerance+1] = 0
+#                    for coord in peaks:
+#                        fft[coord[0]-position_tolerance:coord[0]+position_tolerance+1, coord[1]-position_tolerance:coord[1]+position_tolerance+1] = -100
+#                    plt.pyplot.matshow(fft)
+#                    plt.show()
                     return peaks
                 else:
                     fft[peaks[0][0]-position_tolerance:peaks[0][0]+position_tolerance+1, peaks[0][1]-position_tolerance:peaks[0][1]+position_tolerance+1] = 0
