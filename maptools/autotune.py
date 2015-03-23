@@ -79,8 +79,9 @@ def autofocus(imsize=None, image=None, start_stepsize=4, end_stepsize=1, positio
 
 
 #generates the defocused, noisy image
-def image_grabber(defocus, im=None, start_def=None):
-    try:
+def image_grabber(defocus=0, astig=[0,0], im=None, start_def=0.0, start_astig=[0,0], imsize=1.0):
+    
+    if im is None:
         current_focus = vt.as2_get_control('EHTFocus')
         defocus *= 1.0e-9
         vt.as2_set_control('EHTFocus', current_focus+defocus)
@@ -89,22 +90,40 @@ def image_grabber(defocus, im=None, start_def=None):
         ss.SS_Functions_SS_WaitForEndOfFrame(frame_nr)
         im = np.asarray(ss.SS_Functions_SS_GetImageForFrame(frame_nr, 0))
         vt.as2_set_control('EHTFocus', current_focus)
-        return cv2.GaussianBlur(im, (5,5), 3)
-    except:
-        defocus = int(round((abs(defocus-start_def))))
+        return im
+    else:
+        defocus -= start_def
         shape = np.shape(im)
-        if defocus == 0:
+        astig = np.array(astig)
+        start_astig = np.array(start_astig)
+        astig -= start_astig
+        
+        if defocus == 0 and (astig == 0).all():
             im = np.random.poisson(lam=im.flatten(), size=np.size(im))
             return im.reshape(shape)
-        defocus = defocus * 2 + 1    
-        im = cv2.GaussianBlur(im, (defocus,defocus), defocus)
+            
+        #fft = np.fft.fftshift(np.fft.fft2(im))
+        kernelsize = np.around((np.array(shape)/2.0)-0.5, 1)
+        y,x = np.mgrid[-kernelsize[0]:kernelsize[0]+1.0, -kernelsize[1]:kernelsize[1]+1.0]/imsize#/(kernelsize[0])
+        #compute aberration function up to twofold astigmatism
+        raw_kernel = -np.pi*defocus*4.9e-3*(x**2+y**2) + np.pi*np.sum(np.power(astig,2))*4.9e-3*(x**2+y**2)*np.cos(2*(np.arctan2(y,x)-np.arctan2(astig[1], astig[0])) )
+        #raw_kernel = 1+np.sqrt(3)*(2*(x**2+y**2)-1)/defocus + np.sqrt(6)*np.sum(np.power(astig, 2))*(x**2+y**2)*np.cos(2*(np.arctan2(y,x)-np.arctan2(astig[1], astig[0])))
+        kernel = np.cos(raw_kernel)+1j*np.sin(raw_kernel)
+        #kernel = np.exp(-np.sign(defocus)*raw_kernel)
+        kernel *= np.exp(-(x**2+y**2)/(2*kernelsize[0]))
+        kernel = np.abs(np.fft.fftshift(np.fft.ifft2(kernel)))**2
+        kernel /= np.sum(kernel)
+        im = cv2.filter2D(im, -1, kernel)
+        #fft = np.real(fft) * kernel/np.sum(np.abs(kernel)) + 1j * np.imag(fft)
+        #fft *= kernel/np.sum(np.abs(kernel))
+        #im = np.abs(np.real(np.fft.ifft2(np.fft.fftshift(fft))))
         im = np.random.poisson(lam=im.flatten(), size=np.size(im))
         return im.reshape(shape)
+        #return kernel
 
 
 def check_tuning(imsize, defocus=0, astig=[0,0], im=None, check_astig=False):
-    if im is None:
-        im = image_grabber(defocus, astig, im=im)
+    im = image_grabber(defocus=defocus, astig=astig, im=im)
     peaks = find_peaks(im, imsize)
     if peaks is not None:    
         coordinates = np.zeros((len(peaks), 2))
@@ -119,7 +138,7 @@ def check_tuning(imsize, defocus=0, astig=[0,0], im=None, check_astig=False):
         center = np.array(np.shape(im))/2
         if len(peaks) == 6:
             max_pos = np.argmax(intensities)
-#find point with maximum intensitiy and its neighbours such that left < right < maximum
+            #find point with maximum intensitiy and its neighbours such that left < right < maximum
             if max_pos != 0 and max_pos != 5:
                 if intensities[max_pos-1] < intensities[max_pos+1]:
                     left = max_pos-1
@@ -141,9 +160,35 @@ def check_tuning(imsize, defocus=0, astig=[0,0], im=None, check_astig=False):
                 else:
                     left = 0
                     right = 4
-        #Empirical formula for finding the angle of the twofold astigmatism in an FFT-image
-        relative_astig_angle = (intensities[left]-intensities[right])/(1.9*(intensities[left]-intensities[max_pos]))
-        absolute_astig_angle = np.arctan2(coordinates[max_pos,0]-center[0],coordinates[max_pos,1]-center[1]) + relative_astig_angle*np.sign(np.arctan2(coordinates[right,0]-center[0],coordinates[right,1]-center[1])-np.arctan2(coordinates[max_pos,0]-center[0],coordinates[max_pos,1]-center[1]))
+            #Empirical formula for finding the angle of the twofold astigmatism in an FFT-image
+            #From 3 reflections with different intensities the direction of the astigmatism can be calculated
+            #positive angles are clockwise
+            relative_astig_angle = (intensities[left]-intensities[right])/(1.9*(intensities[left]-intensities[max_pos]))
+            absolute_astig_angle = np.arctan2(coordinates[max_pos,0]-center[0],coordinates[max_pos,1]-center[1]) + relative_astig_angle*np.sign(np.arctan2(coordinates[right,0]-center[0],coordinates[right,1]-center[1])-np.arctan2(coordinates[max_pos,0]-center[0],coordinates[max_pos,1]-center[1]))
+        elif len(peaks) == 4:
+            #if only 4 peaks are visible, assume that the missing peak has the intensity 0
+#            #calculate angle between first two reflections (first one is the brightest)
+#            max_pos = np.argmax(intensities)
+#            if max_pos != 3:
+#                right = max_pos + 1
+#            else:
+#                right = 0
+#                
+#            angle_first = np.arctan2(coordinates[max_pos,0]-center[0],coordinates[max_pos, 1]-center[1]) - np.arctan2(coordinates[right,0]-center[0], coordinates[right,1]-center[1])
+#            
+#            #calculate coordinates of missing reflection
+#            if np.abs(angle_first) < np.pi/2.0:
+#                missing_coords = coordinates[max_pos] - coordinates[right]
+#            else:
+#                missing_coords = coordinates[max_pos]-center + coordinates[right]-center
+#            #calculate angle of astigmatism as in case of 6 visible reflections (setting intensities[left])
+            relative_astig_angle = (0.0-intensities[right])/(1.9*(0.0-intensities[max_pos]))
+            absolute_astig_angle = np.arctan2(coordinates[max_pos,0]-center[0],coordinates[max_pos,1]-center[1]) + relative_astig_angle*np.sign(np.arctan2(coordinates[right,0]-center[0],coordinates[right,1]-center[1])-np.arctan2(coordinates[max_pos,0]-center[0],coordinates[max_pos,1]-center[1]))
+        elif len(peaks) == 2:
+            #if only two peaks are visible, assume that astigmatism is in direction of brightest peak
+            max_pos = np.argmax(intensities)
+            absolute_astig_angle = relative_astig_angle = np.arctan2(coordinates[max_pos, 0]-center[0], coordinates[max_pos, 1]-center[1])
+            
         return (intensities, coordinates, absolute_astig_angle, relative_astig_angle)
         
     else:
