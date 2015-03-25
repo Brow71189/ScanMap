@@ -162,7 +162,7 @@ def find_nearest_neighbors(number, target, points):
     
     
 def SuperScan_mapping(coord_dict, filepath='Z:\\ScanMap\\', do_autofocus=False, offset = 0.0, rotation = 0.0, imsize=200, impix=512, \
-                      pixeltime=4, detectors=('MAADF'), use_z_drive=False, auto_offset=False, auto_rotation=False):
+                      pixeltime=4, detectors=('MAADF'), use_z_drive=False, auto_offset=False, auto_rotation=False, autofocus_pattern='edges'):
     """
         This function will take a series of STEM images (subframes) to map a large rectangular sample area.
         coord_dict is a dictionary that has to consist of at least 4 tuples that hold stage coordinates in x,y,z - direction
@@ -176,6 +176,10 @@ def SuperScan_mapping(coord_dict, filepath='Z:\\ScanMap\\', do_autofocus=False, 
     
     imsize = float(imsize)*1e-9
     rotation = float(rotation)*np.pi/180.0
+    
+    if autofocus_pattern not in ['edges', 'testing']:
+        logging.warn('Unknown option for autofocus_pattern. Defaulting to \'edges\'.')
+        autofocus_pattern = 'edges'
     
     #If not running on microscope computer this will be set to true later.
     #No functions that require real Microscope Hardware will be executed, so no errors appear (test mode)    
@@ -211,7 +215,7 @@ def SuperScan_mapping(coord_dict, filepath='Z:\\ScanMap\\', do_autofocus=False, 
     #Find scan rotation and offset between the images if desired by the user    
     if auto_offset or auto_rotation:
         #set scan parameters for finding rotation and offset
-        ss.SS_Functions_SS_SetFrameParams(impix, impix, 0, 0, 2, imsize*1e9, 0, False, True, False, False)
+        ss.SS_Functions_SS_SetFrameParams(impix, impix, 0, 0, 1, imsize*1e9, 0, False, True, False, False)
         #Go first some distance into the opposite direction to reduce the influence of backlash in the mechanics on the calibration
         vt.as2_set_control('StageOutX', leftX-5.0*imsize)
         vt.as2_set_control('StageOutY', topY)
@@ -269,22 +273,23 @@ def SuperScan_mapping(coord_dict, filepath='Z:\\ScanMap\\', do_autofocus=False, 
     map_coords = []
     frame_number = []
     new_focus_point = []
+    bad_frames = {}
     
     for j in range(num_subframes[1]):
         for i in range(num_subframes[0]):
             if j%2 == 0: #Odd lines (have even indices because numbering starts with 0), e.g. map from left to right
                 map_coords.append( tuple( ( leftX+i*(imsize+distance),  topY-j*(imsize+distance) ) ) + tuple( interpolation((leftX+i*(imsize+distance),  topY-j*(imsize+distance)), coords) ) )
                 frame_number.append(j*num_subframes[0]+i)
-                if do_autofocus and i == 0:
+                if do_autofocus and i == 0 and autofocus_pattern == 'edges':
                     new_focus_point.append('top-left')
-                elif do_autofocus:
+                elif do_autofocus and autofocus_pattern == 'edges':
                     new_focus_point.append(None)
             else: #Even lines, e.g. scan from right to left
                 map_coords.append( tuple( ( leftX+(num_subframes[0]-(i+1))*(imsize+distance),  topY-j*(imsize+distance) ) ) + tuple( interpolation( (leftX+(num_subframes[0]-(i+1))*(imsize+distance),  topY-j*(imsize+distance)), coords) ) )
                 frame_number.append(j*num_subframes[0]+(num_subframes[0]-(i+1)))
-                if do_autofocus and i == 0:
+                if do_autofocus and i == 0 and autofocus_pattern=='edges':
                     new_focus_point.append('top-right')
-                elif do_autofocus:
+                elif do_autofocus and autofocus_pattern == 'edges':
                     new_focus_point.append(None)
     
     #Now go to each position in "map_coords" and take a snapshot
@@ -305,12 +310,12 @@ def SuperScan_mapping(coord_dict, filepath='Z:\\ScanMap\\', do_autofocus=False, 
             return 'OFF'
     
     config_file = open(store+'map_configurations.txt', 'w')
-    config_file.write('This file contains all parameters used for the mapping.\n\n')
-    config_file.write('Map parameters:\n')
-    map_paras = {'Autofocus': translator(do_autofocus), 'Auto Rotation': translator(auto_rotation), 'Auto Offset': translator(auto_offset), 'Z Drive': translator(use_z_drive)}
+    config_file.write('#This file contains all parameters used for the mapping.\n\n')
+    config_file.write('#Map parameters:\n')
+    map_paras = {'Autofocus': translator(do_autofocus), 'Autofocus_pattern': autofocus_pattern, 'Auto Rotation': translator(auto_rotation), 'Auto Offset': translator(auto_offset), 'Z Drive': translator(use_z_drive)}
     for key, value in map_paras.items():
         config_file.write('{0:18}{1:}\n'.format(key+':', value))
-    config_file.write('\nScan parameters:\n')
+    config_file.write('\n#Scan parameters:\n')
     scan_paras = {'SuperScan FOV value': str(imsize*1e9)+' nm', 'Image size': str(impix)+' px', 'Pixel time': str(pixeltime)+' us', 'Offset between images': str(offset)+' x image size', 'Scan rotation': str('%.2f' % (rotation*180.0/np.pi)) +' deg', 'Detectors': str(detectors)}
     for key, value in scan_paras.items():
         config_file.write('{0:25}{1:}\n'.format(key+':', value))
@@ -341,41 +346,76 @@ def SuperScan_mapping(coord_dict, filepath='Z:\\ScanMap\\', do_autofocus=False, 
                 time.sleep(2)
             
             if do_autofocus:
-                #find focus at the edges of the scan area. The new_focus_point list is None everywhere inside the scan area
-                #and contains 'top-left' or 'top-right' at the left and right side of the scan area, respectively.
-                if new_focus_point[counter-1] != None:
-                    #find amount of focus adjusting
-                    focus_adjusted = autotune.autofocus(start_stepsize=2, end_stepsize=0.5)
-                    logging.info('Focus at x: ' + str(frame_coord[0]) + ' y: ' + str(frame_coord[1]) + 'adjusted by ' + str(focus_adjusted) + ' nm. (Originally: '+ str(frame_coord[3]*1e9) + ' nm)')
-                    #update the respective coordinate with the new focus
-                    new_point = np.array(coord_dict_sorted[new_focus_point[counter-1]])
-                    new_point[3] += focus_adjusted*1e-9
-                    coord_dict_sorted[new_focus_point[counter-1]] = tuple(new_point)
-                    #take frame at this point with the new focus                    
-                    vt.as2_set_control('EHTFocus', new_point[3])
-                    time.sleep(0.1)
+                if autofocus_pattern == 'edges':
+                    #find focus at the edges of the scan area. The new_focus_point list is None everywhere inside the scan area
+                    #and contains 'top-left' or 'top-right' at the left and right side of the scan area, respectively.
+                    if new_focus_point[counter-1] != None:
+                        #find amount of focus adjusting
+                        focus_adjusted = autotune.autofocus(start_stepsize=2, end_stepsize=0.5)
+                        logging.info('Focus at x: ' + str(frame_coord[0]) + ' y: ' + str(frame_coord[1]) + 'adjusted by ' + str(focus_adjusted) + ' nm. (Originally: '+ str(frame_coord[3]*1e9) + ' nm)')
+                        #update the respective coordinate with the new focus
+                        new_point = np.array(coord_dict_sorted[new_focus_point[counter-1]])
+                        new_point[3] += focus_adjusted*1e-9
+                        coord_dict_sorted[new_focus_point[counter-1]] = tuple(new_point)
+                        #take frame at this point with the new focus                    
+                        vt.as2_set_control('EHTFocus', new_point[3])
+                        time.sleep(0.1)
+                        frame_nr = ss.SS_Functions_SS_StartFrame(0)
+                        ss.SS_Functions_SS_WaitForEndOfFrame(frame_nr)
+                        data = np.asarray(ss.SS_Functions_SS_GetImageForFrame(frame_nr, 0))
+                        tifffile.imsave(store+str('%.4d_%.2f_%.2f.tif' % (frame_number[counter-1],stagex*1e6,stagey*1e6)), data)
+                        test_map.append(tuple(new_point))
+                   #make list of tuples from sorted dictionary with new value inside
+                    else:
+                        #make list of new coordinates in coor_dict_sorted
+                        coords = []
+                        for corner in corners:
+                            coords.append(coord_dict_sorted[corner])
+                        #set focus to new interpolated value
+                        new_focus = interpolation(frame_coord[0:2], coords)[1]
+                        vt.as2_set_control('EHTFocus',  new_focus)
+                        time.sleep(0.1)
+                        #take frame
+                        frame_nr = ss.SS_Functions_SS_StartFrame(0)
+                        ss.SS_Functions_SS_WaitForEndOfFrame(frame_nr)
+                        data = np.asarray(ss.SS_Functions_SS_GetImageForFrame(frame_nr, 0))
+                        tifffile.imsave(store+str('%.4d_%.3f_%.3f.tif' % (frame_number[counter-1],stagex*1e6,stagey*1e6)), data)
+                        test_map.append(frame_coord[0:3] + (new_focus,))
+                        
+                elif autofocus_pattern == 'testing':
+                    #tests in each frame after aquisition if all 6 reflections in the fft are still there (only for frames where less than 50% of the area are
+                    #covered with dirt). If not all reflections are visible, autofocus is applied and the result is added as offset to the interpolated focus values.
+                    #The dirt coverage is calculated by considering all pixels intensities that are higher than 0.02 as dirt
                     frame_nr = ss.SS_Functions_SS_StartFrame(0)
                     ss.SS_Functions_SS_WaitForEndOfFrame(frame_nr)
                     data = np.asarray(ss.SS_Functions_SS_GetImageForFrame(frame_nr, 0))
-                    tifffile.imsave(store+str('%.4d_%.2f_%.2f.tif' % (frame_number[counter-1],stagex*1e6,stagey*1e6)), data)
-                    test_map.append(tuple(new_point))
-               #make list of tuples from sorted dictionary with new value inside
-                else:
-                    #make list of new coordinates in coor_dict_sorted
-                    coords = []
-                    for corner in corners:
-                        coords.append(coord_dict_sorted[corner])
-                    #set focus to new interpolated value
-                    new_focus = interpolation(frame_coord[0:2], coords)[1]
-                    vt.as2_set_control('EHTFocus',  new_focus)
-                    time.sleep(0.1)
-                    #take frame
-                    frame_nr = ss.SS_Functions_SS_StartFrame(0)
-                    ss.SS_Functions_SS_WaitForEndOfFrame(frame_nr)
-                    data = np.asarray(ss.SS_Functions_SS_GetImageForFrame(frame_nr, 0))
-                    tifffile.imsave(store+str('%.4d_%.3f_%.3f.tif' % (frame_number[counter-1],stagex*1e6,stagey*1e6)), data)
-                    test_map.append(frame_coord[0:3] + (new_focus,))
-                
+                    name = str('%.4d_%.3f_%.3f.tif' % (frame_number[counter-1],stagex*1e6,stagey*1e6))
+                    #apply Gaussian blur and set all pixels smaller than the treshold to 1, all bigger to 0
+                    dirt_detection = cv2.GaussianBlur(data, [0,0], 2.0)
+                    dirt_detection[dirt_detection>0.2] = 0.0
+                    dirt_detection[dirt_detection<= 0.2] = 1.0
+                    #calculate the fraction of 'bad' pixels and save frame if fraction is >0.5, but add note to "bad_frames" file
+                    if np.sum(dirt_detection)/(np.shape(data[0])*np.shape(data[1])) > 0.5:
+                        tifffile.imsave(store+name, data)
+                        test_map.append(frame_coord)
+                        bad_frames['name'] = 'Over 50% dirt coverage.'
+                        logging.info('Over 50% dirt coverage in ' + name)
+                    else:
+                        result = autotune.check_tuning(imsize=imsize*1e9, im=data, check_astig=False, process_image=False)
+                        if result != 0:
+                            intensities, coordinates, absolute_astig_angle, relative_astig_angle = result
+                            #if not all 6 reflections are visible apply autofocus
+                            if len(intensities) < 6:
+                                focus_adjusted = autotune.autofocus(start_stepsize=2, end_stepsize=0.5)
+                                logging.info('Focus at x: ' + str(frame_coord[0]) + ' y: ' + str(frame_coord[1]) + 'adjusted by ' + str(focus_adjusted) + ' nm. (Originally: '+ str(frame_coord[3]*1e9) + ' nm)')
+                                time.sleep(0.1)
+                                frame_nr = ss.SS_Functions_SS_StartFrame(0)
+                                ss.SS_Functions_SS_WaitForEndOfFrame(frame_nr)
+                                data = np.asarray(ss.SS_Functions_SS_GetImageForFrame(frame_nr, 0))
+                                tifffile.imsave(store+name, data)
+                                bad_frames['name'] = str('Bad focus. Adjusted by %.2f nm. Originally: %.2f nm.' %(frame_coord[3]*1e9, focus_adjusted))
+                                
+                    
             else:
                 #Take frame and save it to disk
                 frame_nr = ss.SS_Functions_SS_StartFrame(0)
@@ -386,6 +426,13 @@ def SuperScan_mapping(coord_dict, filepath='Z:\\ScanMap\\', do_autofocus=False, 
         
         else:
             test_map.append(frame_coord)
+    
+    if do_autofocus and autofocus_pattern == 'testing':        
+        bad_frames_file = open(store+'bad_frames.txt', 'w')
+        bad_frames_file.write('#This file contains the filenames of \"bad\" frames and the cause for the listing.\n\n')
+        for key, value in bad_frames.items():
+            bad_frames_file.write('{0:30}{1:}\n'.format(key+':', value))        
+        config_file.close()
     
     x_map = np.zeros((num_subframes[1],num_subframes[0]))
     y_map = np.zeros((num_subframes[1],num_subframes[0]))

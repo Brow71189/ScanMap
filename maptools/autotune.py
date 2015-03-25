@@ -58,8 +58,8 @@ def autofocus(imsize=None, image=None, start_stepsize=4, end_stepsize=1, positio
         imsize = ss.SS_Functions_SS_GetFrameParams()[5]
     try:
         FrameParams = ss.SS_Functions_SS_GetFrameParams()
-        if FrameParams[0] > 1024:
-            ss.SS_Functions_SS_SetFrameParams(1024, 1024,FrameParams[2],FrameParams[3], FrameParams[4], FrameParams[5], FrameParams[6], FrameParams[7], FrameParams[8], FrameParams[9], FrameParams[10])
+        if FrameParams[0] > 2048:
+            ss.SS_Functions_SS_SetFrameParams(2048, 2048,FrameParams[2],FrameParams[3], FrameParams[4], FrameParams[5], FrameParams[6], FrameParams[7], FrameParams[8], FrameParams[9], FrameParams[10])
             flag = True
     except:
         logging.warn('Could not check Frame Parameters.')
@@ -122,15 +122,26 @@ def image_grabber(defocus=0, astig=[0,0], im=None, start_def=0.0, start_astig=[0
         #return kernel
 
 
-def check_tuning(imsize, defocus=0, astig=[0,0], im=None, check_astig=False):
-    im = image_grabber(defocus=defocus, astig=astig, im=im)
+def check_tuning(imsize, defocus=0, astig=[0,0], im=None, check_astig=False, save_images=False, process_image=True):
+    
+    def positive_angle(angle):
+                """
+                Calculates the angle between 0 and 2pi from an input angle between -pi and pi (all angles in rad)
+                """
+                if angle < 0:
+                    return angle  + 2*np.pi
+                else:
+                    return angle
+                    
+    if process_image:    
+        im = image_grabber(defocus=defocus, astig=astig, im=im)
     peaks = find_peaks(im, imsize)
     if peaks is not None:    
         coordinates = np.zeros((len(peaks), 2))
         intensities = np.zeros(len(peaks))
         for i in range(len(peaks)):
             coordinates[i,:] = np.array(peaks[i][0:2], dtype='int')
-            intensities[i] = peaks[i][2]
+            intensities[i] = peaks[i][3]
     else:
         return 0
         
@@ -163,27 +174,28 @@ def check_tuning(imsize, defocus=0, astig=[0,0], im=None, check_astig=False):
             #Empirical formula for finding the angle of the twofold astigmatism in an FFT-image
             #From 3 reflections with different intensities the direction of the astigmatism can be calculated
             #positive angles are clockwise
-            relative_astig_angle = (intensities[left]-intensities[right])/(1.9*(intensities[left]-intensities[max_pos]))
-            absolute_astig_angle = np.arctan2(coordinates[max_pos,0]-center[0],coordinates[max_pos,1]-center[1]) + relative_astig_angle*np.sign(np.arctan2(coordinates[right,0]-center[0],coordinates[right,1]-center[1])-np.arctan2(coordinates[max_pos,0]-center[0],coordinates[max_pos,1]-center[1]))
+            #print('right: ' + str(right) + ' left: ' + str(left) + ' max_pos: ' + str(max_pos))
+            relative_astig_angle = (intensities[left]-intensities[right])/(1.9*(intensities[left]-intensities[max_pos]))                    
+            absolute_astig_angle = np.arctan2(coordinates[max_pos,0]-center[0],coordinates[max_pos,1]-center[1]) + relative_astig_angle*np.sign(positive_angle(np.arctan2(coordinates[right,0]-center[0],coordinates[right,1]-center[1]))-positive_angle(np.arctan2(coordinates[max_pos,0]-center[0],coordinates[max_pos,1]-center[1])))
         elif len(peaks) == 4:
             #if only 4 peaks are visible, assume that the missing peak has the intensity 0
-#            #calculate angle between first two reflections (first one is the brightest)
-#            max_pos = np.argmax(intensities)
-#            if max_pos != 3:
-#                right = max_pos + 1
-#            else:
-#                right = 0
-#                
+            #calculate angle between first two reflections (first one is the brightest)
+            max_pos = np.argmax(intensities)
+            if max_pos != 3:
+                right = max_pos + 1
+            else:
+                right = 0
+                
 #            angle_first = np.arctan2(coordinates[max_pos,0]-center[0],coordinates[max_pos, 1]-center[1]) - np.arctan2(coordinates[right,0]-center[0], coordinates[right,1]-center[1])
-#            
+            
 #            #calculate coordinates of missing reflection
 #            if np.abs(angle_first) < np.pi/2.0:
 #                missing_coords = coordinates[max_pos] - coordinates[right]
 #            else:
 #                missing_coords = coordinates[max_pos]-center + coordinates[right]-center
-#            #calculate angle of astigmatism as in case of 6 visible reflections (setting intensities[left])
+            #calculate angle of astigmatism as in case of 6 visible reflections (setting intensities[left] to zero)
             relative_astig_angle = (0.0-intensities[right])/(1.9*(0.0-intensities[max_pos]))
-            absolute_astig_angle = np.arctan2(coordinates[max_pos,0]-center[0],coordinates[max_pos,1]-center[1]) + relative_astig_angle*np.sign(np.arctan2(coordinates[right,0]-center[0],coordinates[right,1]-center[1])-np.arctan2(coordinates[max_pos,0]-center[0],coordinates[max_pos,1]-center[1]))
+            absolute_astig_angle = np.arctan2(coordinates[max_pos,0]-center[0],coordinates[max_pos,1]-center[1]) + relative_astig_angle*np.sign(positive_angle(np.arctan2(coordinates[right,0]-center[0],coordinates[right,1]-center[1]))-positive_angle(np.arctan2(coordinates[max_pos,0]-center[0],coordinates[max_pos,1]-center[1])))
         elif len(peaks) == 2:
             #if only two peaks are visible, assume that astigmatism is in direction of brightest peak
             max_pos = np.argmax(intensities)
@@ -194,6 +206,74 @@ def check_tuning(imsize, defocus=0, astig=[0,0], im=None, check_astig=False):
     else:
         return -np.sum(intensities)
         
+
+def optimize_tuning(imsize, im=None, astig_stepsize=0.1, focus_stepsize=1.0, tune_astig=False, save_iterations=False):
+    #Take a focus series to find correct astigmatism 
+    astig_step = astig_stepsize
+    focus_step = 0.0
+    angle_difference = 0.0
+    counter = 0
+    best_focus = 0.0
+    overfocus = 0.0
+    #list of all the images already investigated
+    focus_tunings = []
+    focus_values = []
+    while np.abs(angle_difference) < np.pi/2.4 and counter < 6:
+        counter += 1
+        focus_step += focus_stepsize
+        #appending new values to list, sorted by defocus
+        focus_tunings.insert(0, check_tuning(imsize, defocus=-focus_step, im=im, check_astig=True))
+        focus_values.insert(0,-focus_step)
+        focus_tunings.append(check_tuning(imsize, defocus=focus_step, im=im, check_astig=True))
+        focus_values.append(focus_step)
+        #check if angle could not be determined in one of the last steps
+        if focus_tunings[-1] == 0 or focus_tunings[0] == 0:
+            #if more 2 or more angles were already found, look for a bigger angle in the existing list
+            if len(focus_tunings)-focus_tunings.count(0) > 1:
+                for i in range(len(focus_tunings)-1):
+                    if focus_tunings[i] == 0 or focus_tunings[i+1] == 0:
+                        continue
+                    elif np.abs(focus_tunings[i]-focus_tunings[i+1]) > np.abs(angle_difference):
+                        angle_difference = focus_tunings[i][2] - focus_tunings[i+1][2]
+                        best_focus = np.mean((focus_values[i],focus_values[i+1]))
+                        overfocus = i+1
+        else:
+            angle_difference = focus_tunings[0][2] - focus_tunings[-1][2]
+            best_focus = 0.0
+            overfocus = len(focus_values)
+    
+    #if no angle of astigmatism could be determined, adjust only focus
+    if counter >= 6:
+        logging.warn('No angle of astigmatism could be found. Adjusting only focus.')
+        return optimize_focus(imsize, im=im)
+    
+    #If more than two angles were found, look again for the defocus were the angle "flips"
+    if len(focus_tunings)-focus_tunings.count(0) > 2:
+        for i in range(len(focus_tunings)-1):
+            if focus_tunings[i] == 0 or focus_tunings[i+1] == 0:
+                continue
+            elif np.abs(focus_tunings[i]-focus_tunings[i+1]) >= np.pi/2.4:
+                angle_difference = focus_tunings[i][2] - focus_tunings[i+1][2]
+                best_focus = np.mean((focus_values[i],focus_values[i+1]))
+                overfocus = i+1
+                break
+        
+    #Now start tuning the astigmatism while focus is set to overfocus
+    astig_tunings = []
+    astig_values = []
+    #Find direction of astigmatism correction
+    astig_tunings.append(check_tuning(imsize, defocus=overfocus, astig=[astig_step, astig_step*np.tan(focus_tunings[overfocus][2])]))
+    astig_values.append(astig_step)
+    astig_tunings.insert(0, check_tuning(imsize, defocus=overfocus, astig=[-astig_step, -astig_step*np.tan(focus_tunings[overfocus][2])]))
+    astig_values.insert(0, -astig_step)
+    
+    current = np.var(focus_tunings[overfocus][0])/np.sum(focus_tunings[overfocus][0])
+    plus = np.var(astig_tunings[1][0])/np.sum(astig_tunings[1][0])
+    minus = np.var(astig_tunings[0][0])/np.sum(astig_tunings[0][0])
+    
+    if plus < minus and plus < current:
+        pass
+
         
 def optimize_focus(imsize, im=None, start_stepsize=4, end_stepsize=1):
     stepsize = start_stepsize
@@ -221,7 +301,7 @@ def optimize_focus(imsize, im=None, start_stepsize=4, end_stepsize=1):
     return defocus
 
 
-def find_peaks(im, imsize, half_line_thickness = 5, position_tolerance = 3):
+def find_peaks(im, imsize, half_line_thickness = 5, position_tolerance = 5):
     """
         This function can find the 6 first-order peaks in the FFT of an atomic-resolution image of graphene.
         Input:
@@ -236,8 +316,8 @@ def find_peaks(im, imsize, half_line_thickness = 5, position_tolerance = 3):
         x0, y0, x_var, y_var, amplitude, offset = float(x0), float(y0), float(x_var), float(y_var), float(amplitude), float(offset)
         return (amplitude*np.exp( -( (xdata[1]-x0)**2/(2*x_var) + (xdata[0]-y0)**2/(2*y_var) ) ) + offset).ravel()    
     
-    global fft
     fft = np.abs(np.fft.fftshift(np.fft.fft2(im)))
+    fft_raw = fft.copy()
     shape = np.shape(im)
     
     first_order = imsize/0.213
@@ -281,11 +361,11 @@ def find_peaks(im, imsize, half_line_thickness = 5, position_tolerance = 3):
 #            fft[first_peak[0]-position_tolerance:first_peak[0]+position_tolerance+1, first_peak[1]-position_tolerance:first_peak[1]+position_tolerance+1] = 0
         if first_peak[2] < mean_fft + 6.0*std_dev_fft:
             fft[first_peak[0]-position_tolerance:first_peak[0]+position_tolerance+1, first_peak[1]-position_tolerance:first_peak[1]+position_tolerance+1] = 0
-        elif np.sqrt(np.sum((np.array(first_peak[0:2])-center)**2)) < first_order/1.5:
+        elif np.sqrt(np.sum((np.array(first_peak[0:2])-center)**2)) < first_order/1.5 or np.sqrt(np.sum((np.array(first_peak[0:2])-center)**2)) > first_order*1.333:
             fft[first_peak[0]-position_tolerance:first_peak[0]+position_tolerance+1, first_peak[1]-position_tolerance:first_peak[1]+position_tolerance+1] = 0
         else:
             try:            
-                peaks.append(first_peak)
+                peaks.append(first_peak+(fft_raw[first_peak[0:2]],))
                 
                 for i in range(1,6):
                     rotation_matrix = np.array( ( (np.cos(i*np.pi/3), -np.sin(i*np.pi/3)), (np.sin(i*np.pi/3), np.cos(i*np.pi/3)) ) )
@@ -295,7 +375,7 @@ def find_peaks(im, imsize, half_line_thickness = 5, position_tolerance = 3):
 #TODO: Find better criterion for deciding if peak at a position
                     if  max_next_peak > mean_fft + 4.0*std_dev_fft:#peaks[0][2]/4:
                         next_peak += np.array( np.unravel_index( np.argmax(area_next_peak), np.shape(area_next_peak) ) ) - position_tolerance
-                        peaks.append(tuple(next_peak)+(max_next_peak,))
+                        peaks.append(tuple(next_peak)+(max_next_peak,fft_raw[tuple(next_peak)]))
                 
                 if len(peaks) > 1:
                     success = True
