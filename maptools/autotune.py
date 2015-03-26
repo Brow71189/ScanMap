@@ -39,7 +39,87 @@ try:
 except:
     logging.warn('Could not import SuperScanPy. Maybe you are running in offline mode.')
     
+def check_intensities(imsize):
+    result = check_tuning(imsize, check_astig=True)
+    if result != 0:
+        intensities, coordinates, absolute_astig_angle, relative_astig_angle = result
+        return (np.var(intensities)/np.sum(intensities), len(intensities))
+    else:
+        return (1, 0)
     
+    
+def kill_aberrations(focus_step=1.5, astig2f_step=1.5, astig3f_step=75.0, coma_step=100.0):
+    FrameParams = ss.SS_Functions_SS_GetFrameParams()
+    total_tunings = []
+    total_lens = []
+    counter = 0
+    controls = ['EHTFocus', 'C12.a', 'C12.b', 'C21.a', 'C21.b', 'C23.a', 'C23.b']
+    steps = [focus_step, astig2f_step, astig2f_step, coma_step, coma_step, astig3f_step, astig3f_step]
+    
+    #change rame parameters to values that are suited for automatic tuning
+    ss.SS_Functions_SS_SetFrameParams(512, 512, 0, 0, 4, 8, 0, False, True, False, False)
+    while counter < 11:
+        logging.info('Starting run number '+str(counter))
+        if len(total_tunings) > 2:
+            if total_tunings[-2]-total_tunings[-1] < 0.5*(total_tunings[-3]-total_tunings[-2]):
+                logging.info('Finished tuning.')
+                return
+        if len(total_tunings) > 1:        
+            logging.info('Improved tuning by '+str(total_tunings[-2]-total_tunings[-1]))
+        part_tunings = []
+        part_lens = []
+        
+        for i in range(len(controls)):
+            logging.info('Working on: '+controls[i])
+            start = vt.as2_get_control(controls[i])
+            current = check_tuning(8, check_astig=True)[0]
+            if counter == 0 and i==0:
+                total_tunings.append(1/np.sum(current))
+                logging.info('Appending ' + str(1/np.sum(current)))
+                total_lens.append(len(current))
+            vt.as2_set_control(controls[i], start+steps[i]*1e-9)
+            time.sleep(0.1)
+            plus = check_tuning(8, check_astig=True)[0]
+            vt.as2_set_control(controls[i], start-steps[i]*1e-9)
+            time.sleep(0.1)
+            minus = check_tuning(8, check_astig=True)[0]
+            if 1/np.sum(minus) < 1/np.sum(plus) and 1/np.sum(minus) < 1/np.sum(current) and len(minus) >= len(plus) and len(minus) >= len(current):
+                direction = -1
+                current = minus
+            elif 1/np.sum(plus) < 1/np.sum(minus) and 1/np.sum(plus) < 1/np.sum(current) and len(plus) >= len(minus) and len(plus) >= len(current):
+                direction = 1
+                current = plus
+            else:
+                vt.as2_set_control(controls[i], start)
+                logging.info('Could not find a direction to improve '+controls[i]+'. Going to next aberration.')
+                continue
+            
+            small_counter = 1
+            while True:
+                small_counter+=1
+                vt.as2_set_control(controls[i], start+direction*small_counter*steps[i]*1e-9)
+                time.sleep(0.1)
+                next_frame = check_tuning(8, check_astig=True)[0]
+                if 1/np.sum(next_frame) >= 1/np.sum(current) or len(next_frame) < len(current):
+                    vt.as2_set_control(controls[i], start-direction*steps[i]*1e-9)
+                    part_tunings.append(1/np.sum(current))
+                    part_lens.append(len(current))
+                    break
+                current = next_frame
+            #only keep changes if they improve the overall tuning
+            if len(total_tunings) > 0:
+                if 1/np.sum(current) > np.amin(total_tunings) or len(current) < np.amax(total_lens):
+                    vt.as2_set_control(controls[i], start)
+                    logging.info('Dismissed changes at '+controls[i])
+        
+        if len(part_tunings) > 0:
+            logging.info('Appending best value of this run to total_tunings: '+str(np.amin(part_tunings)))
+            total_tunings.append(np.amin(part_tunings))
+            total_lens.append(np.amax(part_lens))
+        counter += 1
+    ss.SS_Functions_SS_SetFrameParams(FrameParams[0], FrameParams[1],FrameParams[2],FrameParams[3], FrameParams[4], FrameParams[5], FrameParams[6], FrameParams[7], FrameParams[8], FrameParams[9], FrameParams[10])
+
+
 def autofocus(imsize=None, image=None, start_stepsize=4, end_stepsize=1, position_tolerance=1,start_def=None):
     """
     Tries to find the correct focus in an atomically resolved STEM image of graphene.

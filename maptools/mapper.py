@@ -312,7 +312,8 @@ def SuperScan_mapping(coord_dict, filepath='Z:\\ScanMap\\', do_autofocus=False, 
     config_file = open(store+'map_configurations.txt', 'w')
     config_file.write('#This file contains all parameters used for the mapping.\n\n')
     config_file.write('#Map parameters:\n')
-    map_paras = {'Autofocus': translator(do_autofocus), 'Autofocus_pattern': autofocus_pattern, 'Auto Rotation': translator(auto_rotation), 'Auto Offset': translator(auto_offset), 'Z Drive': translator(use_z_drive)}
+    map_paras = {'Autofocus': translator(do_autofocus), 'Autofocus_pattern': autofocus_pattern, 'Auto Rotation': translator(auto_rotation), 'Auto Offset': translator(auto_offset), 'Z Drive': translator(use_z_drive), \
+                'top-left': str(coord_dict_sorted['top-left']), 'top-right': str(coord_dict_sorted['top-right']), 'bottom-left': str(coord_dict_sorted['bottom-left']), 'bottom-right': str(coord_dict_sorted['bottom-right'])}
     for key, value in map_paras.items():
         config_file.write('{0:18}{1:}\n'.format(key+':', value))
     config_file.write('\n#Scan parameters:\n')
@@ -390,31 +391,57 @@ def SuperScan_mapping(coord_dict, filepath='Z:\\ScanMap\\', do_autofocus=False, 
                     ss.SS_Functions_SS_WaitForEndOfFrame(frame_nr)
                     data = np.asarray(ss.SS_Functions_SS_GetImageForFrame(frame_nr, 0))
                     name = str('%.4d_%.3f_%.3f.tif' % (frame_number[counter-1],stagex*1e6,stagey*1e6))
-                    #apply Gaussian blur and set all pixels smaller than the treshold to 1, all bigger to 0
-                    dirt_detection = cv2.GaussianBlur(data, [0,0], 2.0)
-                    dirt_detection[dirt_detection>0.2] = 0.0
-                    dirt_detection[dirt_detection<= 0.2] = 1.0
+                    #apply Gaussian blur and set all pixels smaller than the treshold to 0, all bigger to 1
+                    dirt_detection = cv2.GaussianBlur(data, (0,0), 2.0)
+                    dirt_detection[dirt_detection>0.02] = 1.0
+                    dirt_detection[dirt_detection<= 0.02] = 0.0
                     #calculate the fraction of 'bad' pixels and save frame if fraction is >0.5, but add note to "bad_frames" file
-                    if np.sum(dirt_detection)/(np.shape(data[0])*np.shape(data[1])) > 0.5:
+                    if np.sum(dirt_detection)/(np.shape(data)[0]*np.shape(data)[1]) > 0.5:
                         tifffile.imsave(store+name, data)
                         test_map.append(frame_coord)
-                        bad_frames['name'] = 'Over 50% dirt coverage.'
+                        bad_frames[name] = 'Over 50% dirt coverage.'
                         logging.info('Over 50% dirt coverage in ' + name)
                     else:
-                        result = autotune.check_tuning(imsize=imsize*1e9, im=data, check_astig=False, process_image=False)
+                        result = autotune.check_tuning(imsize*1e9, im=data, check_astig=True, process_image=False)
                         if result != 0:
                             intensities, coordinates, absolute_astig_angle, relative_astig_angle = result
-                            #if not all 6 reflections are visible apply autofocus
-                            if len(intensities) < 6:
+                        else:
+                            intensities = (0,)
+                        #if not all 6 reflections are visible apply autofocus
+                        if len(intensities) < 6:
+                            if len(intensities) == 1:
+                                focus_adjusted = autotune.autofocus(start_stepsize=4, end_stepsize=1)
+                            else:
                                 focus_adjusted = autotune.autofocus(start_stepsize=2, end_stepsize=0.5)
-                                logging.info('Focus at x: ' + str(frame_coord[0]) + ' y: ' + str(frame_coord[1]) + 'adjusted by ' + str(focus_adjusted) + ' nm. (Originally: '+ str(frame_coord[3]*1e9) + ' nm)')
-                                time.sleep(0.1)
-                                frame_nr = ss.SS_Functions_SS_StartFrame(0)
-                                ss.SS_Functions_SS_WaitForEndOfFrame(frame_nr)
-                                data = np.asarray(ss.SS_Functions_SS_GetImageForFrame(frame_nr, 0))
+                            logging.info('Focus at x: ' + str(frame_coord[0]) + ' y: ' + str(frame_coord[1]) + 'adjusted by ' + str(focus_adjusted) + ' nm. (Originally: '+ str(frame_coord[3]*1e9) + ' nm)')
+                            time.sleep(0.1)
+                            frame_nr = ss.SS_Functions_SS_StartFrame(0)
+                            ss.SS_Functions_SS_WaitForEndOfFrame(frame_nr)
+                            #only keep changes if tuning was really improved
+                            data_new = np.asarray(ss.SS_Functions_SS_GetImageForFrame(frame_nr, 0))
+                            result_new = autotune.check_tuning(imsize*1e9, im=data, check_astig=True, process_image=False)
+                            if result_new != 0:
+                                intensities_new, coordinates_new, absolute_astig_angle_new, relative_astig_angle_new = result_new
+                                if len(intensities_new) >= len(intensities):
+                                    tifffile.imsave(store+name, data_new)
+                                    bad_frames[name] = str('Bad focus. Adjusted by %.2f nm. Originally: %.2f nm.' %(frame_coord[3]*1e9, focus_adjusted))
+                                    #add new focus as offset to all coordinates
+                                    for i in range(len(map_coords)):
+                                        map_coords[i] = np.array(map_coords[i])
+                                        map_coords[i][3] += focus_adjusted*1e-9
+                                        map_coords[i] = tuple(map_coords[i])
+                                    test_map.append(map_coords[counter-1])
+                                else:
+                                    bad_frames[name] = str('Dismissed focus adjustment by %.2f nm because it did not improve tuning. Originally: %.2f nm.' %(frame_coord[3]*1e9, focus_adjusted))
+                                    tifffile.imsave(store+name, data)
+                                    test_map.append(frame_coord)
+                            else:
+                                bad_frames[name] = str('Dismissed focus adjustment by %.2f nm because it did not improve tuning. Originally: %.2f nm.' %(frame_coord[3]*1e9, focus_adjusted))
                                 tifffile.imsave(store+name, data)
-                                bad_frames['name'] = str('Bad focus. Adjusted by %.2f nm. Originally: %.2f nm.' %(frame_coord[3]*1e9, focus_adjusted))
-                                
+                                test_map.append(frame_coord)
+                        else:
+                            tifffile.imsave(store+name, data)
+                            test_map.append(frame_coord)                                
                     
             else:
                 #Take frame and save it to disk
@@ -457,4 +484,6 @@ def SuperScan_mapping(coord_dict, filepath='Z:\\ScanMap\\', do_autofocus=False, 
     tifffile.imsave(store+str('y_map.tif'),np.asarray(y_map, dtype='float32'))
     tifffile.imsave(store+str('z_map.tif'),np.asarray(z_map, dtype='float32'))
     tifffile.imsave(store+str('focus_map.tif'),np.asarray(focus_map, dtype='float32'))
+    
+    logging.info('\nDone')
 

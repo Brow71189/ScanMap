@@ -240,7 +240,8 @@ class ScanMap(Panel.Panel):
                 logging.warn('Couldn\'t reload mapper')
             
             if not None in coord_dict.viewvalues():
-                mapper.SuperScan_mapping(coord_dict, do_autofocus=do_autofocus, imsize = FOV if FOV != None else 200, offset = Offset if Offset != None else 0.0, rotation = Rotation if Rotation != None else 0.0, impix = Size if Size != None else 512, pixeltime = Time if Time != None else 4, use_z_drive=use_z_drive, auto_offset=auto_offset, auto_rotation=auto_rotation)
+                mapper.SuperScan_mapping(coord_dict, do_autofocus=do_autofocus, imsize = FOV if FOV != None else 200, offset = Offset if Offset != None else 0.0, rotation = Rotation if Rotation != None else 0.0,\
+                impix = Size if Size != None else 512, pixeltime = Time if Time != None else 4, use_z_drive=use_z_drive, auto_offset=auto_offset, auto_rotation=auto_rotation, autofocus_pattern='testing')
             else:
                 logging.warn('You din\'t set all 4 corners.')
 

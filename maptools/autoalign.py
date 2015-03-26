@@ -38,6 +38,56 @@ try:
     from superscan import SuperScanPy as ss    
 except:
     logging.warn('Could not import SuperScanPy. Maybe you are running in offline mode.')
+    
+    
+#def find_offset_and_rotation():
+#    """
+#    This function finds the current rotation of the scan with respect to the stage coordinate system and the offset that has to be set between two neighboured images when no overlap should occur.
+#    It takes no input arguments, so the current frame parameters are used for image acquisition.
+#    
+#    It returns a tuple of the form (rotation(degrees), offset(fraction of images)).
+#    
+#    """
+#    
+#    try:
+#        FrameParams = ss.SS_Functions_SS_GetFrameParams()
+#    except:
+#        logging.error('Could not get Frame Parameters. Make sure SuperScan funtctions are available.')
+#    
+#    imsize = FrameParams[5]
+#    
+#    leftX = vt.as2_get_control()
+#    vt.as2_set_control('StageOutX', leftX-3.0*imsize)
+#    vt.as2_set_control('StageOutY', topY)
+#    time.sleep(3)
+#    #Goto point for first image and aquire it
+#    vt.as2_set_control('StageOutX', leftX)
+#    vt.as2_set_control('StageOutY', topY)
+#    if use_z_drive:
+#        vt.as2_set_control('StageOutZ', interpolation((leftX,  topY), coords)[0])
+#    vt.as2_set_control('EHTFocus', interpolation((leftX,  topY), coords)[1])
+#    time.sleep(3)
+#    frame_nr = ss.SS_Functions_SS_StartFrame(0)
+#    ss.SS_Functions_SS_WaitForEndOfFrame(frame_nr)
+#    im1 = np.asarray(ss.SS_Functions_SS_GetImageForFrame(frame_nr, 0))
+#    #Go to the right by one half image size
+#    vt.as2_set_control('StageOutX', leftX+imsize/2.0)
+#    if use_z_drive:
+#        vt.as2_set_control('StageOutZ', interpolation((leftX+imsize/2.0,  topY), coords)[0])
+#    vt.as2_set_control('EHTFocus', interpolation((leftX+imsize/2.0,  topY), coords)[1])
+#    time.sleep(1)
+#    frame_nr = ss.SS_Functions_SS_StartFrame(0)
+#    ss.SS_Functions_SS_WaitForEndOfFrame(frame_nr)
+#    im2 = np.asarray(ss.SS_Functions_SS_GetImageForFrame(frame_nr, 0))
+#    #find offset between the two images        
+#    frame_rotation, frame_distance = autoalign.align(im1, im2)
+#    #check if the correlation worked correctly and raise an error if not
+#    if frame_rotation or frame_distance is None:
+#        logging.error('Could not find offset and/or rotation automatically. Please disable these two options and set values manually.')
+#        raise RuntimeError('Could not find offset and/or rotation automatically. Please disable these two options and set values manually.')
+#    
+#    logging.info('Found rotation between x-axis of stage and scan to be: '+str(frame_rotation*180/np.pi))
+#    logging.info('Found that the stage moves %.2f times the image size when setting the moving distance to the image size.' % (frame_distance*2.0/impix))
 
 
 def correlation(im1, im2):
