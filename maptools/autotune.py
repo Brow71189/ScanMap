@@ -48,7 +48,7 @@ def check_intensities(imsize):
         return (1, 0)
     
     
-def kill_aberrations(focus_step=1.5, astig2f_step=1.5, astig3f_step=75.0, coma_step=100.0):
+def kill_aberrations(focus_step=1.5, astig2f_step=1.5, astig3f_step=75.0, coma_step=100.0, average_frames=3):
     FrameParams = ss.SS_Functions_SS_GetFrameParams()
     total_tunings = []
     total_lens = []
@@ -61,7 +61,7 @@ def kill_aberrations(focus_step=1.5, astig2f_step=1.5, astig3f_step=75.0, coma_s
     while counter < 11:
         logging.info('Starting run number '+str(counter))
         if len(total_tunings) > 2:
-            if total_tunings[-2]-total_tunings[-1] < 0.5*(total_tunings[-3]-total_tunings[-2]):
+            if total_tunings[-2]-total_tunings[-1] < 0.2*(total_tunings[-3]-total_tunings[-2]):
                 logging.info('Finished tuning.')
                 return
         if len(total_tunings) > 1:        
@@ -72,17 +72,26 @@ def kill_aberrations(focus_step=1.5, astig2f_step=1.5, astig3f_step=75.0, coma_s
         for i in range(len(controls)):
             logging.info('Working on: '+controls[i])
             start = vt.as2_get_control(controls[i])
-            current = check_tuning(8, check_astig=True)[0]
+            current=0
+            for j in range(average_frames):
+                current += check_tuning(8, check_astig=True)[0]
+            current /= average_frames
             if counter == 0 and i==0:
                 total_tunings.append(1/np.sum(current))
                 logging.info('Appending ' + str(1/np.sum(current)))
                 total_lens.append(len(current))
             vt.as2_set_control(controls[i], start+steps[i]*1e-9)
             time.sleep(0.1)
-            plus = check_tuning(8, check_astig=True)[0]
+            plus=0
+            for j in range(average_frames):
+                plus += check_tuning(8, check_astig=True)[0]
+            plus/=average_frames
             vt.as2_set_control(controls[i], start-steps[i]*1e-9)
             time.sleep(0.1)
-            minus = check_tuning(8, check_astig=True)[0]
+            minus=0
+            for j in range(average_frames):
+                minus = check_tuning(8, check_astig=True)[0]
+            minus/=average_frames
             if 1/np.sum(minus) < 1/np.sum(plus) and 1/np.sum(minus) < 1/np.sum(current) and len(minus) >= len(plus) and len(minus) >= len(current):
                 direction = -1
                 current = minus
@@ -99,7 +108,10 @@ def kill_aberrations(focus_step=1.5, astig2f_step=1.5, astig3f_step=75.0, coma_s
                 small_counter+=1
                 vt.as2_set_control(controls[i], start+direction*small_counter*steps[i]*1e-9)
                 time.sleep(0.1)
-                next_frame = check_tuning(8, check_astig=True)[0]
+                next_frame = 0
+                for j in range(average_frames):
+                    next_frame += check_tuning(8, check_astig=True)[0]
+                next_frame /= average_frames
                 if 1/np.sum(next_frame) >= 1/np.sum(current) or len(next_frame) < len(current):
                     vt.as2_set_control(controls[i], start-direction*steps[i]*1e-9)
                     part_tunings.append(1/np.sum(current))
