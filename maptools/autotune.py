@@ -48,7 +48,7 @@ def check_intensities(imsize):
         return (1, 0)
     
     
-def kill_aberrations(focus_step=1.5, astig2f_step=1.5, astig3f_step=75.0, coma_step=100.0, average_frames=3):
+def kill_aberrations(focus_step=1.5, astig2f_step=1.5, astig3f_step=75.0, coma_step=100.0, average_frames=3, integration_radius=3):
     FrameParams = ss.SS_Functions_SS_GetFrameParams()
     total_tunings = []
     total_lens = []
@@ -56,7 +56,7 @@ def kill_aberrations(focus_step=1.5, astig2f_step=1.5, astig3f_step=75.0, coma_s
     controls = ['EHTFocus', 'C12.a', 'C12.b', 'C21.a', 'C21.b', 'C23.a', 'C23.b']
     steps = [focus_step, astig2f_step, astig2f_step, coma_step, coma_step, astig3f_step, astig3f_step]
     
-    #change rame parameters to values that are suited for automatic tuning
+    #change frame parameters to values that are suited for automatic tuning
     ss.SS_Functions_SS_SetFrameParams(512, 512, 0, 0, 4, 8, 0, False, True, False, False)
     while counter < 11:
         logging.info('Starting run number '+str(counter))
@@ -72,26 +72,27 @@ def kill_aberrations(focus_step=1.5, astig2f_step=1.5, astig3f_step=75.0, coma_s
         for i in range(len(controls)):
             logging.info('Working on: '+controls[i])
             start = vt.as2_get_control(controls[i])
-            current=0
-            for j in range(average_frames):
-                current += check_tuning(8, check_astig=True)[0]
-            current /= average_frames
+            try:
+                current = check_tuning(8, check_astig=True, average_frames=average_frames, integration_radius=integration_radius)[0]
+            except RuntimeError:
+                current = (1e-5,)
             if counter == 0 and i==0:
                 total_tunings.append(1/np.sum(current))
                 logging.info('Appending ' + str(1/np.sum(current)))
                 total_lens.append(len(current))
             vt.as2_set_control(controls[i], start+steps[i]*1e-9)
             time.sleep(0.1)
-            plus=0
-            for j in range(average_frames):
-                plus += check_tuning(8, check_astig=True)[0]
-            plus/=average_frames
+            try:            
+                plus = check_tuning(8, check_astig=True, average_frames=average_frames, integration_radius=integration_radius)[0]
+            except RuntimeError:
+                plus = (1e-5,)
             vt.as2_set_control(controls[i], start-steps[i]*1e-9)
             time.sleep(0.1)
-            minus=0
-            for j in range(average_frames):
-                minus = check_tuning(8, check_astig=True)[0]
-            minus/=average_frames
+            try:
+                minus = check_tuning(8, check_astig=True, average_frames=average_frames, integration_radius=integration_radius)[0]
+            except RuntimeError:
+                minus = (1e-5,)
+            
             if 1/np.sum(minus) < 1/np.sum(plus) and 1/np.sum(minus) < 1/np.sum(current) and len(minus) >= len(plus) and len(minus) >= len(current):
                 direction = -1
                 current = minus
@@ -108,12 +109,14 @@ def kill_aberrations(focus_step=1.5, astig2f_step=1.5, astig3f_step=75.0, coma_s
                 small_counter+=1
                 vt.as2_set_control(controls[i], start+direction*small_counter*steps[i]*1e-9)
                 time.sleep(0.1)
-                next_frame = 0
-                for j in range(average_frames):
-                    next_frame += check_tuning(8, check_astig=True)[0]
-                next_frame /= average_frames
+                try:
+                    next_frame = check_tuning(8, check_astig=True, average_frames=average_frames, integration_radius=integration_radius)[0]
+                except RuntimeError:
+                    vt.as2_set_control(controls[i], start+direction*(small_counter-1)*steps[i]*1e-9)
+                    break
+                
                 if 1/np.sum(next_frame) >= 1/np.sum(current) or len(next_frame) < len(current):
-                    vt.as2_set_control(controls[i], start-direction*steps[i]*1e-9)
+                    vt.as2_set_control(controls[i], start+direction*(small_counter-1)*steps[i]*1e-9)
                     part_tunings.append(1/np.sum(current))
                     part_lens.append(len(current))
                     break
@@ -122,13 +125,14 @@ def kill_aberrations(focus_step=1.5, astig2f_step=1.5, astig3f_step=75.0, coma_s
             if len(total_tunings) > 0:
                 if 1/np.sum(current) > np.amin(total_tunings) or len(current) < np.amax(total_lens):
                     vt.as2_set_control(controls[i], start)
-                    logging.info('Dismissed changes at '+controls[i])
+                    logging.info('Dismissed changes at '+ controls[i])
         
         if len(part_tunings) > 0:
             logging.info('Appending best value of this run to total_tunings: '+str(np.amin(part_tunings)))
             total_tunings.append(np.amin(part_tunings))
             total_lens.append(np.amax(part_lens))
         counter += 1
+        
     ss.SS_Functions_SS_SetFrameParams(FrameParams[0], FrameParams[1],FrameParams[2],FrameParams[3], FrameParams[4], FrameParams[5], FrameParams[6], FrameParams[7], FrameParams[8], FrameParams[9], FrameParams[10])
 
 
@@ -214,29 +218,35 @@ def image_grabber(defocus=0, astig=[0,0], im=None, start_def=0.0, start_astig=[0
         #return kernel
 
 
-def check_tuning(imsize, defocus=0, astig=[0,0], im=None, check_astig=False, save_images=False, process_image=True):
-    
-    def positive_angle(angle):
-                """
-                Calculates the angle between 0 and 2pi from an input angle between -pi and pi (all angles in rad)
-                """
-                if angle < 0:
-                    return angle  + 2*np.pi
-                else:
-                    return angle
-                    
-    if process_image:    
-        im = image_grabber(defocus=defocus, astig=astig, im=im)
-    peaks = find_peaks(im, imsize)
-    if peaks is not None:    
-        coordinates = np.zeros((len(peaks), 2))
-        intensities = np.zeros(len(peaks))
-        for i in range(len(peaks)):
-            coordinates[i,:] = np.array(peaks[i][0:2], dtype='int')
-            intensities[i] = peaks[i][3]
+def positive_angle(angle):
+    """
+    Calculates the angle between 0 and 2pi from an input angle between -pi and pi (all angles in rad)
+    """
+    if angle < 0:
+        return angle  + 2*np.pi
     else:
-        return 0
-        
+        return angle
+
+def check_tuning(imsize, defocus=0, astig=[0,0], im=None, check_astig=False, average_frames=0, integration_radius=0, save_images=False, process_image=True):
+
+    if (process_image and average_frames < 2) or im is None:
+        im = image_grabber(defocus=defocus, astig=astig, im=im)
+    if average_frames > 1:
+        im = []
+        for i in range(average_frames):
+            im.append(image_grabber(defocus=defocus, astig=astig))
+            
+    try:
+        peaks = find_peaks(im, imsize, integration_radius=integration_radius)
+    except RuntimeError as detail:
+        raise RuntimeError('Autotuning failed. Reason: '+ detail)
+    
+    coordinates = np.zeros((len(peaks), 2))
+    intensities = np.zeros(len(peaks))
+    for i in range(len(peaks)):
+        coordinates[i,:] = np.array(peaks[i][0:2], dtype='int')
+        intensities[i] = peaks[i][3]
+
     if check_astig:
         center = np.array(np.shape(im))/2
         if len(peaks) == 6:
@@ -393,7 +403,7 @@ def optimize_focus(imsize, im=None, start_stepsize=4, end_stepsize=1):
     return defocus
 
 
-def find_peaks(im, imsize, half_line_thickness = 5, position_tolerance = 5):
+def find_peaks(im, imsize, half_line_thickness=5, position_tolerance=5, integration_radius=0):
     """
         This function can find the 6 first-order peaks in the FFT of an atomic-resolution image of graphene.
         Input:
@@ -404,25 +414,28 @@ def find_peaks(im, imsize, half_line_thickness = 5, position_tolerance = 5):
                 If no peaks were found the return value will be None.
                 Note that the returned intesities might be smaller than that of the raw fft because of the processing done in the function.
     """
-    def gaussian2D(xdata, x0, y0, x_var, y_var, amplitude, offset):
-        x0, y0, x_var, y_var, amplitude, offset = float(x0), float(y0), float(x_var), float(y_var), float(amplitude), float(offset)
-        return (amplitude*np.exp( -( (xdata[1]-x0)**2/(2*x_var) + (xdata[0]-y0)**2/(2*y_var) ) ) + offset).ravel()    
+    def gaussian2D(xdata, x0, y0, x_std, y_std, amplitude, offset):
+        x0, y0, x_std, y_std, amplitude, offset = float(x0), float(y0), float(x_std), float(y_std), float(amplitude), float(offset)
+        return (amplitude*np.exp( -0.5*( ((xdata[1]-x0)/x_std)**2 + ((xdata[0]-y0)/y_std)**2 ) ) + offset).ravel()    
     
     fft = np.abs(np.fft.fftshift(np.fft.fft2(im)))
-    fft_raw = fft.copy()
     shape = np.shape(im)
+    #If more than one image are passed to find_peaks, compute average of their fft's before going on
+    if len(shape) > 2:
+        fft  = np.mean(fft, axis=0)
+        shape = shape[1:]
+    fft_raw = fft.copy()
     
     first_order = imsize/0.213
     #second_order = imsize/0.123
     
-    fft *= gaussian2D(np.mgrid[0:shape[0], 0:shape[1]], shape[1]/2, shape[0]/2, first_order, first_order, -1, 1).reshape(shape)
+    fft *= gaussian2D(np.mgrid[0:shape[0], 0:shape[1]], shape[1]/2, shape[0]/2, np.sqrt(first_order), np.sqrt(first_order), -1, 1).reshape(shape)
     
     #remove vertical and horizontal lines
     central_area = fft[shape[0]/2-half_line_thickness:shape[0]/2+half_line_thickness+1, shape[1]/2-half_line_thickness:shape[1]/2+half_line_thickness+1].copy()
     
     horizontal = fft[shape[0]/2-half_line_thickness:shape[0]/2+half_line_thickness+1, :]
     horizontal_popt, horizontal_pcov = scipy.optimize.curve_fit(gaussian2D, np.mgrid[0:2*half_line_thickness+1, 0:shape[0]],horizontal.ravel(), p0=(shape[1]/2, half_line_thickness, 1, 1, np.amax(horizontal),0))
-    
     vertical = fft[:,shape[1]/2-half_line_thickness:shape[1]/2+half_line_thickness+1]
     vertical_popt, vertical_pcov = scipy.optimize.curve_fit(gaussian2D, np.mgrid[0:shape[1], 0:2*half_line_thickness+1],vertical.ravel(), p0=(half_line_thickness, shape[0]/2, 1, 1, np.amax(vertical),0))
     
@@ -433,7 +446,7 @@ def find_peaks(im, imsize, half_line_thickness = 5, position_tolerance = 5):
     fft[:, shape[1]/2-half_line_thickness:shape[1]/2+half_line_thickness+1] *= np.mean(fft)
     
     
-    fft *= gaussian2D(np.mgrid[0:shape[0], 0:shape[1]], shape[1]/2, shape[0]/2, first_order*3.0, first_order*3.0, -1, 1).reshape(shape)
+    fft *= gaussian2D(np.mgrid[0:shape[0], 0:shape[1]], shape[1]/2, shape[0]/2, np.sqrt(first_order*5.0), np.sqrt(first_order*5.0), -1, 1).reshape(shape)
     
     #find peaks
     success = False
@@ -445,7 +458,7 @@ def find_peaks(im, imsize, half_line_thickness = 5, position_tolerance = 5):
     while success is False:
         counter += 1
         if counter > np.sqrt(shape[0]):
-            return None
+            raise RuntimeError('No peaks could be found in the FFT of im.')
         peaks = []
         first_peak = np.unravel_index(np.argmax(fft), shape)+(np.amax(fft), )
         #check if found peak is on cross
@@ -453,11 +466,11 @@ def find_peaks(im, imsize, half_line_thickness = 5, position_tolerance = 5):
 #            fft[first_peak[0]-position_tolerance:first_peak[0]+position_tolerance+1, first_peak[1]-position_tolerance:first_peak[1]+position_tolerance+1] = 0
         if first_peak[2] < mean_fft + 6.0*std_dev_fft:
             fft[first_peak[0]-position_tolerance:first_peak[0]+position_tolerance+1, first_peak[1]-position_tolerance:first_peak[1]+position_tolerance+1] = 0
-        elif np.sqrt(np.sum((np.array(first_peak[0:2])-center)**2)) < first_order/1.5 or np.sqrt(np.sum((np.array(first_peak[0:2])-center)**2)) > first_order*1.333:
+        elif np.sqrt(np.sum((np.array(first_peak[0:2])-center)**2)) < first_order*0.6667 or np.sqrt(np.sum((np.array(first_peak[0:2])-center)**2)) > first_order*1.333:
             fft[first_peak[0]-position_tolerance:first_peak[0]+position_tolerance+1, first_peak[1]-position_tolerance:first_peak[1]+position_tolerance+1] = 0
         else:
             try:            
-                peaks.append(first_peak+(fft_raw[first_peak[0:2]],))
+                peaks.append(first_peak+(np.sum(fft_raw[first_peak[0]-integration_radius:first_peak[0]+integration_radius+1, first_peak[1]-integration_radius:first_peak[1]+integration_radius+1]),))
                 
                 for i in range(1,6):
                     rotation_matrix = np.array( ( (np.cos(i*np.pi/3), -np.sin(i*np.pi/3)), (np.sin(i*np.pi/3), np.cos(i*np.pi/3)) ) )
@@ -467,7 +480,7 @@ def find_peaks(im, imsize, half_line_thickness = 5, position_tolerance = 5):
 #TODO: Find better criterion for deciding if peak at a position
                     if  max_next_peak > mean_fft + 4.0*std_dev_fft:#peaks[0][2]/4:
                         next_peak += np.array( np.unravel_index( np.argmax(area_next_peak), np.shape(area_next_peak) ) ) - position_tolerance
-                        peaks.append(tuple(next_peak)+(max_next_peak,fft_raw[tuple(next_peak)]))
+                        peaks.append(tuple(next_peak)+(max_next_peak,np.sum(fft_raw[next_peak[0]-integration_radius:next_peak[0]+integration_radius+1, next_peak[1]-integration_radius:next_peak[1]+integration_radius+1])))
                 
                 if len(peaks) > 1:
                     success = True

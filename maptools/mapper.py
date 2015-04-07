@@ -296,9 +296,9 @@ def SuperScan_mapping(coord_dict, filepath='Z:\\ScanMap\\', do_autofocus=False, 
     
     #create output folder:
     if os.name is 'posix':
-        store = filepath+'/map_'+time.strftime('%d_%m_%Y_%H_%M')+'/'
+        store = filepath+'/map_'+time.strftime('%Y_%m_%d_%H_%M')+'/'
     else:
-        store = filepath+'\\map_'+time.strftime('%d_%m_%Y_%H_%M')+'\\'
+        store = filepath+'\\map_'+time.strftime('%Y_%m_%d_%H_%M')+'\\'
     
     if not os.path.exists(store):
         os.makedirs(store)

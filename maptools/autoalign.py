@@ -13,6 +13,7 @@ import os
 import numpy as np
 import scipy.optimize
 import cv2
+import tifffile
 
 try:
     import ViennaTools.ViennaTools as vt
@@ -88,7 +89,63 @@ except:
 #    
 #    logging.info('Found rotation between x-axis of stage and scan to be: '+str(frame_rotation*180/np.pi))
 #    logging.info('Found that the stage moves %.2f times the image size when setting the moving distance to the image size.' % (frame_distance*2.0/impix))
+    
+def shift_fft(im1, im2, return_cps=False):
+    shape = np.shape(im1)
+    if shape != np.shape(im2):
+        raise ValueError('Input images must have the same shape')
+    fft1 = np.fft.fft2(im1)
+    fft2 = np.fft.fft2(im2)
+    translation = np.real(np.fft.ifft2((fft1*np.conjugate(fft2))/np.abs(fft1*fft2)))
+    if return_cps:
+        return translation
+    translation = cv2.GaussianBlur(translation, (0,0), 3)
+    if np.amax(translation) < 3.0*np.std(translation)+np.abs(np.amin(translation)):
+        return np.zeros(2)
+    transy, transx = np.unravel_index(np.argmax(translation), shape)
+    if transy > shape[0]/2:
+        transy -= shape[0]
+    if transx > shape[1]/2:
+        transx -= shape[1]
+    
+    return np.array((transy,transx))
 
+def align_fft(im1, im2):
+    """
+    Aligns im2 with respect to im1 using the result of shift_fft
+    Return value is im2 which is cropped at one edge and paddded with zeros at the other
+    """
+    shift = shift_fft(im1, im2)
+    shape = np.shape(im2)
+    result = np.zeros(shape)
+    if (shift >= 0).all():
+        result[shift[0]:, shift[1]:] = im2[0:shape[0]-shift[0], 0:shape[1]-shift[1]]
+    if (shift < 0).all():
+        result[0:shape[0]+shift[0], 0:shape[1]+shift[1]] = im2[-shift[0]:, -shift[1]:]
+    elif shift[0] < 0 and shift[1] >= 0:
+        result[0:shape[0]+shift[0], shift[1]:] = im2[-shift[0]:, 0:shape[1]-shift[1]]
+    elif shift[0] >= 0 and shift[1] < 0:
+        result[shift[0]:, 0:shape[1]+shift[1]] = im2[0:shape[0]-shift[0], -shift[1]:]
+    return result
+    
+def align_series_fft(dirname):
+    """
+    Aligns all images in dirname to the first image there and saves the results in a subfolder.
+    """
+    dirlist = os.listdir(dirname)
+    dirlist.sort()
+    im1 = cv2.imread(dirname+dirlist[0], -1)
+    savepath = dirname+'aligned/'
+    if not os.path.exists(savepath):
+        os.makedirs(savepath)
+        
+    tifffile.imsave(savepath+dirlist[0], np.asarray(im1, dtype=im1.dtype))
+    
+    for i in range(1, len(dirlist)):
+        if os.path.isfile(dirname+dirlist[i]):
+            im2 = cv2.imread(dirname+dirlist[i], -1)
+            tifffile.imsave(savepath+dirlist[i], np.asarray(align_fft(im1, im2), dtype=im1.dtype))
+    
 
 def correlation(im1, im2):
     """"Calculates the cross-correlation of two images im1 and im2. Images have to be numpy arrays."""
