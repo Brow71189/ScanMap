@@ -219,14 +219,14 @@ def SuperScan_mapping(coord_dict, filepath='Z:\\ScanMap\\', do_autofocus=False, 
         #Go first some distance into the opposite direction to reduce the influence of backlash in the mechanics on the calibration
         vt.as2_set_control('StageOutX', leftX-5.0*imsize)
         vt.as2_set_control('StageOutY', topY)
-        time.sleep(3)
+        time.sleep(4)
         #Goto point for first image and aquire it
         vt.as2_set_control('StageOutX', leftX)
         vt.as2_set_control('StageOutY', topY)
         if use_z_drive:
             vt.as2_set_control('StageOutZ', interpolation((leftX,  topY), coords)[0])
         vt.as2_set_control('EHTFocus', interpolation((leftX,  topY), coords)[1])
-        time.sleep(3)
+        time.sleep(4)
         frame_nr = ss.SS_Functions_SS_StartFrame(0)
         ss.SS_Functions_SS_WaitForEndOfFrame(frame_nr)
         im1 = np.asarray(ss.SS_Functions_SS_GetImageForFrame(frame_nr, 0))
@@ -235,21 +235,26 @@ def SuperScan_mapping(coord_dict, filepath='Z:\\ScanMap\\', do_autofocus=False, 
         if use_z_drive:
             vt.as2_set_control('StageOutZ', interpolation((leftX+imsize/2.0,  topY), coords)[0])
         vt.as2_set_control('EHTFocus', interpolation((leftX+imsize/2.0,  topY), coords)[1])
-        time.sleep(1)
+        time.sleep(2)
         frame_nr = ss.SS_Functions_SS_StartFrame(0)
         ss.SS_Functions_SS_WaitForEndOfFrame(frame_nr)
         im2 = np.asarray(ss.SS_Functions_SS_GetImageForFrame(frame_nr, 0))
         #find offset between the two images        
-        frame_rotation, frame_distance = autoalign.align(im1, im2)
-        #check if the correlation worked correctly and raise an error if not
-        if frame_rotation or frame_distance is None:
+        #frame_rotation, frame_distance = autoalign.rot_dist(im1, im2)
+        try:
+            frame_rotation, frame_distance = autoalign.rot_dist_fft(im1, im2)
+        except RuntimeError:
             logging.error('Could not find offset and/or rotation automatically. Please disable these two options and set values manually.')
-            raise RuntimeError('Could not find offset and/or rotation automatically. Please disable these two options and set values manually.')
+            raise
+        #check if the correlation worked correctly and raise an error if not
+#        if frame_rotation or frame_distance is None:
+#            logging.error('Could not find offset and/or rotation automatically. Please disable these two options and set values manually.')
+#            raise RuntimeError('Could not find offset and/or rotation automatically. Please disable these two options and set values manually.')
         
         logging.info('Found rotation between x-axis of stage and scan to be: '+str(frame_rotation*180/np.pi))
         logging.info('Found that the stage moves %.2f times the image size when setting the moving distance to the image size.' % (frame_distance*2.0/impix))
         if auto_offset:
-            offset = impix/frame_distance*2.0 - 1.0
+            offset = impix/(frame_distance*2.0) - 1.0
         if auto_rotation:
             rotation = -frame_rotation
         

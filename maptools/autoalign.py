@@ -101,7 +101,8 @@ def shift_fft(im1, im2, return_cps=False):
         return translation
     translation = cv2.GaussianBlur(translation, (0,0), 3)
     if np.amax(translation) < 3.0*np.std(translation)+np.abs(np.amin(translation)):
-        return np.zeros(2)
+        #return np.zeros(2)
+        raise RuntimeError('Could not determine any match between the input images.')
     transy, transx = np.unravel_index(np.argmax(translation), shape)
     if transy > shape[0]/2:
         transy -= shape[0]
@@ -109,6 +110,17 @@ def shift_fft(im1, im2, return_cps=False):
         transx -= shape[1]
     
     return np.array((transy,transx))
+
+def rot_dist_fft(im1, im2):
+    try:
+        shift_vector = shift_fft(im1, im2)
+    except RuntimeError:
+        raise
+    rotation = np.arctan2(-shift_vector[0], shift_vector[1])*180.0/np.pi
+    distance = np.sqrt(np.dot(shift_vector,shift_vector))
+    
+    return (rotation, distance)
+    
 
 def align_fft(im1, im2):
     """
@@ -152,7 +164,7 @@ def correlation(im1, im2):
     return np.sum( (im1-np.mean(im1)) * (im2-np.mean(im2)) / ( np.std(im1) * np.std(im2) ) ) / np.prod(np.shape(im1))
 
 def translated_correlation(translation, im1, im2):
-    """Returns the correct correlation between two images. Im2 is moved with respect to im1 by the vector translation"""
+    """Returns the correct correlation between two images. Im2 is moved with respect to im1 by the vector 'translation'"""
     shape = np.shape(im1)
     translation = np.array(np.round(translation), dtype='int')
     if (translation >= shape).any():
@@ -188,7 +200,7 @@ def find_shift(im1, im2, ratio=0.1):
     res = scipy.optimize.minimize(translated_correlation, start_value, method='Nelder-Mead', args=(im1,im2))
     return (res.x, -res.fun)
 
-def align(im1, im2, ratio=None):
+def rot_dist(im1, im2, ratio=None):
     if ratio is not None:
         res = find_shift(im1, im2, ratio=ratio)
     else:

@@ -138,8 +138,7 @@ class ScanMap(Panel.Panel):
         Time_line_edit.on_editing_finished = Time_finished
         edit_row2.add(Time_line_edit)
         
-        edit_row2.add_stretch()
-        
+        edit_row2.add_stretch()        
 
         bottom_button_row = ui.create_row_widget()
         top_button_row = ui.create_row_widget()
@@ -166,6 +165,11 @@ class ScanMap(Panel.Panel):
         descriptor_row.add(ui.create_label_widget(_("Save Coordinates")))
         descriptor_row.add_spacing(12)
         descriptor_row.add(ui.create_label_widget(_("Goto Coordinates")))
+        
+        dropdown_row = ui.create_row_widget()
+        dropdown_list = ui.create_new_list_widget(_("Autofocus Pattern"))
+#        dropdown_list.insert_item("testing", 1)
+        dropdown_row.add(dropdown_list)
         
 
         def tl_button_clicked():
@@ -229,10 +233,10 @@ class ScanMap(Panel.Panel):
             logging.info('Size: ' + str(Size)+' px')
             logging.info('Time: ' + str(Time)+' us')
             
-            try:
-                reload(vt)
-            except:
-                logging.warn('Couldn\'t reload ViennaTools!')
+#            try:
+#                reload(vt)
+#            except:
+#                logging.warn('Couldn\'t reload ViennaTools!')
             
             try:
                 reload(mapper)
@@ -316,6 +320,8 @@ class ScanMap(Panel.Panel):
         column.add(top_button_row)
         column.add_spacing(8)
         column.add(checkbox_row)
+        column.add_spacing(8)
+        column.add(dropdown_row)
         column.add_spacing(8)
         column.add(done_button_row) 
         column.add_stretch()

@@ -175,12 +175,31 @@ def autofocus(imsize=None, image=None, start_stepsize=4, end_stepsize=1, positio
 
 
 #generates the defocused, noisy image
-def image_grabber(defocus=0, astig=[0,0], im=None, start_def=0.0, start_astig=[0,0], imsize=1.0):
+def image_grabber(**kwargs):#, defocus=0, astig=[0,0], im=None, start_def=0.0, start_astig=[0,0], imsize=1.0):
+    """
+    kwargs can be all possible parameters for this function.
+    These are all lens aberrations up to threefold astigmatism. If an image is given, the function will simulate aberrations to this image and add poisson noise to it.
+    If not, an image with the current frame parameters and the respective corrector parameters given in kwargs is taken. To properly simulate aberrations the image size 
+    of the input image in nm is requred.
     
-    if im is None:
+    Possible Parameters are:
+    
+    lens aberrations: EHTFocus, C12_a, C12_b, C21_a, C21_b, C23_a,  C23_b (in nm)
+    image (as numpy array)
+    imsize (in nm)
+    
+    Example call of image_grabber:
+    
+    result = image_grabber(EHTFocus=1, C12_a=0.5, image=graphene_lattice, imsize=10)
+    
+    Note that the Poisson noise is added modulatory, e.g. each pixel value is replaced by a random number from a Poisson distribution that has the original pixel value as
+    its mean. That means you can control the noise level by changing the mean intensity in your image.
+    """
+    
+    if not kwargs.has_key('image'):
         current_focus = vt.as2_get_control('EHTFocus')
-        defocus *= 1.0e-9
-        vt.as2_set_control('EHTFocus', current_focus+defocus)
+        #defocus *= 1.0e-9
+        #vt.as2_set_control('EHTFocus', current_focus+defocus)
         time.sleep(0.1)
         frame_nr = ss.SS_Functions_SS_StartFrame(0)
         ss.SS_Functions_SS_WaitForEndOfFrame(frame_nr)
@@ -188,25 +207,56 @@ def image_grabber(defocus=0, astig=[0,0], im=None, start_def=0.0, start_astig=[0
         vt.as2_set_control('EHTFocus', current_focus)
         return im
     else:
-        defocus -= start_def
+        if not kwargs.has_key('imsize'):
+            raise KeyError('You din\'t enter a image size for your input image. The parameter has to be called \'imsize\'.')
+        else:
+            imsize = kwargs['imsize']
+        im = kwargs['image']
+        #defocus -= start_def
         shape = np.shape(im)
-        astig = np.array(astig)
-        start_astig = np.array(start_astig)
-        astig -= start_astig
+        #astig = np.array(astig)
+        #start_astig = np.array(start_astig)
+        #astig -= start_astig
         
-        if defocus == 0 and (astig == 0).all():
-            im = np.random.poisson(lam=im.flatten(), size=np.size(im))
-            return im.reshape(shape)
+#        if defocus == 0 and (astig == 0).all():
+#            im = np.random.poisson(lam=im.flatten(), size=np.size(im))
+#            return im.reshape(shape)
             
         #fft = np.fft.fftshift(np.fft.fft2(im))
         kernelsize = np.around((np.array(shape)/2.0)-0.5, 1)
         y,x = np.mgrid[-kernelsize[0]:kernelsize[0]+1.0, -kernelsize[1]:kernelsize[1]+1.0]/imsize#/(kernelsize[0])
-        #compute aberration function up to twofold astigmatism
-        raw_kernel = -np.pi*defocus*4.9e-3*(x**2+y**2) + np.pi*np.sum(np.power(astig,2))*4.9e-3*(x**2+y**2)*np.cos(2*(np.arctan2(y,x)-np.arctan2(astig[1], astig[0])) )
-        #raw_kernel = 1+np.sqrt(3)*(2*(x**2+y**2)-1)/defocus + np.sqrt(6)*np.sum(np.power(astig, 2))*(x**2+y**2)*np.cos(2*(np.arctan2(y,x)-np.arctan2(astig[1], astig[0])))
-        kernel = np.cos(raw_kernel)+1j*np.sin(raw_kernel)
+        
+        raw_kernel = 0
+        #EHTFocus = C12_a = C12_b = C21_a = C21_b = C23_a = C23_b = 0
+        keys = ['EHTFocus', 'C12_a', 'C12_b', 'C21_a', 'C21_b', 'C23_a', 'C23_b']
+        start_keys = ['start_EHTFocus', 'start_C12_a', 'start_C12_b', 'start_C21_a', 'start_C21_b', 'start_C23_a', 'start_C23_b']
+        aberrations = np.zeros(len(keys))
+        
+        for i in range(len(keys)):            
+            if kwargs.has_key(keys[i]):
+                aberrations[i] = kwargs[keys[i]]
+                if kwargs.has_key(start_keys[i]):
+                    aberrations[i] -= kwargs[start_keys[i]]
+        #print(kwargs)
+        #print(aberrations)
+        #compute aberration function up to threefold astigmatism
+        #formula taken from "Advanced Computing in Electron Microscopy", Earl J. Kirkland, 2nd edition, 2010, p. 18
+        #wavelength for 60 keV electrons: 4.87e-3 nm
+        #first line: defocus and twofold astigmatism
+        #second line: coma
+        #third line: threefold astigmatism
+        raw_kernel = np.pi*4.87e-3*(-aberrations[0]*(x**2+y**2) + np.sqrt(aberrations[1]**2+aberrations[2]**2)*(x**2+y**2)*np.cos(2*(np.arctan2(y,x)-np.arctan2(aberrations[2], aberrations[1]))) \
+            + (2.0/3.0)*np.sqrt(aberrations[3]**2+aberrations[4]**2)*4.87e-3*np.sqrt(x**2+y**2)**3*np.cos(np.arctan2(y,x)-np.arctan2(aberrations[4], aberrations[3])) \
+            + (2.0/3.0)*np.sqrt(aberrations[5]**2+aberrations[6]**2)*4.87e-3*np.sqrt(x**2+y**2)**3*np.cos(3*(np.arctan2(y,x)-np.arctan2(aberrations[6], aberrations[5]))))
+        #raw_kernel = -np.pi*defocus*4.87e-3*(x**2+y**2) + np.pi*np.sum(np.power(astig,2))*4.87e-3*(x**2+y**2)*np.cos(2*(np.arctan2(y,x)-np.arctan2(astig[1], astig[0])) )
+        #scale = 1.0/np.sqrt(shape[0]*shape[1])
+        scale=1.0
+        kernel = np.cos(raw_kernel)*scale+1j*np.sin(raw_kernel)*(-scale)
         #kernel = np.exp(-np.sign(defocus)*raw_kernel)
-        kernel *= np.exp(-(x**2+y**2)/(2*kernelsize[0]))
+        aperture = np.zeros(kernel.shape)
+        cv2.circle(aperture, tuple(np.array(kernel.shape, dtype='int')/2), int(kernelsize[0]/3.0), 1.0, thickness=-1)
+        kernel *= aperture
+        #kernel *= np.exp(-(x**2+y**2)/(1*kernelsize[0]))
         kernel = np.abs(np.fft.fftshift(np.fft.ifft2(kernel)))**2
         kernel /= np.sum(kernel)
         im = cv2.filter2D(im, -1, kernel)
@@ -215,6 +265,7 @@ def image_grabber(defocus=0, astig=[0,0], im=None, start_def=0.0, start_astig=[0
         #im = np.abs(np.real(np.fft.ifft2(np.fft.fftshift(fft))))
         im = np.random.poisson(lam=im.flatten(), size=np.size(im))
         return im.reshape(shape)
+        #return im
         #return kernel
 
 
