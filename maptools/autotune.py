@@ -48,48 +48,66 @@ def check_intensities(imsize):
         return (1, 0)
     
     
-def kill_aberrations(focus_step=1.5, astig2f_step=1.5, astig3f_step=75.0, coma_step=100.0, average_frames=3, integration_radius=3):
-    FrameParams = ss.SS_Functions_SS_GetFrameParams()
+def kill_aberrations(focus_step=1.5, astig2f_step=1.5, astig3f_step=75.0, coma_step=100.0, average_frames=3, integration_radius=3, image=None, imsize=None):
+    try:    
+        FrameParams = ss.SS_Functions_SS_GetFrameParams()
+    except:
+        pass
     total_tunings = []
     total_lens = []
     counter = 0
-    controls = ['EHTFocus', 'C12.a', 'C12.b', 'C21.a', 'C21.b', 'C23.a', 'C23.b']
+    #controls = ['EHTFocus', 'C12.a', 'C12.b', 'C21.a', 'C21.b', 'C23.a', 'C23.b']
+    keys = ['EHTFocus', 'C12_a', 'C12_b', 'C21_a', 'C21_b', 'C23_a', 'C23_b']
+    kwargs = {'EHTFocus': 0.0, 'C12_a': 0.0, 'C12_b': 0.0, 'C21_a': 0.0, 'C21_b': 0.0, 'C23_a': 0.0, 'C23_b': 0.0, 'relative_aberrations': True, 'reset_aberrations': True, 'start_C23_a': 40, 'start_C21_b': 60, 'start_C12_a': 2}
+    #total_changes = {'EHTFocus': 0.0, 'C12_a': 0.0, 'C12_b': 0.0, 'C21_a': 0.0, 'C21_b': 0.0, 'C23_a': 0.0, 'C23_b': 0.0}
+    if image is not None and imsize is not None:
+        kwargs['image'] = image
+        kwargs['imsize'] = imsize
     steps = [focus_step, astig2f_step, astig2f_step, coma_step, coma_step, astig3f_step, astig3f_step]
     
     #change frame parameters to values that are suited for automatic tuning
-    ss.SS_Functions_SS_SetFrameParams(512, 512, 0, 0, 4, 8, 0, False, True, False, False)
+    try:
+        ss.SS_Functions_SS_SetFrameParams(512, 512, 0, 0, 4, 8, 0, False, True, False, False)
+    except:
+        pass
+    
     while counter < 11:
         logging.info('Starting run number '+str(counter))
         if len(total_tunings) > 2:
             if total_tunings[-2]-total_tunings[-1] < 0.2*(total_tunings[-3]-total_tunings[-2]):
                 logging.info('Finished tuning.')
-                return
+                return kwargs
         if len(total_tunings) > 1:        
             logging.info('Improved tuning by '+str(total_tunings[-2]-total_tunings[-1]))
         part_tunings = []
         part_lens = []
         
-        for i in range(len(controls)):
-            logging.info('Working on: '+controls[i])
-            start = vt.as2_get_control(controls[i])
+        for i in range(len(keys)):
+            logging.info('Working on: '+keys[i])
+            #start = vt.as2_get_control(controls[i])
+            changes = 0.0
             try:
-                current = check_tuning(8, check_astig=True, average_frames=average_frames, integration_radius=integration_radius)[0]
+                current = check_tuning(8, check_astig=True, average_frames=average_frames, integration_radius=integration_radius, **kwargs)[0]
             except RuntimeError:
                 current = (1e-5,)
             if counter == 0 and i==0:
                 total_tunings.append(1/np.sum(current))
                 logging.info('Appending ' + str(1/np.sum(current)))
                 total_lens.append(len(current))
-            vt.as2_set_control(controls[i], start+steps[i]*1e-9)
-            time.sleep(0.1)
+            #vt.as2_set_control(controls[i], start+steps[i]*1e-9)
+            #time.sleep(0.1)
+            kwargs[keys[i]] += steps[i]
+            changes += steps[i]
             try:            
-                plus = check_tuning(8, check_astig=True, average_frames=average_frames, integration_radius=integration_radius)[0]
+                plus = check_tuning(8, check_astig=True, average_frames=average_frames, integration_radius=integration_radius, **kwargs)[0]
             except RuntimeError:
                 plus = (1e-5,)
-            vt.as2_set_control(controls[i], start-steps[i]*1e-9)
-            time.sleep(0.1)
+            #vt.as2_set_control(controls[i], start-steps[i]*1e-9)
+            #time.sleep(0.1)
+            kwargs[keys[i]] += -2.0*steps[i]
+            changes += -2.0*steps[i]
             try:
-                minus = check_tuning(8, check_astig=True, average_frames=average_frames, integration_radius=integration_radius)[0]
+                minus = check_tuning(8, check_astig=True, average_frames=average_frames, integration_radius=integration_radius, **kwargs)[0]
             except RuntimeError:
                 minus = (1e-5,)
             
@@ -99,24 +117,32 @@ def kill_aberrations(focus_step=1.5, astig2f_step=1.5, astig3f_step=75.0, coma_s
             elif 1/np.sum(plus) < 1/np.sum(minus) and 1/np.sum(plus) < 1/np.sum(current) and len(plus) >= len(minus) and len(plus) >= len(current):
                 direction = 1
                 current = plus
+                #Setting aberrations to values of 'plus' which where the best so far
+                kwargs[keys[i]] += 2.0*steps[i]
+                changes += 2.0*steps[i]
             else:
-                vt.as2_set_control(controls[i], start)
-                logging.info('Could not find a direction to improve '+controls[i]+'. Going to next aberration.')
+                kwargs[keys[i]] -= changes
+                logging.info('Could not find a direction to improve '+keys[i]+'. Going to next aberration.')
                 continue
             
             small_counter = 1
             while True:
                 small_counter+=1
-                vt.as2_set_control(controls[i], start+direction*small_counter*steps[i]*1e-9)
-                time.sleep(0.1)
+                #vt.as2_set_control(controls[i], start+direction*small_counter*steps[i]*1e-9)
+                #time.sleep(0.1)
+                kwargs[keys[i]] += direction*steps[i]
+                changes += direction*steps[i]
                 try:
-                    next_frame = check_tuning(8, check_astig=True, average_frames=average_frames, integration_radius=integration_radius)[0]
+                    next_frame = check_tuning(8, check_astig=True, average_frames=average_frames, integration_radius=integration_radius, **kwargs)[0]
                 except RuntimeError:
-                    vt.as2_set_control(controls[i], start+direction*(small_counter-1)*steps[i]*1e-9)
+                    #vt.as2_set_control(controls[i], start+direction*(small_counter-1)*steps[i]*1e-9)
+                    
                     break
                 
                 if 1/np.sum(next_frame) >= 1/np.sum(current) or len(next_frame) < len(current):
-                    vt.as2_set_control(controls[i], start+direction*(small_counter-1)*steps[i]*1e-9)
+                    #vt.as2_set_control(controls[i], start+direction*(small_counter-1)*steps[i]*1e-9)
+                    kwargs[keys[i]] -= direction*steps[i]
+                    changes -= direction*steps[i]
                     part_tunings.append(1/np.sum(current))
                     part_lens.append(len(current))
                     break
@@ -124,16 +150,21 @@ def kill_aberrations(focus_step=1.5, astig2f_step=1.5, astig3f_step=75.0, coma_s
             #only keep changes if they improve the overall tuning
             if len(total_tunings) > 0:
                 if 1/np.sum(current) > np.amin(total_tunings) or len(current) < np.amax(total_lens):
-                    vt.as2_set_control(controls[i], start)
-                    logging.info('Dismissed changes at '+ controls[i])
+                    #vt.as2_set_control(controls[i], start)
+                    kwargs[keys[i]] -= changes
+                    logging.info('Dismissed changes at '+ keys[i])
         
         if len(part_tunings) > 0:
             logging.info('Appending best value of this run to total_tunings: '+str(np.amin(part_tunings)))
             total_tunings.append(np.amin(part_tunings))
             total_lens.append(np.amax(part_lens))
         counter += 1
-        
-    ss.SS_Functions_SS_SetFrameParams(FrameParams[0], FrameParams[1],FrameParams[2],FrameParams[3], FrameParams[4], FrameParams[5], FrameParams[6], FrameParams[7], FrameParams[8], FrameParams[9], FrameParams[10])
+    try:
+        ss.SS_Functions_SS_SetFrameParams(FrameParams[0], FrameParams[1],FrameParams[2],FrameParams[3], FrameParams[4], FrameParams[5], FrameParams[6], FrameParams[7], FrameParams[8], FrameParams[9], FrameParams[10])
+    except:
+        pass
+    
+    return kwargs
 
 
 def autofocus(imsize=None, image=None, start_stepsize=4, end_stepsize=1, position_tolerance=1,start_def=None):
@@ -187,6 +218,14 @@ def image_grabber(**kwargs):#, defocus=0, astig=[0,0], im=None, start_def=0.0, s
     lens aberrations: EHTFocus, C12_a, C12_b, C21_a, C21_b, C23_a,  C23_b (in nm)
     image (as numpy array)
     imsize (in nm)
+    relative_aberrations: True/False
+    reset_aberrations: True/False
+    
+    If 'relative_aberrations' is included and set to True, image_grabber will get the current value for each control first and add the given value for the respective aberration
+    to the current value. Otherwise, each aberration in kwargs is just set to the value given there.
+    
+    If 'reset_aberrations' is included and set to True, image_grabber will set each aberration back to its original value after acquiring an image. This is a good choice if
+    you want to try new values for the aberration correctors bur are not sure you want to keep them.
     
     Example call of image_grabber:
     
@@ -195,16 +234,28 @@ def image_grabber(**kwargs):#, defocus=0, astig=[0,0], im=None, start_def=0.0, s
     Note that the Poisson noise is added modulatory, e.g. each pixel value is replaced by a random number from a Poisson distribution that has the original pixel value as
     its mean. That means you can control the noise level by changing the mean intensity in your image.
     """
-    
+    keys = ['EHTFocus', 'C12_a', 'C12_b', 'C21_a', 'C21_b', 'C23_a', 'C23_b']
+    controls = ['EHTFocus', 'C12.a', 'C12.b', 'C21.a', 'C21.b', 'C23.a', 'C23.b']
+    originals = {}
+    #print(kwargs)
     if not kwargs.has_key('image'):
-        current_focus = vt.as2_get_control('EHTFocus')
-        #defocus *= 1.0e-9
-        #vt.as2_set_control('EHTFocus', current_focus+defocus)
+        for i in range(len(keys)):
+            if kwargs.has_key(keys[i]):
+                offset=0.0
+                if kwargs.has_key('reset_aberrations'):
+                    if kwargs['reset_aberrations']:
+                        originals[controls[i]] = vt.as2_get_control(controls[i])
+                if kwargs.has_key('relative_aberrations'):
+                    if kwargs['relative_aberrations']:
+                        offset = vt.as2_get_control(controls[i])
+                vt.as2_set_control(controls[i], offset+kwargs[keys[i]]*1e-9)
         time.sleep(0.1)
         frame_nr = ss.SS_Functions_SS_StartFrame(0)
         ss.SS_Functions_SS_WaitForEndOfFrame(frame_nr)
         im = np.asarray(ss.SS_Functions_SS_GetImageForFrame(frame_nr, 0))
-        vt.as2_set_control('EHTFocus', current_focus)
+        if len(originals) > 0:
+            for key in originals.keys():
+                vt.as2_set_control(key, originals[key])
         return im
     else:
         if not kwargs.has_key('imsize'):
@@ -278,19 +329,22 @@ def positive_angle(angle):
     else:
         return angle
 
-def check_tuning(imsize, defocus=0, astig=[0,0], im=None, check_astig=False, average_frames=0, integration_radius=0, save_images=False, process_image=True):
-
+def check_tuning(imagesize, im=None, check_astig=False, average_frames=0, integration_radius=0, save_images=False, process_image=True, **kwargs):
+    if not kwargs.has_key('imsize'):
+        kwargs['imsize'] = imagesize
     if (process_image and average_frames < 2) or im is None:
-        im = image_grabber(defocus=defocus, astig=astig, im=im)
+        if im is not None and not kwargs.has_key('image'):
+            kwargs['image'] = im
+        im = image_grabber(**kwargs)
     if average_frames > 1:
         im = []
         for i in range(average_frames):
-            im.append(image_grabber(defocus=defocus, astig=astig))
+            im.append(image_grabber(**kwargs))
             
     try:
-        peaks = find_peaks(im, imsize, integration_radius=integration_radius)
+        peaks = find_peaks(im, imagesize, integration_radius=integration_radius)
     except RuntimeError as detail:
-        raise RuntimeError('Autotuning failed. Reason: '+ detail)
+        raise RuntimeError('Tuning check failed. Reason: '+ str(detail))
     
     coordinates = np.zeros((len(peaks), 2))
     intensities = np.zeros(len(peaks))
