@@ -8,6 +8,7 @@ Created on Thu Mar 12 16:54:54 2015
 import logging
 import time
 import os
+from multiprocessing import Pool
 
 import numpy as np
 import scipy.optimize
@@ -48,7 +49,7 @@ def check_intensities(imsize):
         return (1, 0)
     
     
-def kill_aberrations(focus_step=1.5, astig2f_step=1.5, astig3f_step=75.0, coma_step=100.0, average_frames=3, integration_radius=3, image=None, imsize=None):
+def kill_aberrations(focus_step=1.5, astig2f_step=1.5, astig3f_step=20.0, coma_step=20.0, average_frames=3, integration_radius=3, image=None, imsize=None, only_focus=False):
     try:    
         FrameParams = ss.SS_Functions_SS_GetFrameParams()
     except:
@@ -56,9 +57,20 @@ def kill_aberrations(focus_step=1.5, astig2f_step=1.5, astig3f_step=75.0, coma_s
     total_tunings = []
     total_lens = []
     counter = 0
+    multiprocessing=False
+    if average_frames > 1:
+        try:
+            pool=Pool(average_frames)
+            multiprocessing=True
+        except:
+            pass
     #controls = ['EHTFocus', 'C12.a', 'C12.b', 'C21.a', 'C21.b', 'C23.a', 'C23.b']
-    keys = ['EHTFocus', 'C12_a', 'C12_b', 'C21_a', 'C21_b', 'C23_a', 'C23_b']
-    kwargs = {'EHTFocus': 0.0, 'C12_a': 0.0, 'C12_b': 0.0, 'C21_a': 0.0, 'C21_b': 0.0, 'C23_a': 0.0, 'C23_b': 0.0, 'relative_aberrations': True, 'reset_aberrations': True, 'start_C23_a': 40, 'start_C21_b': 60, 'start_C12_a': 2}
+    if only_focus:
+        keys = ['EHTFocus']
+    else:        
+        keys = ['EHTFocus', 'C12_a', 'C12_b', 'C21_a', 'C21_b', 'C23_a', 'C23_b']
+    #kwargs = {'EHTFocus': 0.0, 'C12_a': 0.0, 'C12_b': 0.0, 'C21_a': 0.0, 'C21_b': 0.0, 'C23_a': 0.0, 'C23_b': 0.0, 'relative_aberrations': True, 'reset_aberrations': True, 'start_C23_a': 40, 'start_C21_b': 60, 'start_C12_a': 2}
+    kwargs = {'EHTFocus': 3.0, 'C12_a': 0.5, 'C12_b': 0.5, 'C21_a': 0, 'C21_b': 70.0, 'C23_a': 50.0, 'C23_b': -15.0, 'relative_aberrations': True, 'reset_aberrations': True}
     #total_changes = {'EHTFocus': 0.0, 'C12_a': 0.0, 'C12_b': 0.0, 'C21_a': 0.0, 'C21_b': 0.0, 'C23_a': 0.0, 'C23_b': 0.0}
     if image is not None and imsize is not None:
         kwargs['image'] = image
@@ -67,18 +79,26 @@ def kill_aberrations(focus_step=1.5, astig2f_step=1.5, astig3f_step=75.0, coma_s
     
     #change frame parameters to values that are suited for automatic tuning
     try:
-        ss.SS_Functions_SS_SetFrameParams(512, 512, 0, 0, 4, 8, 0, False, True, False, False)
+        ss.SS_Functions_SS_SetFrameParams(512, 512, 0, 0, 2, 8, 0, False, True, False, False)
     except:
         pass
     
     while counter < 11:
-        logging.info('Starting run number '+str(counter))
-        if len(total_tunings) > 2:
-            if total_tunings[-2]-total_tunings[-1] < 0.2*(total_tunings[-3]-total_tunings[-2]):
-                logging.info('Finished tuning.')
-                return kwargs
+        start_time = time.time()
+        
         if len(total_tunings) > 1:        
             logging.info('Improved tuning by '+str(total_tunings[-2]-total_tunings[-1]))
+
+        if len(total_tunings) > 2:
+            if total_tunings[-2]-total_tunings[-1] < 0.25*(total_tunings[-3]-total_tunings[-2]):
+                logging.info('Finished tuning.')
+                break
+            
+        if counter > 1 and len(total_tunings) < 3:
+            logging.info('Finished tuning because no changes were detected anymore.')
+            break
+        
+        logging.info('Starting run number '+str(counter+1))
         part_tunings = []
         part_lens = []
         
@@ -87,19 +107,19 @@ def kill_aberrations(focus_step=1.5, astig2f_step=1.5, astig3f_step=75.0, coma_s
             #start = vt.as2_get_control(controls[i])
             changes = 0.0
             try:
-                current = check_tuning(8, check_astig=True, average_frames=average_frames, integration_radius=integration_radius, **kwargs)[0]
+                current = check_tuning(8, check_astig=True, average_frames=average_frames, integration_radius=integration_radius, pool=pool, multiprocessing=multiprocessing, **kwargs)[0]
             except RuntimeError:
                 current = (1e-5,)
             if counter == 0 and i==0:
                 total_tunings.append(1/np.sum(current))
-                logging.info('Appending ' + str(1/np.sum(current)))
+                logging.info('Appending start value: ' + str(1/np.sum(current)))
                 total_lens.append(len(current))
             #vt.as2_set_control(controls[i], start+steps[i]*1e-9)
             #time.sleep(0.1)
             kwargs[keys[i]] += steps[i]
             changes += steps[i]
             try:            
-                plus = check_tuning(8, check_astig=True, average_frames=average_frames, integration_radius=integration_radius, **kwargs)[0]
+                plus = check_tuning(8, check_astig=True, average_frames=average_frames, integration_radius=integration_radius, pool=pool, multiprocessing=multiprocessing, **kwargs)[0]
             except RuntimeError:
                 plus = (1e-5,)
             #vt.as2_set_control(controls[i], start-steps[i]*1e-9)
@@ -107,7 +127,7 @@ def kill_aberrations(focus_step=1.5, astig2f_step=1.5, astig3f_step=75.0, coma_s
             kwargs[keys[i]] += -2.0*steps[i]
             changes += -2.0*steps[i]
             try:
-                minus = check_tuning(8, check_astig=True, average_frames=average_frames, integration_radius=integration_radius, **kwargs)[0]
+                minus = check_tuning(8, check_astig=True, average_frames=average_frames, integration_radius=integration_radius, pool=pool, multiprocessing=multiprocessing, **kwargs)[0]
             except RuntimeError:
                 minus = (1e-5,)
             
@@ -133,7 +153,7 @@ def kill_aberrations(focus_step=1.5, astig2f_step=1.5, astig3f_step=75.0, coma_s
                 kwargs[keys[i]] += direction*steps[i]
                 changes += direction*steps[i]
                 try:
-                    next_frame = check_tuning(8, check_astig=True, average_frames=average_frames, integration_radius=integration_radius, **kwargs)[0]
+                    next_frame = check_tuning(8, check_astig=True, average_frames=average_frames, integration_radius=integration_radius, pool=pool, multiprocessing=multiprocessing, **kwargs)[0]
                 except RuntimeError:
                     #vt.as2_set_control(controls[i], start+direction*(small_counter-1)*steps[i]*1e-9)
                     
@@ -158,17 +178,27 @@ def kill_aberrations(focus_step=1.5, astig2f_step=1.5, astig3f_step=75.0, coma_s
             logging.info('Appending best value of this run to total_tunings: '+str(np.amin(part_tunings)))
             total_tunings.append(np.amin(part_tunings))
             total_lens.append(np.amax(part_lens))
+        logging.info('Finished run number '+str(counter+1)+' in '+str(time.time()-start_time)+' s.')
         counter += 1
+        
     try:
         ss.SS_Functions_SS_SetFrameParams(FrameParams[0], FrameParams[1],FrameParams[2],FrameParams[3], FrameParams[4], FrameParams[5], FrameParams[6], FrameParams[7], FrameParams[8], FrameParams[9], FrameParams[10])
     except:
-        pass
+        logging.warn('Couldn\'t reset frame parameters to previous values.')
     
+    try:
+        pool.close()
+        pool.join()
+        pool.terminate()
+    except:
+        pass
     return kwargs
 
 
 def autofocus(imsize=None, image=None, start_stepsize=4, end_stepsize=1, position_tolerance=1,start_def=None):
     """
+    Outdated, use kill_aberations(only_focus=True) instead if possible.
+    
     Tries to find the correct focus in an atomically resolved STEM image of graphene.
     The focus is optimized by maximizing the intensity of the 6 first-order peaks in the FFT
     
@@ -258,10 +288,10 @@ def image_grabber(**kwargs):#, defocus=0, astig=[0,0], im=None, start_def=0.0, s
                 vt.as2_set_control(key, originals[key])
         return im
     else:
-        if not kwargs.has_key('imsize'):
-            raise KeyError('You din\'t enter a image size for your input image. The parameter has to be called \'imsize\'.')
-        else:
-            imsize = kwargs['imsize']
+#        if not kwargs.has_key('imsize'):
+#            raise KeyError('You din\'t enter a image size for your input image. The parameter has to be called \'imsize\'.')
+#        else:
+#            imsize = kwargs['imsize']
         im = kwargs['image']
         #defocus -= start_def
         shape = np.shape(im)
@@ -274,8 +304,10 @@ def image_grabber(**kwargs):#, defocus=0, astig=[0,0], im=None, start_def=0.0, s
 #            return im.reshape(shape)
             
         #fft = np.fft.fftshift(np.fft.fft2(im))
-        kernelsize = np.around((np.array(shape)/2.0)-0.5, 1)
-        y,x = np.mgrid[-kernelsize[0]:kernelsize[0]+1.0, -kernelsize[1]:kernelsize[1]+1.0]/imsize#/(kernelsize[0])
+        #kernelsize = np.around((np.array(shape)/2.0)-0.5, 1)
+        #kernelsize = (np.array(shape)-1)/imsize
+        kernelsize=[63.5,63.5]
+        y,x = np.mgrid[-kernelsize[0]:kernelsize[0]+1.0, -kernelsize[1]:kernelsize[1]+1.0]/2.0#imsize#/(kernelsize[0])
         
         raw_kernel = 0
         #EHTFocus = C12_a = C12_b = C21_a = C21_b = C23_a = C23_b = 0
@@ -300,12 +332,12 @@ def image_grabber(**kwargs):#, defocus=0, astig=[0,0], im=None, start_def=0.0, s
             + (2.0/3.0)*np.sqrt(aberrations[3]**2+aberrations[4]**2)*4.87e-3*np.sqrt(x**2+y**2)**3*np.cos(np.arctan2(y,x)-np.arctan2(aberrations[4], aberrations[3])) \
             + (2.0/3.0)*np.sqrt(aberrations[5]**2+aberrations[6]**2)*4.87e-3*np.sqrt(x**2+y**2)**3*np.cos(3*(np.arctan2(y,x)-np.arctan2(aberrations[6], aberrations[5]))))
         #raw_kernel = -np.pi*defocus*4.87e-3*(x**2+y**2) + np.pi*np.sum(np.power(astig,2))*4.87e-3*(x**2+y**2)*np.cos(2*(np.arctan2(y,x)-np.arctan2(astig[1], astig[0])) )
-        #scale = 1.0/np.sqrt(shape[0]*shape[1])
-        scale=1.0
+        scale = 1.0/np.sqrt(shape[0]*shape[1])
+        #scale=1.0
         kernel = np.cos(raw_kernel)*scale+1j*np.sin(raw_kernel)*(-scale)
         #kernel = np.exp(-np.sign(defocus)*raw_kernel)
         aperture = np.zeros(kernel.shape)
-        cv2.circle(aperture, tuple(np.array(kernel.shape, dtype='int')/2), int(kernelsize[0]/3.0), 1.0, thickness=-1)
+        cv2.circle(aperture, tuple(np.array(kernel.shape, dtype='int')/2), int(kernelsize[0]/4.86), 1.0, thickness=-1)
         kernel *= aperture
         #kernel *= np.exp(-(x**2+y**2)/(1*kernelsize[0]))
         kernel = np.abs(np.fft.fftshift(np.fft.ifft2(kernel)))**2
@@ -315,9 +347,8 @@ def image_grabber(**kwargs):#, defocus=0, astig=[0,0], im=None, start_def=0.0, s
         #fft *= kernel/np.sum(np.abs(kernel))
         #im = np.abs(np.real(np.fft.ifft2(np.fft.fftshift(fft))))
         im = np.random.poisson(lam=im.flatten(), size=np.size(im))
-        return im.reshape(shape)
-        #return im
-        #return kernel
+        #return im.reshape(shape)
+        return kernel
 
 
 def positive_angle(angle):
@@ -329,7 +360,7 @@ def positive_angle(angle):
     else:
         return angle
 
-def check_tuning(imagesize, im=None, check_astig=False, average_frames=0, integration_radius=0, save_images=False, process_image=True, **kwargs):
+def check_tuning(imagesize, im=None, check_astig=False, average_frames=0, integration_radius=0, save_images=False, process_image=True, pool=None, multiprocessing=False, **kwargs):
     if not kwargs.has_key('imsize'):
         kwargs['imsize'] = imagesize
     if (process_image and average_frames < 2) or im is None:
@@ -342,7 +373,7 @@ def check_tuning(imagesize, im=None, check_astig=False, average_frames=0, integr
             im.append(image_grabber(**kwargs))
             
     try:
-        peaks = find_peaks(im, imagesize, integration_radius=integration_radius)
+        peaks = find_peaks(im, imagesize, integration_radius=integration_radius, pool=pool, multiprocessing=multiprocessing)
     except RuntimeError as detail:
         raise RuntimeError('Tuning check failed. Reason: '+ str(detail))
     
@@ -508,7 +539,7 @@ def optimize_focus(imsize, im=None, start_stepsize=4, end_stepsize=1):
     return defocus
 
 
-def find_peaks(im, imsize, half_line_thickness=5, position_tolerance=5, integration_radius=0):
+def find_peaks(im, imsize, half_line_thickness=5, position_tolerance=5, integration_radius=0, multiprocessing=False, pool=None):
     """
         This function can find the 6 first-order peaks in the FFT of an atomic-resolution image of graphene.
         Input:
@@ -521,14 +552,36 @@ def find_peaks(im, imsize, half_line_thickness=5, position_tolerance=5, integrat
     """
     def gaussian2D(xdata, x0, y0, x_std, y_std, amplitude, offset):
         x0, y0, x_std, y_std, amplitude, offset = float(x0), float(y0), float(x_std), float(y_std), float(amplitude), float(offset)
-        return (amplitude*np.exp( -0.5*( ((xdata[1]-x0)/x_std)**2 + ((xdata[0]-y0)/y_std)**2 ) ) + offset).ravel()    
-    
-    fft = np.abs(np.fft.fftshift(np.fft.fft2(im)))
+        return (amplitude*np.exp( -0.5*( ((xdata[1]-x0)/x_std)**2 + ((xdata[0]-y0)/y_std)**2 ) ) + offset).ravel()
+    close=False
     shape = np.shape(im)
-    #If more than one image are passed to find_peaks, compute average of their fft's before going on
-    if len(shape) > 2:
-        fft  = np.mean(fft, axis=0)
-        shape = shape[1:]
+    if multiprocessing:
+        try:
+            if pool is None:
+                pool = Pool()
+                close = True
+            res = [pool.apply_async(np.fft.fft2, (im[i],)) for i in range(shape[0])]
+            res_list = [p.get() for p in res]
+            if close:
+                pool.close()
+                pool.join()
+                pool.terminate()
+            fft = 0
+            for res in res_list:
+                fft+=np.abs(np.fft.fftshift(res))/float(shape[0])
+            shape = shape[1:]
+            
+        except:
+            logging.warn('Could not compute ffts in parallel.')
+            multiprocessing=False
+            
+    if not multiprocessing:
+        fft = np.abs(np.fft.fftshift(np.fft.fft2(im)))  
+        #If more than one image are passed to find_peaks, compute average of their fft's before going on
+        if len(shape) > 2:
+            fft  = np.mean(fft, axis=0)
+            shape = shape[1:]
+            
     fft_raw = fft.copy()
     
     first_order = imsize/0.213
@@ -582,7 +635,6 @@ def find_peaks(im, imsize, half_line_thickness=5, position_tolerance=5, integrat
                     next_peak = np.rint(np.dot( rotation_matrix , (np.array(peaks[0][0:2])-center) ) + center).astype(int)
                     area_next_peak = fft[next_peak[0]-position_tolerance:next_peak[0]+position_tolerance+1, next_peak[1]-position_tolerance:next_peak[1]+position_tolerance+1]
                     max_next_peak = np.amax(area_next_peak)
-#TODO: Find better criterion for deciding if peak at a position
                     if  max_next_peak > mean_fft + 4.0*std_dev_fft:#peaks[0][2]/4:
                         next_peak += np.array( np.unravel_index( np.argmax(area_next_peak), np.shape(area_next_peak) ) ) - position_tolerance
                         peaks.append(tuple(next_peak)+(max_next_peak,np.sum(fft_raw[next_peak[0]-integration_radius:next_peak[0]+integration_radius+1, next_peak[1]-integration_radius:next_peak[1]+integration_radius+1])))

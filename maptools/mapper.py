@@ -407,25 +407,30 @@ def SuperScan_mapping(coord_dict, filepath='Z:\\ScanMap\\', do_autofocus=False, 
                         bad_frames[name] = 'Over 50% dirt coverage.'
                         logging.info('Over 50% dirt coverage in ' + name)
                     else:
-                        result = autotune.check_tuning(imsize*1e9, im=data, check_astig=True, process_image=False)
-                        if result != 0:
-                            intensities, coordinates, absolute_astig_angle, relative_astig_angle = result
-                        else:
+                        try:
+                            result = autotune.check_tuning(imsize*1e9, im=data, check_astig=True, process_image=False, average_frames=3)
+                        except:
                             intensities = (0,)
+                            
+                        else:
+                            intensities, coordinates, absolute_astig_angle, relative_astig_angle = result
                         #if not all 6 reflections are visible apply autofocus
                         if len(intensities) < 6:
-                            if len(intensities) == 1:
-                                focus_adjusted = autotune.autofocus(start_stepsize=4, end_stepsize=1)
-                            else:
-                                focus_adjusted = autotune.autofocus(start_stepsize=2, end_stepsize=0.5)
+                            focus_adjusted = autotune.kill_aberrations(focus_step=1.0, only_focus=True, average_frames=10)['EHTFocus']
                             logging.info('Focus at x: ' + str(frame_coord[0]) + ' y: ' + str(frame_coord[1]) + 'adjusted by ' + str(focus_adjusted) + ' nm. (Originally: '+ str(frame_coord[3]*1e9) + ' nm)')
+                            vt.as2_set_control('EHTFocus', focus_adjusted*1e-9+vt.as2_get_control('EHTFocus'))
                             time.sleep(0.1)
                             frame_nr = ss.SS_Functions_SS_StartFrame(0)
                             ss.SS_Functions_SS_WaitForEndOfFrame(frame_nr)
                             #only keep changes if tuning was really improved
                             data_new = np.asarray(ss.SS_Functions_SS_GetImageForFrame(frame_nr, 0))
-                            result_new = autotune.check_tuning(imsize*1e9, im=data, check_astig=True, process_image=False)
-                            if result_new != 0:
+                            try:
+                                result_new = autotune.check_tuning(imsize*1e9, im=data, check_astig=True, process_image=False, average_frames=3)
+                            except RuntimeError:
+                                bad_frames[name] = str('Dismissed focus adjustment by %.2f nm because it did not improve tuning. Originally: %.2f nm.' %(frame_coord[3]*1e9, focus_adjusted))
+                                tifffile.imsave(store+name, data)
+                                test_map.append(frame_coord)
+                            else:
                                 intensities_new, coordinates_new, absolute_astig_angle_new, relative_astig_angle_new = result_new
                                 if len(intensities_new) >= len(intensities):
                                     tifffile.imsave(store+name, data_new)
@@ -440,10 +445,7 @@ def SuperScan_mapping(coord_dict, filepath='Z:\\ScanMap\\', do_autofocus=False, 
                                     bad_frames[name] = str('Dismissed focus adjustment by %.2f nm because it did not improve tuning. Originally: %.2f nm.' %(frame_coord[3]*1e9, focus_adjusted))
                                     tifffile.imsave(store+name, data)
                                     test_map.append(frame_coord)
-                            else:
-                                bad_frames[name] = str('Dismissed focus adjustment by %.2f nm because it did not improve tuning. Originally: %.2f nm.' %(frame_coord[3]*1e9, focus_adjusted))
-                                tifffile.imsave(store+name, data)
-                                test_map.append(frame_coord)
+
                         else:
                             tifffile.imsave(store+name, data)
                             test_map.append(frame_coord)                                
