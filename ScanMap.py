@@ -166,7 +166,7 @@ class ScanMap(Panel.Panel):
         z_drive_checkbox = ui.create_check_box_widget(_("Use Z Drive"))
         autofocus_checkbox = ui.create_check_box_widget(_("Autofocus"))
         auto_offset_checkbox = ui.create_check_box_widget(_("Auto Offset"))
-        auto_rotation_checkbox = ui.create_check_box_widget("Auto Rotation")
+        auto_rotation_checkbox = ui.create_check_box_widget(_("Auto Rotation"))
         auto_rotation_checkbox.check_state = 'checked'
         
         descriptor_row = ui.create_row_widget()
@@ -182,12 +182,16 @@ class ScanMap(Panel.Panel):
 
         def tl_button_clicked():
             save_coords('top-left')
+            total_number_frames()
         def tr_button_clicked():
             save_coords('top-right')
+            total_number_frames()
         def bl_button_clicked():
             save_coords('bottom-left')
+            total_number_frames()
         def br_button_clicked():
             save_coords('bottom-right')
+            total_number_frames()
         def drive_tl_button_clicked():
             drive_coords('top-left')
         def drive_tr_button_clicked():
