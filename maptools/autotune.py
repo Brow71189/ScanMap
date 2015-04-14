@@ -17,9 +17,11 @@ import matplotlib as plt
 
 try:
     import ViennaTools.ViennaTools as vt
+    from ViennaTools.ViennaTools import tifffile
 except:
     try:
         import ViennaTools as vt
+        from ViennaTools import tifffile
     except:
         logging.warn('Could not import Vienna tools!')
 
@@ -49,7 +51,7 @@ def check_intensities(imsize):
         return (1, 0)
     
     
-def kill_aberrations(focus_step=1.5, astig2f_step=1.5, astig3f_step=20.0, coma_step=20.0, average_frames=3, integration_radius=3, image=None, imsize=None, only_focus=False):
+def kill_aberrations(focus_step=1.5, astig2f_step=1.5, astig3f_step=20.0, coma_step=20.0, average_frames=3, integration_radius=3, image=None, imsize=None, only_focus=False, save_images=False, savepath=None):
     try:    
         FrameParams = ss.SS_Functions_SS_GetFrameParams()
     except:
@@ -107,7 +109,7 @@ def kill_aberrations(focus_step=1.5, astig2f_step=1.5, astig3f_step=20.0, coma_s
             #start = vt.as2_get_control(controls[i])
             changes = 0.0
             try:
-                current = check_tuning(8, check_astig=True, average_frames=average_frames, integration_radius=integration_radius, pool=pool, multiprocessing=multiprocessing, **kwargs)[0]
+                current = check_tuning(8, check_astig=True, average_frames=average_frames, integration_radius=integration_radius, pool=pool, multiprocessing=multiprocessing, save_images=save_images, savepath=savepath, **kwargs)[0]
             except RuntimeError:
                 current = (1e-5,)
             if counter == 0 and i==0:
@@ -119,7 +121,7 @@ def kill_aberrations(focus_step=1.5, astig2f_step=1.5, astig3f_step=20.0, coma_s
             kwargs[keys[i]] += steps[i]
             changes += steps[i]
             try:            
-                plus = check_tuning(8, check_astig=True, average_frames=average_frames, integration_radius=integration_radius, pool=pool, multiprocessing=multiprocessing, **kwargs)[0]
+                plus = check_tuning(8, check_astig=True, average_frames=average_frames, integration_radius=integration_radius, pool=pool, multiprocessing=multiprocessing, save_images=save_images, savepath=savepath, **kwargs)[0]
             except RuntimeError:
                 plus = (1e-5,)
             #vt.as2_set_control(controls[i], start-steps[i]*1e-9)
@@ -127,7 +129,7 @@ def kill_aberrations(focus_step=1.5, astig2f_step=1.5, astig3f_step=20.0, coma_s
             kwargs[keys[i]] += -2.0*steps[i]
             changes += -2.0*steps[i]
             try:
-                minus = check_tuning(8, check_astig=True, average_frames=average_frames, integration_radius=integration_radius, pool=pool, multiprocessing=multiprocessing, **kwargs)[0]
+                minus = check_tuning(8, check_astig=True, average_frames=average_frames, integration_radius=integration_radius, pool=pool, multiprocessing=multiprocessing, save_images=save_images, savepath=savepath, **kwargs)[0]
             except RuntimeError:
                 minus = (1e-5,)
             
@@ -153,7 +155,7 @@ def kill_aberrations(focus_step=1.5, astig2f_step=1.5, astig3f_step=20.0, coma_s
                 kwargs[keys[i]] += direction*steps[i]
                 changes += direction*steps[i]
                 try:
-                    next_frame = check_tuning(8, check_astig=True, average_frames=average_frames, integration_radius=integration_radius, pool=pool, multiprocessing=multiprocessing, **kwargs)[0]
+                    next_frame = check_tuning(8, check_astig=True, average_frames=average_frames, integration_radius=integration_radius, pool=pool, multiprocessing=multiprocessing, save_images=save_images, savepath=savepath, **kwargs)[0]
                 except RuntimeError:
                     #vt.as2_set_control(controls[i], start+direction*(small_counter-1)*steps[i]*1e-9)
                     
@@ -347,8 +349,8 @@ def image_grabber(**kwargs):#, defocus=0, astig=[0,0], im=None, start_def=0.0, s
         #fft *= kernel/np.sum(np.abs(kernel))
         #im = np.abs(np.real(np.fft.ifft2(np.fft.fftshift(fft))))
         im = np.random.poisson(lam=im.flatten(), size=np.size(im))
-        #return im.reshape(shape)
-        return kernel
+        return im.reshape(shape)
+        #return kernel
 
 
 def positive_angle(angle):
@@ -360,17 +362,32 @@ def positive_angle(angle):
     else:
         return angle
 
-def check_tuning(imagesize, im=None, check_astig=False, average_frames=0, integration_radius=0, save_images=False, process_image=True, pool=None, multiprocessing=False, **kwargs):
+def check_tuning(imagesize, im=None, check_astig=False, average_frames=0, integration_radius=0, save_images=False, savepath=None, process_image=True, pool=None, multiprocessing=False, **kwargs):
     if not kwargs.has_key('imsize'):
         kwargs['imsize'] = imagesize
-    if (process_image and average_frames < 2) or im is None:
+    if (process_image or im is None) and average_frames < 2:
         if im is not None and not kwargs.has_key('image'):
             kwargs['image'] = im
         im = image_grabber(**kwargs)
+            
     if average_frames > 1:
         im = []
         for i in range(average_frames):
             im.append(image_grabber(**kwargs))
+    
+    if save_images:
+            if not os.path.exists(savepath):
+                os.makedirs(savepath)
+            name = str(int(time.time()))+'.tif'
+            logfile = open(savepath+'log.txt', 'a')
+            kwargs2 = kwargs.copy()
+            kwargs2.pop('image', 0)
+            logfile.write(name+': '+str(kwargs2)+'\n')
+            logfile.close()
+            if average_frames < 2:
+                tifffile.imsave(savepath+name+'.tif', im)
+            else:
+                tifffile.imsave(savepath+name+'.tif', im[0])
             
     try:
         peaks = find_peaks(im, imagesize, integration_radius=integration_radius, pool=pool, multiprocessing=multiprocessing)
@@ -538,6 +555,8 @@ def optimize_focus(imsize, im=None, start_stepsize=4, end_stepsize=1):
     
     return defocus
 
+def do_fft(im):
+    return np.abs(np.fft.fftshift(np.fft.fft2(im)))
 
 def find_peaks(im, imsize, half_line_thickness=5, position_tolerance=5, integration_radius=0, multiprocessing=False, pool=None):
     """
@@ -558,9 +577,10 @@ def find_peaks(im, imsize, half_line_thickness=5, position_tolerance=5, integrat
     if multiprocessing:
         try:
             if pool is None:
-                pool = Pool()
+                pool = Pool(shape[0])
                 close = True
-            res = [pool.apply_async(np.fft.fft2, (im[i],)) for i in range(shape[0])]
+                
+            res = [pool.apply_async(do_fft, (im[i],)) for i in range(shape[0])]
             res_list = [p.get() for p in res]
             if close:
                 pool.close()
@@ -568,7 +588,8 @@ def find_peaks(im, imsize, half_line_thickness=5, position_tolerance=5, integrat
                 pool.terminate()
             fft = 0
             for res in res_list:
-                fft+=np.abs(np.fft.fftshift(res))/float(shape[0])
+                #fft+=np.abs(np.fft.fftshift(res))/float(shape[0])
+                fft += res/float(shape[0])
             shape = shape[1:]
             
         except:

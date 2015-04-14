@@ -347,9 +347,9 @@ def SuperScan_mapping(coord_dict, filepath='Z:\\ScanMap\\', do_autofocus=False, 
             
             #Wait until movement of stage is done (wait longer time before first frame)
             if counter == 1:            
-                time.sleep(4) #time in seconds
+                time.sleep(5) #time in seconds
             else:
-                time.sleep(2)
+                time.sleep(3)
             
             if do_autofocus:
                 if autofocus_pattern == 'edges':
@@ -408,7 +408,7 @@ def SuperScan_mapping(coord_dict, filepath='Z:\\ScanMap\\', do_autofocus=False, 
                         logging.info('Over 50% dirt coverage in ' + name)
                     else:
                         try:
-                            result = autotune.check_tuning(imsize*1e9, im=data, check_astig=True, process_image=False, average_frames=3)
+                            result = autotune.check_tuning(imsize*1e9, im=data, check_astig=True, process_image=False, average_frames=3, multiprocessing=True)
                         except:
                             intensities = (0,)
                             
@@ -425,7 +425,7 @@ def SuperScan_mapping(coord_dict, filepath='Z:\\ScanMap\\', do_autofocus=False, 
                             #only keep changes if tuning was really improved
                             data_new = np.asarray(ss.SS_Functions_SS_GetImageForFrame(frame_nr, 0))
                             try:
-                                result_new = autotune.check_tuning(imsize*1e9, im=data, check_astig=True, process_image=False, average_frames=3)
+                                result_new = autotune.check_tuning(imsize*1e9, im=data, check_astig=True, process_image=False, average_frames=3, multiprocessing=True)
                             except RuntimeError:
                                 bad_frames[name] = str('Dismissed focus adjustment by %.2f nm because it did not improve tuning. Originally: %.2f nm.' %(frame_coord[3]*1e9, focus_adjusted))
                                 tifffile.imsave(store+name, data)
