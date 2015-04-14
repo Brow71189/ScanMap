@@ -52,6 +52,8 @@ class ScanMap(Panel.Panel):
                 logging.info('Setting FOV to: ' + str(FOV))
             except:
                 logging.warn(text + ' is not a valid FOV. Please input a floating point number.')
+            
+            total_number_frames()
                 
             FOV_line_edit.select_all()
             
@@ -63,6 +65,8 @@ class ScanMap(Panel.Panel):
             except:
                 logging.warn(text + ' is not a valid size. Please input an integer number.')
             
+            total_number_frames()
+            
             Size_line_edit.select_all()
             
         def Offset_finished(text):
@@ -73,6 +77,8 @@ class ScanMap(Panel.Panel):
             except:
                 logging.warn(text + ' is not a valid Offset. Please input a floating point number.')
             
+            total_number_frames()
+            
             Offset_line_edit.select_all()
         
         def Time_finished(text):
@@ -82,6 +88,8 @@ class ScanMap(Panel.Panel):
                 logging.info('Setting pixeltime to: ' + str(Time))
             except:
                 logging.warn(text + ' is not a valid Time. Please input a floating point number.')
+            
+            total_number_frames()
             
             Time_line_edit.select_all()
             
@@ -199,6 +207,8 @@ class ScanMap(Panel.Panel):
             global auto_offset
             global auto_rotation
             
+            total_number_frames()
+            
             if z_drive_checkbox.check_state == 'checked':
                 logging.info('Using z drive in addition to Fine Focus for focus adjustment.')
                 use_z_drive = True
@@ -249,28 +259,6 @@ class ScanMap(Panel.Panel):
             else:
                 logging.warn('You din\'t set all 4 corners.')
 
-        def autofocus_button_clicked():
-            global do_autofocus
-            
-            if do_autofocus is False:
-                do_autofocus = True
-                logging.info('Autofocus is now ON.')
-            else:
-                do_autofocus = False
-                logging.info('Autofocus is now OFF')
-        
-        def z_drive_button_clicked():
-            global use_z_drive
-            
-            if use_z_drive is False:
-                use_z_drive = True
-                logging.info('Z Drive will be additionally used for focus adjusting.')
-            else:
-                use_z_drive = False
-                logging.info('Only fine focus adjustment.')
-        
-        def auto_rotation_checked(state):
-            logging.info(str(state))
 
         tl_button.on_clicked = tl_button_clicked
         tr_button.on_clicked = tr_button_clicked
@@ -347,3 +335,32 @@ def drive_coords(position):
         vt.as2_set_control('StageOutY', coord_dict[position][1])
         vt.as2_set_control('StageOutZ', coord_dict[position][2])
         vt.as2_set_control('EHTFocus', coord_dict[position][3])
+        
+def total_number_frames():
+    global Offset
+    global FOV
+    global Size
+    global Time
+    global coord_dict
+    
+    if not None in coord_dict.viewvalues() and not None in (Offset, FOV, Size, Time):
+        corners = ('top-left', 'top-right', 'bottom-right', 'bottom-left')
+        coords = []
+        for corner in corners:
+            coords.append(coord_dict[corner])
+        coord_dict_sorted = mapper.sort_quadrangle(coords)
+        coords = []
+        for corner in corners:
+            coords.append(coord_dict_sorted[corner])
+        imsize = FOV*1e-9
+        distance = Offset*imsize    
+        leftX = np.max((coords[0][0],coords[3][0]))
+        rightX = np.min((coords[1][0],coords[2][0]))
+        topY = np.min((coords[0][1],coords[1][1]))
+        botY = np.max((coords[2][1],coords[3][1]))
+        num_subframes = ( int(np.abs(rightX-leftX)/(imsize+distance))+1, int(np.abs(topY-botY)/(imsize+distance))+1 )
+        
+        logging.info('With the current settings, %dx%d frames (%d in total) will be taken.' % (num_subframes[0], num_subframes[1], num_subframes[0]*num_subframes[1]))
+        logging.info('A total area of %.4f um will be scanned.' % (num_subframes[0]*num_subframes[1]*(FOV*1e-3)**2))
+        logging.info('Approximate mapping time: %.0f s' %(num_subframes[0]*num_subframes[1]*(Size**2*Time*1e-6 + 3)))
+    
