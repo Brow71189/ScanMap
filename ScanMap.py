@@ -365,6 +365,6 @@ def total_number_frames():
         num_subframes = ( int(np.abs(rightX-leftX)/(imsize+distance))+1, int(np.abs(topY-botY)/(imsize+distance))+1 )
         
         logging.info('With the current settings, %dx%d frames (%d in total) will be taken.' % (num_subframes[0], num_subframes[1], num_subframes[0]*num_subframes[1]))
-        logging.info('A total area of %.4f um will be scanned.' % (num_subframes[0]*num_subframes[1]*(FOV*1e-3)**2))
-        logging.info('Approximate mapping time: %.0f s' %(num_subframes[0]*num_subframes[1]*(Size**2*Time*1e-6 + 3)))
+        logging.info('A total area of %.4f um2 will be scanned.' % (num_subframes[0]*num_subframes[1]*(FOV*1e-3)**2))
+        logging.info('Approximate mapping time: %.0f s' %(num_subframes[0]*num_subframes[1]*(Size**2*Time*1e-6 + 3.5)))
     
