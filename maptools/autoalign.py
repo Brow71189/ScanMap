@@ -13,13 +13,14 @@ import os
 import numpy as np
 import scipy.optimize
 import cv2
-import tifffile
 
 try:
     import ViennaTools.ViennaTools as vt
+    from ViennaTools.ViennaTools import tifffile
 except:
     try:
         import ViennaTools as vt
+        from ViennaTools import tifffile
     except:
         logging.warn('Could not import Vienna tools!')
 

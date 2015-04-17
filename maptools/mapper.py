@@ -251,12 +251,12 @@ def SuperScan_mapping(coord_dict, filepath='Z:\\ScanMap\\', do_autofocus=False, 
 #            logging.error('Could not find offset and/or rotation automatically. Please disable these two options and set values manually.')
 #            raise RuntimeError('Could not find offset and/or rotation automatically. Please disable these two options and set values manually.')
         
-        logging.info('Found rotation between x-axis of stage and scan to be: '+str(frame_rotation*180/np.pi))
+        logging.info('Found rotation between x-axis of stage and scan to be: '+str(frame_rotation))
         logging.info('Found that the stage moves %.2f times the image size when setting the moving distance to the image size.' % (frame_distance*2.0/impix))
         if auto_offset:
             offset = impix/(frame_distance*2.0) - 1.0
         if auto_rotation:
-            rotation = -frame_rotation
+            rotation = -frame_rotation/180*np.pi
         
     #Scan configuration
     try:
@@ -318,7 +318,7 @@ def SuperScan_mapping(coord_dict, filepath='Z:\\ScanMap\\', do_autofocus=False, 
     config_file.write('#This file contains all parameters used for the mapping.\n\n')
     config_file.write('#Map parameters:\n')
     map_paras = {'Autofocus': translator(do_autofocus), 'Autofocus_pattern': autofocus_pattern, 'Auto Rotation': translator(auto_rotation), 'Auto Offset': translator(auto_offset), 'Z Drive': translator(use_z_drive), \
-                'top-left': str(coord_dict_sorted['top-left']), 'top-right': str(coord_dict_sorted['top-right']), 'bottom-left': str(coord_dict_sorted['bottom-left']), 'bottom-right': str(coord_dict_sorted['bottom-right'])}
+                'top-left': str(coord_dict_sorted['top-left']), 'top-right': str(coord_dict_sorted['top-right']), 'bottom-left': str(coord_dict_sorted['bottom-left']), 'bottom-right': str(coord_dict_sorted['bottom-right']), 'Number of frames': str(num_subframes[0])+'x'+str(num_subframes[1])}
     for key, value in map_paras.items():
         if key is not 'Autofocus_pattern' or do_autofocus:
             config_file.write('{0:18}{1:}\n'.format(key+':', value))
@@ -335,7 +335,7 @@ def SuperScan_mapping(coord_dict, filepath='Z:\\ScanMap\\', do_autofocus=False, 
     for frame_coord in map_coords:
         counter += 1        
         stagex, stagey, stagez, fine_focus = frame_coord
-        logging.info(str(counter)+': x: '+str((stagex))+', y: '+str((stagey))+', z: '+str((stagez))+', focus: '+str((fine_focus)))
+        logging.info(str(counter)+': (No. '+str(frame_number[counter-1])+') x: '+str((stagex))+', y: '+str((stagey))+', z: '+str((stagez))+', focus: '+str((fine_focus)))
         #print(str(counter)+': x: '+str((stagex))+', y: '+str((stagey))+', z: '+str((stagez))+', focus: '+str((fine_focus)))
 
         #only do hardware operations when online
@@ -409,7 +409,7 @@ def SuperScan_mapping(coord_dict, filepath='Z:\\ScanMap\\', do_autofocus=False, 
                         logging.info('Over 50% dirt coverage in ' + name)
                     else:
                         try:
-                            result = autotune.check_tuning(imsize*1e9, im=data, check_astig=True, process_image=False, average_frames=3, multiprocessing=True)
+                            result = autotune.check_tuning(imsize*1e9, im=data, check_astig=True, process_image=False)
                         except:
                             intensities = (0,)
                             
@@ -417,23 +417,23 @@ def SuperScan_mapping(coord_dict, filepath='Z:\\ScanMap\\', do_autofocus=False, 
                             intensities, coordinates, absolute_astig_angle, relative_astig_angle = result
                         #if not all 6 reflections are visible apply autofocus
                         if len(intensities) < 6:
-                            focus_adjusted = autotune.kill_aberrations(focus_step=1.0, only_focus=True, average_frames=10)['EHTFocus']
+                            focus_adjusted = autotune.kill_aberrations(focus_step=1.0, only_focus=True, average_frames=3)['EHTFocus']
                             logging.info('Focus at x: ' + str(frame_coord[0]) + ' y: ' + str(frame_coord[1]) + 'adjusted by ' + str(focus_adjusted) + ' nm. (Originally: '+ str(frame_coord[3]*1e9) + ' nm)')
-                            vt.as2_set_control('EHTFocus', focus_adjusted*1e-9+vt.as2_get_control('EHTFocus'))
-                            time.sleep(0.1)
+                            #vt.as2_set_control('EHTFocus', focus_adjusted*1e-9+vt.as2_get_control('EHTFocus'))
+                            #time.sleep(0.1)
                             frame_nr = ss.SS_Functions_SS_StartFrame(0)
                             ss.SS_Functions_SS_WaitForEndOfFrame(frame_nr)
                             #only keep changes if tuning was really improved
                             data_new = np.asarray(ss.SS_Functions_SS_GetImageForFrame(frame_nr, 0))
                             try:
-                                result_new = autotune.check_tuning(imsize*1e9, im=data, check_astig=True, process_image=False, average_frames=3, multiprocessing=True)
+                                result_new = autotune.check_tuning(imsize*1e9, im=data, check_astig=True, process_image=False)
                             except RuntimeError:
                                 bad_frames[name] = str('Dismissed focus adjustment by %.2f nm because it did not improve tuning. Originally: %.2f nm.' %(frame_coord[3]*1e9, focus_adjusted))
                                 tifffile.imsave(store+name, data)
                                 test_map.append(frame_coord)
                             else:
                                 intensities_new, coordinates_new, absolute_astig_angle_new, relative_astig_angle_new = result_new
-                                if len(intensities_new) >= len(intensities):
+                                if len(intensities_new) >= len(intensities) and np.sum(intensities_new) > np.sum(intensities):
                                     tifffile.imsave(store+name, data_new)
                                     bad_frames[name] = str('Bad focus. Adjusted by %.2f nm. Originally: %.2f nm.' %(frame_coord[3]*1e9, focus_adjusted))
                                     #add new focus as offset to all coordinates
