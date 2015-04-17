@@ -285,17 +285,23 @@ def SuperScan_mapping(coord_dict, filepath='Z:\\ScanMap\\', do_autofocus=False, 
             if j%2 == 0: #Odd lines (have even indices because numbering starts with 0), e.g. map from left to right
                 map_coords.append( tuple( ( leftX+i*(imsize+distance),  topY-j*(imsize+distance) ) ) + tuple( interpolation((leftX+i*(imsize+distance),  topY-j*(imsize+distance)), coords) ) )
                 frame_number.append(j*num_subframes[0]+i)
-                if do_autofocus and i == 0 and autofocus_pattern == 'edges':
-                    new_focus_point.append('top-left')
-                elif do_autofocus and autofocus_pattern == 'edges':
-                    new_focus_point.append(None)
+                if do_autofocus and autofocus_pattern == 'edges':
+                    if i==0:
+                        new_focus_point.append('top-left')
+                    elif i==num_subframes[0]-1:
+                        new_focus_point.append('top-right')
+                    else:
+                        new_focus_point.append(None)
             else: #Even lines, e.g. scan from right to left
                 map_coords.append( tuple( ( leftX+(num_subframes[0]-(i+1))*(imsize+distance),  topY-j*(imsize+distance) ) ) + tuple( interpolation( (leftX+(num_subframes[0]-(i+1))*(imsize+distance),  topY-j*(imsize+distance)), coords) ) )
                 frame_number.append(j*num_subframes[0]+(num_subframes[0]-(i+1)))
-                if do_autofocus and i == 0 and autofocus_pattern=='edges':
-                    new_focus_point.append('top-right')
-                elif do_autofocus and autofocus_pattern == 'edges':
-                    new_focus_point.append(None)
+                if do_autofocus and autofocus_pattern=='edges':
+                    if i==0:
+                        new_focus_point.append('top-right')
+                    elif i==num_subframes[0]-1:
+                        new_focus_point.append('top-left')
+                    else:
+                        new_focus_point.append(None)
     
     #Now go to each position in "map_coords" and take a snapshot
     
