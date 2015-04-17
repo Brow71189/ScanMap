@@ -42,6 +42,9 @@ try:
 except:
     logging.warn('Could not import SuperScanPy. Maybe you are running in offline mode.')
     
+#global variable to store aberrations when simulating them (see function image_grabber() for details)
+global_aberrations = {'EHTFocus': 0.0, 'C12_a': 0.0, 'C12_b': 0.0, 'C21_a': 0.0, 'C21_b': 0.0, 'C23_a': 0.0, 'C23_b': 0.0}
+    
 def check_intensities(imsize):
     result = check_tuning(imsize, check_astig=True)
     if result != 0:
@@ -51,7 +54,7 @@ def check_intensities(imsize):
         return (1, 0)
     
     
-def kill_aberrations(focus_step=1, astig2f_step=1, astig3f_step=30, coma_step=50, average_frames=3, integration_radius=1, image=None, imsize=None, only_focus=False, save_images=False, savepath=None):
+def kill_aberrations(focus_step=1, astig2f_step=1, astig3f_step=30, coma_step=50, average_frames=3, integration_radius=1, variable_stepsize=False, image=None, imsize=None, only_focus=False, save_images=False, savepath=None):
     try:    
         FrameParams = ss.SS_Functions_SS_GetFrameParams()
     except:
@@ -263,6 +266,7 @@ def image_grabber(**kwargs):#, defocus=0, astig=[0,0], im=None, start_def=0.0, s
     keys = ['EHTFocus', 'C12_a', 'C12_b', 'C21_a', 'C21_b', 'C23_a', 'C23_b']
     controls = ['EHTFocus', 'C12.a', 'C12.b', 'C21.a', 'C21.b', 'C23.a', 'C23.b']
     originals = {}
+    global global_aberrations
     #print(kwargs)
     if not kwargs.has_key('image'):
         for i in range(len(keys)):
@@ -315,9 +319,21 @@ def image_grabber(**kwargs):#, defocus=0, astig=[0,0], im=None, start_def=0.0, s
         
         for i in range(len(keys)):            
             if kwargs.has_key(keys[i]):
-                aberrations[i] = kwargs[keys[i]]
+                offset=0.0
+                if kwargs.has_key('relative_aberrations'):
+                    if kwargs['relative_aberrations']:
+                        offset = global_aberrations[controls[i]]
+                aberrations[i] = offset+kwargs[keys[i]]
                 if kwargs.has_key(start_keys[i]):
                     aberrations[i] -= kwargs[start_keys[i]]
+            #if aberrations should not be reset, change global_aberrations
+                if kwargs.has_key('reset_aberrations'):
+                    if not kwargs['reset_aberrations']:
+                        global_aberrations[controls[i]] += kwargs[keys[i]]
+                else:
+                    global_aberrations[controls[i]] += kwargs[keys[i]]
+            else:
+                aberrations[i] = global_aberrations[controls[i]]
         #print(kwargs)
         #print(aberrations)
         #compute aberration function up to threefold astigmatism
