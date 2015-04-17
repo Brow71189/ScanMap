@@ -206,11 +206,11 @@ def SuperScan_mapping(coord_dict, filepath='Z:\\ScanMap\\', do_autofocus=False, 
     for corner in corners:
         coords.append(coord_dict_sorted[corner])
         
-    #Find corners of a rectangle that lies inside the four points given by the user
-    leftX = np.max((coords[0][0],coords[3][0]))
-    rightX = np.min((coords[1][0],coords[2][0]))
-    topY = np.min((coords[0][1],coords[1][1]))
-    botY = np.max((coords[2][1],coords[3][1]))
+    #Find bounding rectangle of the four points given by the user
+    leftX = np.min((coords[0][0],coords[3][0]))
+    rightX = np.max((coords[1][0],coords[2][0]))
+    topY = np.max((coords[0][1],coords[1][1]))
+    botY = np.min((coords[2][1],coords[3][1]))
     
     #Find scan rotation and offset between the images if desired by the user    
     if auto_offset or auto_rotation:
@@ -320,7 +320,8 @@ def SuperScan_mapping(coord_dict, filepath='Z:\\ScanMap\\', do_autofocus=False, 
     map_paras = {'Autofocus': translator(do_autofocus), 'Autofocus_pattern': autofocus_pattern, 'Auto Rotation': translator(auto_rotation), 'Auto Offset': translator(auto_offset), 'Z Drive': translator(use_z_drive), \
                 'top-left': str(coord_dict_sorted['top-left']), 'top-right': str(coord_dict_sorted['top-right']), 'bottom-left': str(coord_dict_sorted['bottom-left']), 'bottom-right': str(coord_dict_sorted['bottom-right'])}
     for key, value in map_paras.items():
-        config_file.write('{0:18}{1:}\n'.format(key+':', value))
+        if key is not 'Autofocus_pattern' or do_autofocus:
+            config_file.write('{0:18}{1:}\n'.format(key+':', value))
     config_file.write('\n#Scan parameters:\n')
     scan_paras = {'SuperScan FOV value': str(imsize*1e9)+' nm', 'Image size': str(impix)+' px', 'Pixel time': str(pixeltime)+' us', 'Offset between images': str(offset)+' x image size', 'Scan rotation': str('%.2f' % (rotation*180.0/np.pi)) +' deg', 'Detectors': str(detectors)}
     for key, value in scan_paras.items():
@@ -398,8 +399,8 @@ def SuperScan_mapping(coord_dict, filepath='Z:\\ScanMap\\', do_autofocus=False, 
                     name = str('%.4d_%.3f_%.3f.tif' % (frame_number[counter-1],stagex*1e6,stagey*1e6))
                     #apply Gaussian blur and set all pixels smaller than the treshold to 0, all bigger to 1
                     dirt_detection = cv2.GaussianBlur(data, (0,0), 2.0)
-                    dirt_detection[dirt_detection>0.02] = 1.0
-                    dirt_detection[dirt_detection<= 0.02] = 0.0
+                    dirt_detection[dirt_detection>0.015] = 1.0
+                    dirt_detection[dirt_detection<= 0.015] = 0.0
                     #calculate the fraction of 'bad' pixels and save frame if fraction is >0.5, but add note to "bad_frames" file
                     if np.sum(dirt_detection)/(np.shape(data)[0]*np.shape(data)[1]) > 0.5:
                         tifffile.imsave(store+name, data)
