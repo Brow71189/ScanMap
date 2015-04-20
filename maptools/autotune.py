@@ -43,33 +43,32 @@ except:
     logging.warn('Could not import SuperScanPy. Maybe you are running in offline mode.')
     
 #global variable to store aberrations when simulating them (see function image_grabber() for details)
-global_aberrations = {'EHTFocus': 0.0, 'C12_a': 0.0, 'C12_b': 0.0, 'C21_a': 0.0, 'C21_b': 0.0, 'C23_a': 0.0, 'C23_b': 0.0}
-    
-def check_intensities(imsize):
-    result = check_tuning(imsize, check_astig=True)
-    if result != 0:
-        intensities, coordinates, absolute_astig_angle, relative_astig_angle = result
-        return (np.var(intensities)/np.sum(intensities), len(intensities))
-    else:
-        return (1, 0)
+global_aberrations = {'EHTFocus': 1.5, 'C12_a': -1.0, 'C12_b': 1.5, 'C21_a': 438.0, 'C21_b': 205.0, 'C23_a': 90, 'C23_b': -60.0}
     
     
-def kill_aberrations(focus_step=1, astig2f_step=1, astig3f_step=30, coma_step=50, average_frames=3, integration_radius=1, variable_stepsize=False, image=None, imsize=None, only_focus=False, save_images=False, savepath=None):
+def kill_aberrations(focus_step=2, astig2f_step=2, astig3f_step=50, coma_step=200, average_frames=3, integration_radius=1, variable_stepsize=False, image=None, imsize=None, only_focus=False, save_images=False, savepath=None):
+    
+    def merit(intensities):
+        return 1/np.sum(intensities)
+    
     try:    
         FrameParams = ss.SS_Functions_SS_GetFrameParams()
     except:
         pass
+    #this is the simulated microscope
+    global global_aberrations
+    #global_aberrations = {'EHTFocus': 0.0, 'C12_a': 1.0, 'C12_b': -1.0, 'C21_a': 600.0, 'C21_b': 300.0, 'C23_a': 120, 'C23_b': -90.0}
     total_tunings = []
     total_lens = []
     counter = 0
-
+    imagesize=8
     #controls = ['EHTFocus', 'C12.a', 'C12.b', 'C21.a', 'C21.b', 'C23.a', 'C23.b']
     if only_focus:
         keys = ['EHTFocus']
     else:        
         keys = ['EHTFocus', 'C12_a', 'C12_b', 'C21_a', 'C21_b', 'C23_a', 'C23_b']
     #kwargs = {'EHTFocus': 0.0, 'C12_a': 0.0, 'C12_b': 0.0, 'C21_a': 0.0, 'C21_b': 0.0, 'C23_a': 0.0, 'C23_b': 0.0, 'relative_aberrations': True, 'reset_aberrations': True, 'start_C23_a': 40, 'start_C21_b': 60, 'start_C12_a': 2}
-    kwargs = {'EHTFocus': 0.0, 'C12_a': 0.0, 'C12_b': 0.0, 'C21_a': 0.0, 'C21_b': 0.0, 'C23_a': 0.0, 'C23_b': 0.0, 'relative_aberrations': True, 'reset_aberrations': True}
+    kwargs = {'EHTFocus': 0.0, 'C12_a': 0.0, 'C12_b': 0.0, 'C21_a': 0.0, 'C21_b': 0.0, 'C23_a': 0.0, 'C23_b': 0.0, 'relative_aberrations': True, 'reset_aberrations': False}
     #total_changes = {'EHTFocus': 0.0, 'C12_a': 0.0, 'C12_b': 0.0, 'C21_a': 0.0, 'C21_b': 0.0, 'C23_a': 0.0, 'C23_b': 0.0}
     if image is not None and imsize is not None:
         kwargs['image'] = image
@@ -78,70 +77,92 @@ def kill_aberrations(focus_step=1, astig2f_step=1, astig3f_step=30, coma_step=50
     
     #change frame parameters to values that are suited for automatic tuning
     try:
-        ss.SS_Functions_SS_SetFrameParams(512, 512, 0, 0, 2, 8, 0, False, True, False, False)
+        ss.SS_Functions_SS_SetFrameParams(512, 512, 0, 0, 2, imagesize, 0, False, True, False, False)
     except:
         pass
     
+    try:
+        current = check_tuning(imagesize, average_frames=average_frames, integration_radius=integration_radius, save_images=save_images, savepath=savepath, **kwargs)
+    except RuntimeError:
+        current = (1e-5,)
+        
     while counter < 11:
         start_time = time.time()
-        
+
+        if counter > 1 and len(total_tunings) < counter+1:
+            logging.info('Finished tuning because no improvements could be found anymore.')
+            break
+
         if len(total_tunings) > 1:        
-            logging.info('Improved tuning by '+str(total_tunings[-2]-total_tunings[-1]))
+            logging.info('Improved tuning by '+str((total_tunings[-2]-total_tunings[-1])/(total_tunings[-2]+total_tunings[-1])*100)+'%.')
 
         if len(total_tunings) > 2:
-            if total_tunings[-2]-total_tunings[-1] < 0.25*(total_tunings[-3]-total_tunings[-2]):
-                logging.info('Finished tuning.')
+            if total_tunings[-2]-total_tunings[-1] < 0.1*(total_tunings[-3]-total_tunings[-2]):
+                logging.info('Finished tuning successfully after %d runs.' %(counter))
                 break
-            
-        if counter > 1 and len(total_tunings) < 3:
-            logging.info('Finished tuning because no changes were detected anymore.')
-            break
         
         logging.info('Starting run number '+str(counter+1))
         part_tunings = []
         part_lens = []
         
         for i in range(len(keys)):
-            changes = 0.0
-            try:
-                current = check_tuning(8, average_frames=average_frames, integration_radius=integration_radius, save_images=save_images, savepath=savepath, **kwargs)
-            except RuntimeError:
-                current = (1e-5,)
             if counter == 0 and i==0:
-                total_tunings.append(1/np.sum(current))
-                logging.info('Appending start value: ' + str(1/np.sum(current)))
+                total_tunings.append(merit(current))
+                logging.info('Appending start value: ' + str(merit(current)))
                 total_lens.append(len(current))
 
             logging.info('Working on: '+keys[i])
             #vt.as2_set_control(controls[i], start+steps[i]*1e-9)
             #time.sleep(0.1)
-            kwargs[keys[i]] += steps[i]
-            changes += steps[i]
-            try:            
-                plus = check_tuning(8, average_frames=average_frames, integration_radius=integration_radius, save_images=save_images, savepath=savepath, **kwargs)
-            except RuntimeError:
-                plus = (1e-5,)
-            #vt.as2_set_control(controls[i], start-steps[i]*1e-9)
-            #time.sleep(0.1)
-            kwargs[keys[i]] += -2.0*steps[i]
-            changes += -2.0*steps[i]
-            try:
-                minus = check_tuning(8, average_frames=average_frames, integration_radius=integration_radius, save_images=save_images, savepath=savepath, **kwargs)
-            except RuntimeError:
-                minus = (1e-5,)
-            
-            if 1/np.sum(minus) < 1/np.sum(plus) and 1/np.sum(minus) < 1/np.sum(current) and len(minus) >= len(plus) and len(minus) >= len(current):
-                direction = -1
-                current = minus
-            elif 1/np.sum(plus) < 1/np.sum(minus) and 1/np.sum(plus) < 1/np.sum(current) and len(plus) >= len(minus) and len(plus) >= len(current):
-                direction = 1
-                current = plus
-                #Setting aberrations to values of 'plus' which where the best so far
-                kwargs[keys[i]] += 2.0*steps[i]
-                changes += 2.0*steps[i]
+            step_multiplicator=1
+            while step_multiplicator < 8:
+                changes = 0.0
+                kwargs[keys[i]] = steps[i]*step_multiplicator
+                changes += steps[i]*step_multiplicator
+                try:            
+                    plus = check_tuning(imagesize, average_frames=average_frames, integration_radius=integration_radius, save_images=save_images, savepath=savepath, **kwargs)
+                except RuntimeError:
+                    plus = (1e-5,)
+    
+                #passing 2xstepsize to image_grabber to get from +1 to -1
+                kwargs[keys[i]] = -2.0*steps[i]*step_multiplicator
+                changes += -2.0*steps[i]*step_multiplicator
+                try:
+                    minus = check_tuning(imagesize, average_frames=average_frames, integration_radius=integration_radius, save_images=save_images, savepath=savepath, **kwargs)
+                except RuntimeError:
+                    minus = (1e-5,)
+                
+                if merit(minus) < merit(plus) and merit(minus) < merit(current) and len(minus) >= len(plus) and len(minus) >= len(current):
+                    direction = -1
+                    current = minus
+                    #setting the stepsize to new value
+                    steps[i] *= step_multiplicator
+                    break
+                elif merit(plus) < merit(minus) and merit(plus) < merit(current) and len(plus) >= len(minus) and len(plus) >= len(current):
+                    direction = 1
+                    current = plus
+                    #setting the stepsize to new value
+                    steps[i] *= step_multiplicator
+                    #Setting aberrations to values of 'plus' which where the best so far
+                    kwargs[keys[i]] = 2.0*steps[i]*step_multiplicator
+                    changes += 2.0*steps[i]*step_multiplicator
+                    #update hardware
+                    image_grabber(acquire_image=False, **kwargs)
+                    break
+                else:
+                    kwargs[keys[i]] = -changes
+                    #update hardware
+                    image_grabber(acquire_image=False, **kwargs)
+                    logging.info('Doubling the stepsize of '+keys[i]+'.')
+                    kwargs[keys[i]] = 0
+                    step_multiplicator *= 2
+            #This 'else' belongs to the while loop. It is executed when the loop ends 'normally', e.g. not through break or continue
             else:
-                kwargs[keys[i]] -= changes
+                #kwargs[keys[i]] = -changes
+                #update hardware
+                #image_grabber(acquire_image=False, **kwargs)
                 logging.info('Could not find a direction to improve '+keys[i]+'. Going to next aberration.')
+                #kwargs[keys[i]] = 0
                 continue
             
             small_counter = 1
@@ -149,29 +170,43 @@ def kill_aberrations(focus_step=1, astig2f_step=1, astig3f_step=30, coma_step=50
                 small_counter+=1
                 #vt.as2_set_control(controls[i], start+direction*small_counter*steps[i]*1e-9)
                 #time.sleep(0.1)
-                kwargs[keys[i]] += direction*steps[i]
+                kwargs[keys[i]] = direction*steps[i]
                 changes += direction*steps[i]
                 try:
-                    next_frame = check_tuning(8, average_frames=average_frames, integration_radius=integration_radius, save_images=save_images, savepath=savepath, **kwargs)
+                    next_frame = check_tuning(imagesize, average_frames=average_frames, integration_radius=integration_radius, save_images=save_images, savepath=savepath, **kwargs)
                 except RuntimeError:
                     #vt.as2_set_control(controls[i], start+direction*(small_counter-1)*steps[i]*1e-9)
-                    
+                    kwargs[keys[i]] = -direction*steps[i]
+                    changes -= direction*steps[i]
+                    #update hardware
+                    image_grabber(acquire_image=False, **kwargs)
                     break
                 
-                if 1/np.sum(next_frame) >= 1/np.sum(current) or len(next_frame) < len(current):
+                if merit(next_frame) >= merit(current) or len(next_frame) < len(current):
                     #vt.as2_set_control(controls[i], start+direction*(small_counter-1)*steps[i]*1e-9)
-                    kwargs[keys[i]] -= direction*steps[i]
+                    kwargs[keys[i]] = -direction*steps[i]
                     changes -= direction*steps[i]
-                    part_tunings.append(1/np.sum(current))
+                    #update hardware
+                    image_grabber(acquire_image=False, **kwargs)
+                    part_tunings.append(merit(current))
                     part_lens.append(len(current))
                     break
                 current = next_frame
             #only keep changes if they improve the overall tuning
             if len(total_tunings) > 0:
-                if 1/np.sum(current) > np.amin(total_tunings) or len(current) < np.amax(total_lens):
+                if merit(current) > np.amin(total_tunings) or len(current) < np.amax(total_lens):
                     #vt.as2_set_control(controls[i], start)
-                    kwargs[keys[i]] -= changes
+                    kwargs[keys[i]] = -changes
+                    #update hardware
+                    try:
+                        current = check_tuning(imagesize, average_frames=average_frames, integration_radius=integration_radius, save_images=save_images, savepath=savepath, **kwargs)
+                    except:
+                        pass
                     logging.info('Dismissed changes at '+ keys[i])
+            #reduce stepsize for next iteration
+            steps[i] *= 0.5
+            #set current working aberration to zero
+            kwargs[keys[i]] = 0
         
         if len(part_tunings) > 0:
             logging.info('Appending best value of this run to total_tunings: '+str(np.amin(part_tunings)))
@@ -179,19 +214,22 @@ def kill_aberrations(focus_step=1, astig2f_step=1, astig3f_step=30, coma_step=50
             total_lens.append(np.amax(part_lens))
         logging.info('Finished run number '+str(counter+1)+' in '+str(time.time()-start_time)+' s.')
         counter += 1
-        
-    kwargs['reset_aberrations'] = False
-    try:
-        end_frame = image_grabber(**kwargs)
-    except RuntimeError:
-        pass
     
+    if save_images:    
+        try:
+            check_tuning(imagesize, average_frames=0, integration_radius=integration_radius, save_images=save_images, savepath=savepath, **kwargs)
+        except:
+            pass
+    else:
+        image_grabber(acquire_image=False, **kwargs)
+        
     try:
         ss.SS_Functions_SS_SetFrameParams(FrameParams[0], FrameParams[1],FrameParams[2],FrameParams[3], FrameParams[4], FrameParams[5], FrameParams[6], FrameParams[7], FrameParams[8], FrameParams[9], FrameParams[10])
     except:
-        logging.warn('Couldn\'t reset frame parameters to previous values.')
+        pass
+        #logging.warn('Couldn\'t reset frame parameters to previous values.')
     
-    return kwargs
+    return global_aberrations
 
 
 def autofocus(imsize=None, image=None, start_stepsize=4, end_stepsize=1, position_tolerance=1,start_def=None):
@@ -235,18 +273,18 @@ def autofocus(imsize=None, image=None, start_stepsize=4, end_stepsize=1, positio
 
 
 #generates the defocused, noisy image
-def image_grabber(**kwargs):#, defocus=0, astig=[0,0], im=None, start_def=0.0, start_astig=[0,0], imsize=1.0):
+def image_grabber(acquire_image=True, **kwargs):#, defocus=0, astig=[0,0], im=None, start_def=0.0, start_astig=[0,0], imsize=1.0):
     """
-    kwargs can be all possible parameters for this function.
+    acquire_image defines if an image is taken and returned or if just the correctors are updated.
+    
+    kwargs contains all possible values for the correctors:
     These are all lens aberrations up to threefold astigmatism. If an image is given, the function will simulate aberrations to this image and add poisson noise to it.
-    If not, an image with the current frame parameters and the respective corrector parameters given in kwargs is taken. To properly simulate aberrations the image size 
-    of the input image in nm is requred.
+    If not, an image with the current frame parameters and the respective corrector parameters given in kwargs is taken.
     
     Possible Parameters are:
     
     lens aberrations: EHTFocus, C12_a, C12_b, C21_a, C21_b, C23_a,  C23_b (in nm)
     image (as numpy array)
-    imsize (in nm)
     relative_aberrations: True/False
     reset_aberrations: True/False
     
@@ -281,14 +319,15 @@ def image_grabber(**kwargs):#, defocus=0, astig=[0,0], im=None, start_def=0.0, s
                 #time.sleep(0.1)
                 vt.as2_set_control(controls[i], offset+kwargs[keys[i]]*1e-9)
         #time.sleep(0.2)
-        frame_nr = ss.SS_Functions_SS_StartFrame(0)
-        ss.SS_Functions_SS_WaitForEndOfFrame(frame_nr)
-        im = np.asarray(ss.SS_Functions_SS_GetImageForFrame(frame_nr, 0))
-        if len(originals) > 0:
-            for key in originals.keys():
-                #time.sleep(0.1)
-                vt.as2_set_control(key, originals[key])
-        return im
+        if acquire_image:
+            frame_nr = ss.SS_Functions_SS_StartFrame(0)
+            ss.SS_Functions_SS_WaitForEndOfFrame(frame_nr)
+            im = np.asarray(ss.SS_Functions_SS_GetImageForFrame(frame_nr, 0))
+            if len(originals) > 0:
+                for key in originals.keys():
+                    #time.sleep(0.1)
+                    vt.as2_set_control(key, originals[key])
+            return im
     else:
 #        if not kwargs.has_key('imsize'):
 #            raise KeyError('You din\'t enter a image size for your input image. The parameter has to be called \'imsize\'.')
@@ -322,47 +361,49 @@ def image_grabber(**kwargs):#, defocus=0, astig=[0,0], im=None, start_def=0.0, s
                 offset=0.0
                 if kwargs.has_key('relative_aberrations'):
                     if kwargs['relative_aberrations']:
-                        offset = global_aberrations[controls[i]]
+                        offset = global_aberrations[keys[i]]
                 aberrations[i] = offset+kwargs[keys[i]]
                 if kwargs.has_key(start_keys[i]):
                     aberrations[i] -= kwargs[start_keys[i]]
             #if aberrations should not be reset, change global_aberrations
                 if kwargs.has_key('reset_aberrations'):
                     if not kwargs['reset_aberrations']:
-                        global_aberrations[controls[i]] += kwargs[keys[i]]
+                        global_aberrations[keys[i]] = aberrations[i]
                 else:
-                    global_aberrations[controls[i]] += kwargs[keys[i]]
+                    global_aberrations[keys[i]] = aberrations[i]
             else:
-                aberrations[i] = global_aberrations[controls[i]]
+                aberrations[i] = global_aberrations[keys[i]]
         #print(kwargs)
         #print(aberrations)
-        #compute aberration function up to threefold astigmatism
-        #formula taken from "Advanced Computing in Electron Microscopy", Earl J. Kirkland, 2nd edition, 2010, p. 18
-        #wavelength for 60 keV electrons: 4.87e-3 nm
-        #first line: defocus and twofold astigmatism
-        #second line: coma
-        #third line: threefold astigmatism
-        raw_kernel = np.pi*4.87e-3*(-aberrations[0]*(x**2+y**2) + np.sqrt(aberrations[1]**2+aberrations[2]**2)*(x**2+y**2)*np.cos(2*(np.arctan2(y,x)-np.arctan2(aberrations[2], aberrations[1]))) \
-            + (2.0/3.0)*np.sqrt(aberrations[3]**2+aberrations[4]**2)*4.87e-3*np.sqrt(x**2+y**2)**3*np.cos(np.arctan2(y,x)-np.arctan2(aberrations[4], aberrations[3])) \
-            + (2.0/3.0)*np.sqrt(aberrations[5]**2+aberrations[6]**2)*4.87e-3*np.sqrt(x**2+y**2)**3*np.cos(3*(np.arctan2(y,x)-np.arctan2(aberrations[6], aberrations[5]))))
-        #raw_kernel = -np.pi*defocus*4.87e-3*(x**2+y**2) + np.pi*np.sum(np.power(astig,2))*4.87e-3*(x**2+y**2)*np.cos(2*(np.arctan2(y,x)-np.arctan2(astig[1], astig[0])) )
-        scale = 1.0/np.sqrt(shape[0]*shape[1])
-        #scale=1.0
-        kernel = np.cos(raw_kernel)*scale+1j*np.sin(raw_kernel)*(-scale)
-        #kernel = np.exp(-np.sign(defocus)*raw_kernel)
-        aperture = np.zeros(kernel.shape)
-        cv2.circle(aperture, tuple(np.array(kernel.shape, dtype='int')/2), int(kernelsize[0]/4.86), 1.0, thickness=-1)
-        kernel *= aperture
-        #kernel *= np.exp(-(x**2+y**2)/(1*kernelsize[0]))
-        kernel = np.abs(np.fft.fftshift(np.fft.ifft2(kernel)))**2
-        kernel /= np.sum(kernel)
-        im = cv2.filter2D(im, -1, kernel)
-        #fft = np.real(fft) * kernel/np.sum(np.abs(kernel)) + 1j * np.imag(fft)
-        #fft *= kernel/np.sum(np.abs(kernel))
-        #im = np.abs(np.real(np.fft.ifft2(np.fft.fftshift(fft))))
-        im = np.random.poisson(lam=im.flatten(), size=np.size(im))
-        return im.reshape(shape)
-        #return kernel
+        if acquire_image:
+            #compute aberration function up to threefold astigmatism
+            #formula taken from "Advanced Computing in Electron Microscopy", Earl J. Kirkland, 2nd edition, 2010, p. 18
+            #wavelength for 60 keV electrons: 4.87e-3 nm
+            #first line: defocus and twofold astigmatism
+            #second line: coma
+            #third line: threefold astigmatism
+            raw_kernel = np.pi*4.87e-3*(-aberrations[0]*(x**2+y**2) + np.sqrt(aberrations[1]**2+aberrations[2]**2)*(x**2+y**2)*np.cos(2*(np.arctan2(y,x)-np.arctan2(aberrations[2], aberrations[1]))) \
+                + (2.0/3.0)*np.sqrt(aberrations[3]**2+aberrations[4]**2)*4.87e-3*np.sqrt(x**2+y**2)**3*np.cos(np.arctan2(y,x)-np.arctan2(aberrations[4], aberrations[3])) \
+                + (2.0/3.0)*np.sqrt(aberrations[5]**2+aberrations[6]**2)*4.87e-3*np.sqrt(x**2+y**2)**3*np.cos(3*(np.arctan2(y,x)-np.arctan2(aberrations[6], aberrations[5]))))
+            #raw_kernel = -np.pi*defocus*4.87e-3*(x**2+y**2) + np.pi*np.sum(np.power(astig,2))*4.87e-3*(x**2+y**2)*np.cos(2*(np.arctan2(y,x)-np.arctan2(astig[1], astig[0])) )
+            scale = 1.0/np.sqrt(shape[0]*shape[1])
+            #scale=1.0
+            kernel = np.cos(raw_kernel)*scale+1j*np.sin(raw_kernel)*(-scale)
+            #kernel = np.exp(-np.sign(defocus)*raw_kernel)
+            aperture = np.zeros(kernel.shape)
+            cv2.circle(aperture, tuple(np.array(kernel.shape, dtype='int')/2), int(kernelsize[0]/4.86), 1.0, thickness=-1)
+            kernel *= aperture
+            #kernel *= np.exp(-(x**2+y**2)/(1*kernelsize[0]))
+            kernel = np.abs(np.fft.fftshift(np.fft.ifft2(kernel)))**2
+            kernel /= np.sum(kernel)
+            im = cv2.filter2D(im, -1, kernel)
+            #fft = np.real(fft) * kernel/np.sum(np.abs(kernel)) + 1j * np.imag(fft)
+            #fft *= kernel/np.sum(np.abs(kernel))
+            #im = np.abs(np.real(np.fft.ifft2(np.fft.fftshift(fft))))
+            im = np.random.poisson(lam=im.flatten(), size=np.size(im))
+            time.sleep(1)
+            return im.reshape(shape)
+            #return kernel
 
 
 def positive_angle(angle):
@@ -377,6 +418,8 @@ def positive_angle(angle):
 def check_tuning(imagesize, im=None, check_astig=False, average_frames=0, integration_radius=0, save_images=False, savepath=None, process_image=True, **kwargs):
     if not kwargs.has_key('imsize'):
         kwargs['imsize'] = imagesize
+    else:
+        imagesize=kwargs['imsize']
     if (process_image or im is None) and average_frames < 2:
         if im is not None and not kwargs.has_key('image'):
             kwargs['image'] = im
@@ -384,22 +427,30 @@ def check_tuning(imagesize, im=None, check_astig=False, average_frames=0, integr
             
     if average_frames > 1:
         im = []
-        for i in range(average_frames):
-            im.append(image_grabber(**kwargs))
+        im.append(image_grabber(**kwargs))
+        kwargs2 = kwargs.copy()
+        if kwargs.has_key('relative_aberrations') and kwargs['relative_aberrations']:
+                if not kwargs.has_key('reset_aberrations') or (kwargs.has_key('reset_aberrations') and not kwargs['reset_aberrations']):
+                    keys = ['EHTFocus', 'C12_a', 'C12_b', 'C21_a', 'C21_b', 'C23_a', 'C23_b']
+                    for key in keys:
+                        kwargs2.pop(key, 0)
+        
+        for i in range(average_frames-1):
+            im.append(image_grabber(**kwargs2))
     
     if save_images:
             if not os.path.exists(savepath):
                 os.makedirs(savepath)
-            name = str(int(time.time()))+'.tif'
+            name = str(int(time.time()*100))+'.tif'
             logfile = open(savepath+'log.txt', 'a')
             kwargs2 = kwargs.copy()
             kwargs2.pop('image', 0)
             logfile.write(name+': '+str(kwargs2)+'\n')
             logfile.close()
             if average_frames < 2:
-                tifffile.imsave(savepath+name, im)
+                tifffile.imsave(savepath+name, im.astype('float32'))
             else:
-                tifffile.imsave(savepath+name, im[0])
+                tifffile.imsave(savepath+name, im[0].astype('float32'))
             
     try:
         if check_astig:
