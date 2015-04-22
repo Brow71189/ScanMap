@@ -8,7 +8,6 @@ Created on Thu Mar 12 16:54:54 2015
 import logging
 import time
 import os
-from multiprocessing import Pool
 
 import numpy as np
 import scipy.optimize
@@ -454,9 +453,9 @@ def check_tuning(imagesize, im=None, check_astig=False, average_frames=0, integr
             
     try:
         if check_astig:
-            peaks = find_peaks(im, imagesize, integration_radius=integration_radius)
+            peaks = find_peaks(im, imagesize, integration_radius=integration_radius, position_tolerance=9)
         else:
-            peaks = find_peaks(im, imagesize, integration_radius=integration_radius, second_order=True)
+            peaks = find_peaks(im, imagesize, integration_radius=integration_radius, second_order=True, position_tolerance=9)
         
     except RuntimeError as detail:
         raise RuntimeError('Tuning check failed. Reason: '+ str(detail))
