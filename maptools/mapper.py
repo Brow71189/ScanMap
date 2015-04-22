@@ -162,7 +162,7 @@ def find_nearest_neighbors(number, target, points):
     
     
 def SuperScan_mapping(coord_dict, filepath='Z:\\ScanMap\\', do_autofocus=False, offset = 0.0, rotation = 0.0, imsize=200, impix=512, \
-                      pixeltime=4, detectors=('MAADF'), use_z_drive=False, auto_offset=False, auto_rotation=False, autofocus_pattern='edges'):
+                      pixeltime=4, detectors=('MAADF'), use_z_drive=False, auto_offset=False, auto_rotation=False, autofocus_pattern='edges', number_of_images=1):
     """
         This function will take a series of STEM images (subframes) to map a large rectangular sample area.
         coord_dict is a dictionary that has to consist of at least 4 tuples that hold stage coordinates in x,y,z - direction
@@ -181,6 +181,12 @@ def SuperScan_mapping(coord_dict, filepath='Z:\\ScanMap\\', do_autofocus=False, 
         logging.warn('Unknown option for autofocus_pattern. Defaulting to \'edges\'.')
         autofocus_pattern = 'edges'
     
+    if np.size(pixeltime) > 1 and np.size(pixeltime) != number_of_images:
+        raise ValueError('The number of given pixeltimes do not match the given number of frames that should be recorded per location. You can either input one number or a list with a matching length.')
+    
+    if np.size(pixeltime) > 1 and do_autofocus == True:
+        logging.warn('Acquiring an image series and using autofocus is currently not possible. Autofocus will be disabled.')
+        do_autofocus = False
     #If not running on microscope computer this will be set to true later.
     #No functions that require real Microscope Hardware will be executed, so no errors appear (test mode)    
     offline = False
@@ -215,7 +221,7 @@ def SuperScan_mapping(coord_dict, filepath='Z:\\ScanMap\\', do_autofocus=False, 
     #Find scan rotation and offset between the images if desired by the user    
     if auto_offset or auto_rotation:
         #set scan parameters for finding rotation and offset
-        ss.SS_Functions_SS_SetFrameParams(impix, impix, 0, 0, 1, imsize*1e9, 0, False, True, False, False)
+        ss.SS_Functions_SS_SetFrameParams(impix, impix, 0, 0, 2, imsize*1e9, 0, False, True, False, False)
         #Go first some distance into the opposite direction to reduce the influence of backlash in the mechanics on the calibration
         vt.as2_set_control('StageOutX', leftX-5.0*imsize)
         vt.as2_set_control('StageOutY', topY)
@@ -354,7 +360,7 @@ def SuperScan_mapping(coord_dict, filepath='Z:\\ScanMap\\', do_autofocus=False, 
             
             #Wait until movement of stage is done (wait longer time before first frame)
             if counter == 1:            
-                time.sleep(5) #time in seconds
+                time.sleep(10) #time in seconds
             else:
                 time.sleep(3)
             
@@ -459,11 +465,26 @@ def SuperScan_mapping(coord_dict, filepath='Z:\\ScanMap\\', do_autofocus=False, 
                     
             else:
                 #Take frame and save it to disk
-                frame_nr = ss.SS_Functions_SS_StartFrame(0)
-                ss.SS_Functions_SS_WaitForEndOfFrame(frame_nr)
-                data = np.asarray(ss.SS_Functions_SS_GetImageForFrame(frame_nr, 0))
-                tifffile.imsave(store+str('%.4d_%.3f_%.3f.tif' % (frame_number[counter-1],stagex*1e6,stagey*1e6)), data)
-                test_map.append(frame_coord)
+                if number_of_images < 2:
+                    frame_nr = ss.SS_Functions_SS_StartFrame(0)
+                    ss.SS_Functions_SS_WaitForEndOfFrame(frame_nr)
+                    data = np.asarray(ss.SS_Functions_SS_GetImageForFrame(frame_nr, 0))
+                    tifffile.imsave(store+str('%.4d_%.3f_%.3f.tif' % (frame_number[counter-1],stagex*1e6,stagey*1e6)), data)
+                    test_map.append(frame_coord)
+                else:
+                    if np.size(pixeltime) > 1:
+                        original_frame_params = ss.SS_Functions_SS_GetFrameParams()
+                        frame_params = list(original_frame_params)
+                    for i in range(number_of_images):
+                        if np.size(pixeltime) > 1:                        
+                            frame_params[4] = pixeltime[i]
+                            ss.SS_Functions_SS_SetFrameParams(*frame_params)
+                        frame_nr = ss.SS_Functions_SS_StartFrame(0)
+                        ss.SS_Functions_SS_WaitForEndOfFrame(frame_nr)
+                        data = np.asarray(ss.SS_Functions_SS_GetImageForFrame(frame_nr, 0))
+                        tifffile.imsave(store+str('%.4d_%.3f_%.3f_%.2d.tif' % (frame_number[counter-1],stagex*1e6,stagey*1e6, i)), data)
+                    ss.SS_Functions_SS_SetFrameParams(*original_frame_params)
+                    test_map.append(frame_coord)
         
         else:
             test_map.append(frame_coord)
