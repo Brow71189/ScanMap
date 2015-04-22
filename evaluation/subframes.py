@@ -13,8 +13,30 @@ from multiprocessing import Pool
 import matplotlib.pyplot as plt
 import time
 import tifffile
+import scipy.optimize
 
-def rotation_radius(image, imsize):
+def ellipse(polar_angle, a, b, rotation):
+    """
+    Returns the radius of a point lying on an ellipse with the given parameters.
+    """
+    return a*b/np.sqrt((b*np.cos(polar_angle-rotation))**2+(a*np.sin(polar_angle-rotation))**2)
+
+def fit_ellipse(angles, radii):
+    if len(angles) != len(radii):
+        raise ValueError('The input sequences have to have the same lenght!.')
+    if len(angles) < 3:
+        logging.warn('Can only fit a circle and not an ellipse to a set of less than 3 points.')
+        return (np.mean(radii), np.mean(radii), 0.)
+    try:
+        popt, pcov = scipy.optimize.curve_fit(ellipse, angles, radii, p0=(np.mean(radii), np.mean(radii), 0.0))
+    except:
+        logging.warn('Fit of the ellipse faied. Using a circle as best approximation of the data.')
+        return (np.mean(radii), np.mean(radii), 0.)
+    else:
+        popt[2] %= np.pi
+        return tuple(popt)
+
+def rotation_radius(image, imsize, find_distortions=True):
     """
     Finds the rotation of the graphene lattice in a frame with repect to the x-axis
     
@@ -32,7 +54,7 @@ def rotation_radius(image, imsize):
         Angle (in rad) between x-axis and the first reflection in counter-clockwise direction
     """
     try:
-        peaks = at.find_peaks(image, imsize)
+        peaks = at.find_peaks(image, imsize, half_line_thickness=4, position_tolerance = 9)
     except:
         raise
     else:
@@ -48,14 +70,14 @@ def rotation_radius(image, imsize):
             
         sum_rotation = 0
         for angle in angles:
-            while angle > np.pi/3.0:
-                angle -= np.pi/3.0
-            sum_rotation += angle
+#            while angle > np.pi/3.0:
+#                angle -= np.pi/3.0
+            sum_rotation += angle%(np.pi/3)
         
-        return (sum_rotation/float(len(angles)), np.mean(radii))
-    
-            
-        
+        if find_distortions:
+            return (sum_rotation/float(len(angles)), np.mean(radii)) + fit_ellipse(angles, radii)
+        else:
+            return (sum_rotation/float(len(angles)), np.mean(radii))
     
 def calculate_counts(image, threshold=1e-9):
     """
@@ -110,7 +132,8 @@ def counts(path):
     im = cv2.imread(path, -1)
     return calculate_counts(im)
 
-def subframes_preprocessing(filename, dirname, imsize, counts_threshold=1e-9, dirt_threshold=0.02, median_blur_diameter=39, gaussian_blur_radius=3, maximum_dirt_coverage=0.5):
+def subframes_preprocessing(filename, dirname, imsize, counts_threshold=1e-9, dirt_threshold=0.02, median_blur_diameter=39, gaussian_blur_radius=3,\
+                             maximum_dirt_coverage=0.5, save_fft=True):
     """
     Returns tuple of the form:
             (filename, success, dirt coverage, counts divisor, angle of lattice rotation, mean peak radius)
@@ -122,19 +145,19 @@ def subframes_preprocessing(filename, dirname, imsize, counts_threshold=1e-9, di
     image = cv2.imread(dirname+filename, -1)
     if image is None:
         raise ValueError(dirname+filename+' is not an image file. Make sure you give the total path as input argument.')
-    
+    image_org = image.copy()
     #get mask to filter dirt and check if image is covered by more than "maximum_dirt_coverage"
     mask = dirt_detector(image, threshold=dirt_threshold, median_blur_diam=median_blur_diameter, gaussian_blur_radius=gaussian_blur_radius)
     dirt_coverage = float(np.sum(mask))/(np.shape(image)[0]*np.shape(image)[1])
     if dirt_coverage > maximum_dirt_coverage:
         success = False
-        return (filename, success, dirt_coverage, None, None, None)
+        return (filename, dirt_coverage, None, None, None, None, success)
     
     #get angle of rotation and peak radius
     try:
-        rotation, radius = rotation_radius(image, imsize)
+        rotation, radius, ellipse_a, ellipse_b, angle = rotation_radius(image, imsize)
     except:
-        rotation = radius = None
+        rotation = ellipse_a = ellipse_b = angle = None
         success = False
     
     #Get counts divisor for image
@@ -147,21 +170,32 @@ def subframes_preprocessing(filename, dirname, imsize, counts_threshold=1e-9, di
     #save the image to disk
     if not os.path.exists(dirname+'subframes_preprocessing/'):
         os.makedirs(dirname+'subframes_preprocessing/')
+    if save_fft:
+        if not os.path.exists(dirname+'fft_stack/'):
+            os.makedirs(dirname+'fft_stack/')
     
     if success:
         #cv2.imwrite(dirname+'subframes_preprocessing/'+filename, image)
         tifffile.imsave(dirname+'subframes_preprocessing/'+filename, image)
+        if save_fft:
+            fft = np.log(np.abs(np.fft.fftshift(np.fft.fft2(image_org)))).astype('float32')
+            center = np.array(np.shape(image))/2
+            cv2.ellipse(fft, (tuple(center), (ellipse_a*2, ellipse_b*2), -angle*180/np.pi), -1)
+            savesize = int(2.0*imsize/0.213)
+            tifffile.imsave(dirname+'fft_stack/'+filename, fft[center[0]-savesize:center[0]+savesize+1, center[1]-savesize:center[1]+savesize+1])
+        
     
     #return image parameters
-    return (filename, success, dirt_coverage, counts_divisor, rotation, radius)
+    return (filename, dirt_coverage, rotation, ellipse_a, ellipse_b, angle, success)
 
 if __name__ == '__main__':
     
     overall_starttime = time.time()
 
     dirpath = '/3tb/maps_data/map_2015_04_15_13_13/'
-    #dirpath = '/home/mittelberger/Documents/map_26_03_2015_21_24/'
+    #dirpath = '/3tb/test_ellipse/'
     imsize = 12
+    dirt_threshold = 0.0085
     
     dirlist=os.listdir(dirpath)
     matched_dirlist = []
@@ -175,7 +209,7 @@ if __name__ == '__main__':
     #starttime = time.time()
     
     pool = Pool()
-    res = [pool.apply_async(subframes_preprocessing, (filename, dirpath, imsize), {'dirt_threshold': 0.01}) for filename in matched_dirlist]
+    res = [pool.apply_async(subframes_preprocessing, (filename, dirpath, imsize), {'dirt_threshold': dirt_threshold}) for filename in matched_dirlist]
     res_list = [p.get() for p in res]
     pool.close()
     pool.terminate()
@@ -189,21 +223,16 @@ if __name__ == '__main__':
     if not os.path.exists(dirpath+'subframes_preprocessing/'):
         os.makedirs(dirpath+'subframes_preprocessing/')
     
-    frame_data_file = open(dirpath+'subframes_preprocessing/'+'frame_data.txt', 'w')
+    frame_data_file = open(dirpath+'subframes_preprocessing/'+'frame_init.txt', 'w')
     
-    frame_data_file.write('#This file contains informations about all frames stored in '+dirpath+'\n')
+    frame_data_file.write('#This file contains informations about all frames of '+(dirpath.split('/')[-2] if dirpath.endswith('/') else dirpath.split('/')[-1])+'\n')
+    frame_data_file.write('#Imagesize in nm: %.1f\tDirt threshold: %f\n' %(imsize, dirt_threshold))
     frame_data_file.write('#Meanings of the values are:\n')
-    frame_data_file.write('#filename\tsuccess\tdirt coverage\tcounts divisor\tlattice rotation (rad)\tpeak radius (pixels)\n\n')
+    frame_data_file.write('#filename\tdirt coverage\ttilt\tellipse half-axis a\tellipse half-axis b\tangle of half-axis a (rad)\n\n')
     
     for frame_data in res_list:
-        try:
-            frame_data_file.write('%s\t%s\t%.3f\t%.7f\t%.7f\t%.2f\n' % frame_data)
-        except:
-            try:
-                frame_data_file.write('%s\t%s\t%.3f\t%.7f\t%s\t%s\n' % frame_data)
-            except:
-                frame_data_file.write('%s\t%s\t%.3f\t%s\t%s\t%s\n' % frame_data)
-            
+        if frame_data[6]:
+                frame_data_file.write('%s\t%.3f\t%.6f\t%.6f\t%.6f\t%.6f\n' % frame_data[0:6])
     
     frame_data_file.close()
     
