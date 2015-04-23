@@ -266,11 +266,14 @@ def SuperScan_mapping(coord_dict, filepath='Z:\\ScanMap\\', do_autofocus=False, 
         
     #Scan configuration
     try:
-        ss.SS_Functions_SS_SetFrameParams(impix, impix, 0, 0, pixeltime, imsize*1e9, rotation, HAADF, MAADF, False, False)
+        if np.size(pixeltime) > 1:
+            ss.SS_Functions_SS_SetFrameParams(impix, impix, 0, 0, pixeltime[0], imsize*1e9, rotation, HAADF, MAADF, False, False)
+        else:
+            ss.SS_Functions_SS_SetFrameParams(impix, impix, 0, 0, pixeltime, imsize*1e9, rotation, HAADF, MAADF, False, False)
         logging.info('Using frame rotation of: ' + str(rotation*180/np.pi) + ' deg')
-    except:
+    except BaseException as detail:
         offline = True        
-        logging.warn('Not able to set frame parameters. Going back to offline mode.')
+        logging.warn('Not able to set frame parameters. Going back to offline mode. Reason: '+str(detail))
         
     
     #calculate the number of subframes in (x,y). A small distance is kept between the subframes
