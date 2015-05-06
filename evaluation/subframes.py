@@ -54,7 +54,7 @@ def rotation_radius(image, imsize, find_distortions=True):
         Angle (in rad) between x-axis and the first reflection in counter-clockwise direction
     """
     try:
-        peaks = at.find_peaks(image, imsize, half_line_thickness=4, position_tolerance = 9)
+        peaks_first, peaks_second = at.find_peaks(image, imsize, half_line_thickness=2, position_tolerance = 9, second_order=True)
     except:
         raise
     else:
@@ -63,7 +63,7 @@ def rotation_radius(image, imsize, find_distortions=True):
         radii = []
         center = np.array(np.shape(image))/2
         
-        for peak in peaks:
+        for peak in peaks_first:
             peak = np.array(peak[0:2])-center
             angles.append(at.positive_angle(np.arctan2(-peak[0], peak[1])))
             radii.append(np.sqrt(np.sum(peak**2)))
@@ -75,9 +75,9 @@ def rotation_radius(image, imsize, find_distortions=True):
             sum_rotation += angle%(np.pi/3)
         
         if find_distortions:
-            return (sum_rotation/float(len(angles)), np.mean(radii)) + fit_ellipse(angles, radii)
+            return (sum_rotation/float(len(angles)), np.mean(radii), len(peaks_first)+len(peaks_second)) + fit_ellipse(angles, radii)
         else:
-            return (sum_rotation/float(len(angles)), np.mean(radii))
+            return (sum_rotation/float(len(angles)), np.mean(radii), len(peaks_first)+len(peaks_second))
     
 def calculate_counts(image, threshold=1e-9):
     """
@@ -126,6 +126,8 @@ def dirt_detector(image, threshold=0.02, median_blur_diam=85, gaussian_blur_radi
     mask = np.zeros(np.shape(image), dtype='uint8')
     mask[image>threshold] = 1
     #apply median blur to mask to remove noise influence
+    if median_blur_diam%2==0:
+        median_blur_diam+=1
     return cv2.medianBlur(mask, median_blur_diam)
 
 def counts(path):
@@ -133,7 +135,7 @@ def counts(path):
     return calculate_counts(im)
 
 def subframes_preprocessing(filename, dirname, imsize, counts_threshold=1e-9, dirt_threshold=0.02, median_blur_diameter=39, gaussian_blur_radius=3,\
-                             maximum_dirt_coverage=0.5, save_fft=True):
+                             maximum_dirt_coverage=0.5, dirt_border=100, save_fft=True):
     """
     Returns tuple of the form:
             (filename, success, dirt coverage, counts divisor, angle of lattice rotation, mean peak radius)
@@ -151,13 +153,16 @@ def subframes_preprocessing(filename, dirname, imsize, counts_threshold=1e-9, di
     dirt_coverage = float(np.sum(mask))/(np.shape(image)[0]*np.shape(image)[1])
     if dirt_coverage > maximum_dirt_coverage:
         success = False
-        return (filename, dirt_coverage, None, None, None, None, success)
+        return (filename, dirt_coverage, None, None, None, None, None, None,  success)
     
     #get angle of rotation and peak radius
     try:
-        rotation, radius, ellipse_a, ellipse_b, angle = rotation_radius(image, imsize)
-    except:
-        rotation = ellipse_a = ellipse_b = angle = None
+        rotation, radius, number_peaks, ellipse_a, ellipse_b, angle = rotation_radius(image, imsize)
+    except Exception as detail:
+        print('Error in '+ filename + ': ' + str(detail))
+        rotation = ellipse_a = ellipse_b = angle = np.NaN
+        number_peaks = 0
+        #peaks = None
         success = False
     
     #Get counts divisor for image
@@ -165,38 +170,49 @@ def subframes_preprocessing(filename, dirname, imsize, counts_threshold=1e-9, di
     #Calculate actual counts in image and "translate" it to 16bit unsigned integer.
     image[image<0]=0.0
     image = np.asarray(np.rint(image/counts_divisor), dtype='uint16')
+    #dilate mask if dirt_border > 0
+    if dirt_border > 0:
+        mask = cv2.dilate(mask, np.ones((dirt_border, dirt_border)))
     #Set pixels where dirt was detected to maximum of 16bit range
     image[mask==1] = 65535
     #save the image to disk
-    if not os.path.exists(dirname+'subframes_preprocessing/'):
-        os.makedirs(dirname+'subframes_preprocessing/')
+    if not os.path.exists(dirname+'prep_'+dirname.split('/')[-2]+'/'):
+        os.makedirs(dirname+'prep_'+dirname.split('/')[-2]+'/')
     if save_fft:
-        if not os.path.exists(dirname+'fft_stack/'):
-            os.makedirs(dirname+'fft_stack/')
+        if not os.path.exists(dirname+'fft_'+dirname.split('/')[-2]+'/'):
+            os.makedirs(dirname+'fft_'+dirname.split('/')[-2]+'/')
     
     if success:
         #cv2.imwrite(dirname+'subframes_preprocessing/'+filename, image)
-        tifffile.imsave(dirname+'subframes_preprocessing/'+filename, image)
+        
+        tifffile.imsave(dirname+'prep_'+dirname.split('/')[-2]+'/'+filename, image)
         if save_fft:
             fft = np.log(np.abs(np.fft.fftshift(np.fft.fft2(image_org)))).astype('float32')
             center = np.array(np.shape(image))/2
-            cv2.ellipse(fft, (tuple(center), (ellipse_a*2, ellipse_b*2), -angle*180/np.pi), -1)
+            ell = np.ones(np.shape(fft), dtype='float32')
+            cv2.ellipse(ell, (tuple(center), (ellipse_a*2, ellipse_b*2), -angle*180/np.pi), 2)
+            cv2.ellipse(ell, (tuple(center), (ellipse_a*2*np.sqrt(3), ellipse_b*2*np.sqrt(3)), -angle*180/np.pi), 2)            
+            fft *= ell
             savesize = int(2.0*imsize/0.213)
-            tifffile.imsave(dirname+'fft_stack/'+filename, fft[center[0]-savesize:center[0]+savesize+1, center[1]-savesize:center[1]+savesize+1])
+            tifffile.imsave(dirname+'fft_'+dirname.split('/')[-2]+'/'+filename, fft[center[0]-savesize:center[0]+savesize+1, center[1]-savesize:center[1]+savesize+1])
         
     
     #return image parameters
-    return (filename, dirt_coverage, rotation, ellipse_a, ellipse_b, angle, success)
+    return (filename, dirt_coverage, number_peaks, rotation, ellipse_a, ellipse_b, angle, success)
 
 if __name__ == '__main__':
     
     overall_starttime = time.time()
 
     dirpath = '/3tb/maps_data/map_2015_04_15_13_13/'
-    #dirpath = '/3tb/test_ellipse/'
+    #dirpath = '/3tb/Dark_noise/'
     imsize = 12
     dirt_threshold = 0.0085
-    
+    dirt_border = 100
+
+
+    if not dirpath.endswith('/'):
+        dirpath += '/'
     dirlist=os.listdir(dirpath)
     matched_dirlist = []
     for filename in dirlist:
@@ -209,7 +225,7 @@ if __name__ == '__main__':
     #starttime = time.time()
     
     pool = Pool()
-    res = [pool.apply_async(subframes_preprocessing, (filename, dirpath, imsize), {'dirt_threshold': dirt_threshold}) for filename in matched_dirlist]
+    res = [pool.apply_async(subframes_preprocessing, (filename, dirpath, imsize), {'dirt_threshold': dirt_threshold, 'dirt_border':dirt_border, 'save_fft': True}) for filename in matched_dirlist]
     res_list = [p.get() for p in res]
     pool.close()
     pool.terminate()
@@ -220,19 +236,20 @@ if __name__ == '__main__':
     
     res_list.sort()
     
-    if not os.path.exists(dirpath+'subframes_preprocessing/'):
-        os.makedirs(dirpath+'subframes_preprocessing/')
+    if not os.path.exists(dirpath+'prep_'+dirpath.split('/')[-2]+'/'):
+        os.makedirs(dirpath+'prep_'+dirpath.split('/')[-2]+'/')
     
-    frame_data_file = open(dirpath+'subframes_preprocessing/'+'frame_init.txt', 'w')
+    frame_data_file = open(dirpath+'prep_'+dirpath.split('/')[-2]+'/'+'frame_init.txt', 'w')
     
-    frame_data_file.write('#This file contains informations about all frames of '+(dirpath.split('/')[-2] if dirpath.endswith('/') else dirpath.split('/')[-1])+'\n')
-    frame_data_file.write('#Imagesize in nm: %.1f\tDirt threshold: %f\n' %(imsize, dirt_threshold))
+    frame_data_file.write('#This file contains informations about all frames of '+(dirpath.split('/')[-2]+'\n'))
+    frame_data_file.write('#Created: ' + time.strftime('%Y/%m/%d %H:%M') + '\n')
+    frame_data_file.write('#Imagesize in nm: %.1f\tDirt threshold: %f\tDirt border: %d\n' %(imsize, dirt_threshold, dirt_border))
     frame_data_file.write('#Meanings of the values are:\n')
-    frame_data_file.write('#filename\tdirt coverage\ttilt\tellipse half-axis a\tellipse half-axis b\tangle of half-axis a (rad)\n\n')
+    frame_data_file.write('#filename\tdirt\tnumpeak\ttilt\tella\tellb\tellphi\n\n')
     
     for frame_data in res_list:
-        if frame_data[6]:
-                frame_data_file.write('%s\t%.3f\t%.6f\t%.6f\t%.6f\t%.6f\n' % frame_data[0:6])
+        if frame_data[-1]:
+                frame_data_file.write('%s\t%.3f\t%d\t%.6f\t%.6f\t%.6f\t%.6f\n' % frame_data[0:7])
     
     frame_data_file.close()
     
