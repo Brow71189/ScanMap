@@ -621,7 +621,7 @@ def optimize_focus(imsize, im=None, start_stepsize=4, end_stepsize=1):
     
     return defocus
 
-def find_peaks(im, imsize, half_line_thickness=5, position_tolerance=5, integration_radius=0, second_order=False):
+def find_peaks(im, imsize, half_line_thickness=5, position_tolerance=5, integration_radius=0, second_order=False, debug_mode=False):
     """
         This function can find the 6 first-order peaks in the FFT of an atomic-resolution image of graphene.
         Input:
@@ -634,9 +634,14 @@ def find_peaks(im, imsize, half_line_thickness=5, position_tolerance=5, integrat
     """
     def gaussian2D(xdata, x0, y0, x_std, y_std, amplitude, offset):
         x0, y0, x_std, y_std, amplitude, offset = float(x0), float(y0), float(x_std), float(y_std), float(amplitude), float(offset)
-        return (amplitude*np.exp( -0.5*( ((xdata[1]-x0)/x_std)**2 + ((xdata[0]-y0)/y_std)**2 ) ) + offset).ravel()
+        return (amplitude*np.exp( -0.5*( ((xdata[1]-x0)/x_std)**2 + ((xdata[0]-y0)/y_std)**2 ) ) + offset)#.ravel()
+    
+    def hyperbola1D(xdata, a, offset):
+        a, offset = float(a), float(offset)
+        return np.abs(1.0/(a*xdata))+offset
 
     shape = np.shape(im)
+    center = np.array(shape)/2
     
     fft = np.abs(np.fft.fftshift(np.fft.fft2(im)))  
     #If more than one image are passed to find_peaks, compute average of their fft's before going on
@@ -649,30 +654,50 @@ def find_peaks(im, imsize, half_line_thickness=5, position_tolerance=5, integrat
     first_order = imsize/0.213
     #second_order = imsize/0.123
     
-    fft *= gaussian2D(np.mgrid[0:shape[0], 0:shape[1]], shape[1]/2, shape[0]/2, np.sqrt(first_order), np.sqrt(first_order), -1, 1).reshape(shape)
+    #blank out bright spot in center of fft
+    cv2.circle(fft, tuple(center), int(first_order/2.0), -1, -1)
+
+    #std_dev_fft = np.std(fft[fft>-1])
+    mean_fft = np.mean(fft[fft>-1])    
+    #Fit horizontal and vertical lines with hyperbola
+    cross = np.zeros(shape)
+    for i in range(-half_line_thickness, half_line_thickness+1):
+        horizontal = fft[center[0]+i,:]
+        vertical = fft[:, center[1]+i]
+        xdata = np.mgrid[:shape[1]][horizontal>-1] - center[1]
+        ydata = np.mgrid[:shape[0]][vertical>-1] - center[0]
+        horizontal = horizontal[horizontal>-1]
+        vertical = vertical[vertical>-1]
+        horiz_a = 1.0/((np.mean(horizontal[int(len(horizontal)*0.6)-3:int(len(horizontal)*0.6)+4])-np.mean(horizontal[int(len(horizontal)*0.7)-3:int(len(horizontal)*0.7)+4]))*2.0*xdata[int(len(horizontal)*0.6)])
+        vert_a = 1.0/((np.mean(vertical[int(len(vertical)*0.6)-3:int(len(vertical)*0.6)+4])-np.mean(vertical[int(len(vertical)*0.7)-3:int(len(vertical)*0.7)+4]))*2.0*ydata[int(len(vertical)*0.6)])
+        horizontal_popt, horizontal_pcov = scipy.optimize.curve_fit(hyperbola1D, xdata[:len(xdata)/2], horizontal[:len(xdata)/2], p0=(horiz_a, 0))
+        vertical_popt, vertical_pcov = scipy.optimize.curve_fit(hyperbola1D, ydata[:len(ydata)/2], vertical[:len(ydata)/2], p0=(vert_a, 0))
+        
+        cross[center[0]+i, xdata+center[1]] = hyperbola1D(xdata, *horizontal_popt)-1.5*mean_fft
+        cross[ydata+center[0], center[1]+i] = hyperbola1D(ydata, *vertical_popt)-1.5*mean_fft
     
+    fft-=cross
+    #fft *= gaussian2D(np.mgrid[0:shape[0], 0:shape[1]], shape[1]/2, shape[0]/2, np.sqrt(first_order), np.sqrt(first_order), -1, 1).reshape(shape)
     #remove vertical and horizontal lines
-    central_area = fft[shape[0]/2-half_line_thickness:shape[0]/2+half_line_thickness+1, shape[1]/2-half_line_thickness:shape[1]/2+half_line_thickness+1].copy()
+    #central_area = fft[shape[0]/2-half_line_thickness:shape[0]/2+half_line_thickness+1, shape[1]/2-half_line_thickness:shape[1]/2+half_line_thickness+1].copy()
     
-    horizontal = fft[shape[0]/2-half_line_thickness:shape[0]/2+half_line_thickness+1, :]
-    horizontal_popt, horizontal_pcov = scipy.optimize.curve_fit(gaussian2D, np.mgrid[0:2*half_line_thickness+1, 0:shape[0]],horizontal.ravel(), p0=(shape[1]/2, half_line_thickness, 1, 1, np.amax(horizontal),0))
-    vertical = fft[:,shape[1]/2-half_line_thickness:shape[1]/2+half_line_thickness+1]
-    vertical_popt, vertical_pcov = scipy.optimize.curve_fit(gaussian2D, np.mgrid[0:shape[1], 0:2*half_line_thickness+1],vertical.ravel(), p0=(half_line_thickness, shape[0]/2, 1, 1, np.amax(vertical),0))
+#    horizontal = fft[shape[0]/2-half_line_thickness:shape[0]/2+half_line_thickness+1, :]
+#    horizontal_popt, horizontal_pcov = scipy.optimize.curve_fit(gaussian2D, np.mgrid[0:2*half_line_thickness+1, 0:shape[0]],horizontal.ravel(), p0=(shape[1]/2, half_line_thickness, 1, 1, np.amax(horizontal),0))
+#    vertical = fft[:,shape[1]/2-half_line_thickness:shape[1]/2+half_line_thickness+1]
+#    vertical_popt, vertical_pcov = scipy.optimize.curve_fit(gaussian2D, np.mgrid[0:shape[1], 0:2*half_line_thickness+1],vertical.ravel(), p0=(half_line_thickness, shape[0]/2, 1, 1, np.amax(vertical),0))
+#    
+#    fft[shape[0]/2-half_line_thickness:shape[0]/2+half_line_thickness+1, :] /= gaussian2D(np.mgrid[0:2*half_line_thickness+1, 0:shape[1]], horizontal_popt[0], horizontal_popt[1], horizontal_popt[2], horizontal_popt[3], horizontal_popt[4], horizontal_popt[5]).reshape((2*half_line_thickness+1,shape[1])) #horizontal
+#    fft[shape[0]/2-half_line_thickness:shape[0]/2+half_line_thickness+1, :] *= np.mean(fft)    
+#    fft[shape[0]/2-half_line_thickness:shape[0]/2+half_line_thickness+1, shape[1]/2-half_line_thickness:shape[1]/2+half_line_thickness+1] = central_area
+#    fft[:, shape[1]/2-half_line_thickness:shape[1]/2+half_line_thickness+1] /= gaussian2D(np.mgrid[0:shape[0], 0:2*half_line_thickness+1], vertical_popt[0], vertical_popt[1], vertical_popt[2], vertical_popt[3], vertical_popt[4], vertical_popt[5]).reshape((shape[0], 2*half_line_thickness+1)) #vertical
+#    fft[:, shape[1]/2-half_line_thickness:shape[1]/2+half_line_thickness+1] *= np.mean(fft)
     
-    fft[shape[0]/2-half_line_thickness:shape[0]/2+half_line_thickness+1, :] /= gaussian2D(np.mgrid[0:2*half_line_thickness+1, 0:shape[1]], horizontal_popt[0], horizontal_popt[1], horizontal_popt[2], horizontal_popt[3], horizontal_popt[4], horizontal_popt[5]).reshape((2*half_line_thickness+1,shape[1])) #horizontal
-    fft[shape[0]/2-half_line_thickness:shape[0]/2+half_line_thickness+1, :] *= np.mean(fft)    
-    fft[shape[0]/2-half_line_thickness:shape[0]/2+half_line_thickness+1, shape[1]/2-half_line_thickness:shape[1]/2+half_line_thickness+1] = central_area
-    fft[:, shape[1]/2-half_line_thickness:shape[1]/2+half_line_thickness+1] /= gaussian2D(np.mgrid[0:shape[0], 0:2*half_line_thickness+1], vertical_popt[0], vertical_popt[1], vertical_popt[2], vertical_popt[3], vertical_popt[4], vertical_popt[5]).reshape((shape[0], 2*half_line_thickness+1)) #vertical
-    fft[:, shape[1]/2-half_line_thickness:shape[1]/2+half_line_thickness+1] *= np.mean(fft)
-    
-    
-    fft *= gaussian2D(np.mgrid[0:shape[0], 0:shape[1]], shape[1]/2, shape[0]/2, np.sqrt(first_order*5.0), np.sqrt(first_order*5.0), -1, 1).reshape(shape)
-    
+    if (4*int(first_order) < center).all():
+        fft[center[0]-4*int(first_order):center[0]+4*int(first_order)+1, center[1]-4*int(first_order):center[1]+4*int(first_order)+1] *= gaussian2D(np.mgrid[center[0]-4*int(first_order):center[0]+4*int(first_order)+1, center[1]-4*int(first_order):center[1]+4*int(first_order)+1], shape[1]/2, shape[0]/2, 0.75*first_order, 0.75*first_order, -1, 1)#.reshape(np.array(shape)/2)
+    else:
+        fft *= gaussian2D(np.mgrid[:shape[0], :shape[1]], shape[1]/2, shape[0]/2, 0.75*first_order, 0.75*first_order, -1, 1)
     #find peaks
     success = False
-    std_dev_fft = np.std(fft)
-    mean_fft = np.mean(fft)
-    center = np.array(shape)/2
     counter = 0
     
     while success is False:
@@ -681,13 +706,15 @@ def find_peaks(im, imsize, half_line_thickness=5, position_tolerance=5, integrat
             raise RuntimeError('No peaks could be found in the FFT of im.')
         peaks = []
         first_peak = np.unravel_index(np.argmax(fft), shape)+(np.amax(fft), )
+        area_first_peak = fft[first_peak[0]-position_tolerance:first_peak[0]+position_tolerance+1, first_peak[1]-position_tolerance:first_peak[1]+position_tolerance+1]
         #check if found peak is on cross
 #        if first_peak[0] in range(center[0]-half_line_thickness,center[0]+half_line_thickness+1) or first_peak[1] in range(center[1]-half_line_thickness,center[1]+half_line_thickness+1):
 #            fft[first_peak[0]-position_tolerance:first_peak[0]+position_tolerance+1, first_peak[1]-position_tolerance:first_peak[1]+position_tolerance+1] = 0
-        if first_peak[2] < mean_fft + 7.0*std_dev_fft:
-            fft[first_peak[0]-position_tolerance:first_peak[0]+position_tolerance+1, first_peak[1]-position_tolerance:first_peak[1]+position_tolerance+1] = 0
+        #if first_peak[2] < mean_fft + 6.0*std_dev_fft:
+        if first_peak[2] < np.mean(area_first_peak)+5*np.std(area_first_peak):
+            fft[first_peak[0]-position_tolerance:first_peak[0]+position_tolerance+1, first_peak[1]-position_tolerance:first_peak[1]+position_tolerance+1] = 1
         elif np.sqrt(np.sum((np.array(first_peak[0:2])-center)**2)) < first_order*0.6667 or np.sqrt(np.sum((np.array(first_peak[0:2])-center)**2)) > first_order*1.333:
-            fft[first_peak[0]-position_tolerance:first_peak[0]+position_tolerance+1, first_peak[1]-position_tolerance:first_peak[1]+position_tolerance+1] = 0
+            fft[first_peak[0]-position_tolerance:first_peak[0]+position_tolerance+1, first_peak[1]-position_tolerance:first_peak[1]+position_tolerance+1] = 2
         else:
             try:            
                 peaks.append(first_peak+(np.sum(fft_raw[first_peak[0]-integration_radius:first_peak[0]+integration_radius+1, first_peak[1]-integration_radius:first_peak[1]+integration_radius+1]),))
@@ -697,28 +724,36 @@ def find_peaks(im, imsize, half_line_thickness=5, position_tolerance=5, integrat
                     next_peak = np.rint(np.dot( rotation_matrix , (np.array(peaks[0][0:2])-center) ) + center).astype(int)
                     area_next_peak = fft[next_peak[0]-position_tolerance:next_peak[0]+position_tolerance+1, next_peak[1]-position_tolerance:next_peak[1]+position_tolerance+1]
                     max_next_peak = np.amax(area_next_peak)
-                    if  max_next_peak > mean_fft + 6.0*std_dev_fft:#peaks[0][2]/4:
+                   #if  max_next_peak > mean_fft + 5.0*std_dev_fft:#peaks[0][2]/4:
+                    if max_next_peak > np.mean(area_next_peak)+4*np.std(area_next_peak):
                         next_peak += np.array( np.unravel_index( np.argmax(area_next_peak), np.shape(area_next_peak) ) ) - position_tolerance
                         peaks.append(tuple(next_peak)+(max_next_peak,np.sum(fft_raw[next_peak[0]-integration_radius:next_peak[0]+integration_radius+1, next_peak[1]-integration_radius:next_peak[1]+integration_radius+1])))
                 
                 if second_order:
+                    peaks = (peaks, [])
                     for i in range(6):
                         rotation_matrix = np.array( ( (np.cos(i*np.pi/3+np.pi/6), -np.sin(i*np.pi/3+np.pi/6)), (np.sin(i*np.pi/3+np.pi/6), np.cos(i*np.pi/3+np.pi/6)) ) )
-                        next_peak = np.rint(np.dot( rotation_matrix , (np.array(peaks[0][0:2])-center)*(0.213/0.123) ) + center).astype(int)
+                        next_peak = np.rint(np.dot( rotation_matrix , (np.array(peaks[0][0][0:2])-center)*(0.213/0.123) ) + center).astype(int)
                         area_next_peak = fft[next_peak[0]-position_tolerance:next_peak[0]+position_tolerance+1, next_peak[1]-position_tolerance:next_peak[1]+position_tolerance+1]
                         max_next_peak = np.amax(area_next_peak)
-                        if  max_next_peak > mean_fft + 5.0*std_dev_fft:#peaks[0][2]/4:
+                        #if  max_next_peak > mean_fft + 4.0*std_dev_fft:#peaks[0][2]/4:
+                        if max_next_peak > np.mean(area_next_peak)+4*np.std(area_next_peak):
                             next_peak += np.array( np.unravel_index( np.argmax(area_next_peak), np.shape(area_next_peak) ) ) - position_tolerance
-                            peaks.append(tuple(next_peak)+(max_next_peak,np.sum(fft_raw[next_peak[0]-integration_radius:next_peak[0]+integration_radius+1, next_peak[1]-integration_radius:next_peak[1]+integration_radius+1])))
-                        
-                if len(peaks) > 1:
-                    success = True
-#                    for coord in peaks:
-#                        fft[coord[0]-position_tolerance:coord[0]+position_tolerance+1, coord[1]-position_tolerance:coord[1]+position_tolerance+1] = -100
-#                    plt.pyplot.matshow(fft)
-#                    plt.show()
-                    return peaks
-                else:
-                    fft[peaks[0][0]-position_tolerance:peaks[0][0]+position_tolerance+1, peaks[0][1]-position_tolerance:peaks[0][1]+position_tolerance+1] = 0
-            except:
-                fft[first_peak[0]-position_tolerance:first_peak[0]+position_tolerance+1, first_peak[1]-position_tolerance:first_peak[1]+position_tolerance+1] = 0
+                            peaks[1].append(tuple(next_peak)+(max_next_peak,np.sum(fft_raw[next_peak[0]-integration_radius:next_peak[0]+integration_radius+1, next_peak[1]-integration_radius:next_peak[1]+integration_radius+1])))
+
+                success = True
+            except Exception as detail:
+                fft[first_peak[0]-position_tolerance:first_peak[0]+position_tolerance+1, first_peak[1]-position_tolerance:first_peak[1]+position_tolerance+1] = 3
+                print(str(detail))
+    
+    if second_order:
+        for order in peaks:
+            for coord in order:
+                fft[coord[0]-position_tolerance:coord[0]+position_tolerance+1, coord[1]-position_tolerance:coord[1]+position_tolerance+1] *= 4.0
+    else:    
+        for coord in peaks:
+            fft[coord[0]-position_tolerance:coord[0]+position_tolerance+1, coord[1]-position_tolerance:coord[1]+position_tolerance+1] *= 4.0
+    if debug_mode:
+        return (peaks, fft)
+    else:
+        return peaks
