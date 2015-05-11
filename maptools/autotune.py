@@ -208,6 +208,8 @@ def kill_aberrations(focus_step=2, astig2f_step=2, astig3f_step=75, coma_step=30
                 #update hardware
                 #image_grabber(acquire_image=False, **kwargs)
                 logging.info('Could not find a direction to improve '+keys[i]+'. Going to next aberration.')
+                #reduce stepsize for next iteration
+                steps[i] *= 0.5
                 #kwargs[keys[i]] = 0
                 continue
             
