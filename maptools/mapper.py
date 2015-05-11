@@ -32,15 +32,18 @@ from nion.swift.model import HardwareSource
 try:
     import nionccd1010
 except:
+    pass
     #warnings.warn('Could not import nionccd1010. If You\'re not on an offline version of Swift the ronchigram camera might not work!')
-    logging.warn('Could not import nionccd1010. If You\'re not on an offline version of Swift the ronchigram camera might not work!')
+    #logging.warn('Could not import nionccd1010. If You\'re not on an offline version of Swift the ronchigram camera might not work!')
     
 try:    
     from superscan import SuperScanPy as ss    
 except:
-    logging.warn('Could not import SuperScanPy. Maybe you are running in offline mode.')
+    pass
+    #logging.warn('Could not import SuperScanPy. Maybe you are running in offline mode.')
     
 import autotune
+from autotune import DirtError
 import autoalign
     
 def interpolation(target, points):
@@ -343,6 +346,7 @@ def SuperScan_mapping(coord_dict, filepath='Z:\\ScanMap\\', do_autofocus=False, 
     
     test_map = []    
     counter = 0
+    missing_peaks = 0
     
     for frame_coord in map_coords:
         counter += 1        
@@ -409,55 +413,81 @@ def SuperScan_mapping(coord_dict, filepath='Z:\\ScanMap\\', do_autofocus=False, 
                     ss.SS_Functions_SS_WaitForEndOfFrame(frame_nr)
                     data = np.asarray(ss.SS_Functions_SS_GetImageForFrame(frame_nr, 0))
                     name = str('%.4d_%.3f_%.3f.tif' % (frame_number[counter-1],stagex*1e6,stagey*1e6))
-                    #apply Gaussian blur and set all pixels smaller than the treshold to 0, all bigger to 1
-                    dirt_detection = cv2.GaussianBlur(data, (0,0), 2.0)
-                    dirt_detection[dirt_detection>0.015] = 1.0
-                    dirt_detection[dirt_detection<= 0.015] = 0.0
+                    dirt_mask = autotune.dirt_detector(data, threshold=0.01, median_blur_diam=39, gaussian_blur_radius=3)
                     #calculate the fraction of 'bad' pixels and save frame if fraction is >0.5, but add note to "bad_frames" file
-                    if np.sum(dirt_detection)/(np.shape(data)[0]*np.shape(data)[1]) > 0.5:
+                    if np.sum(dirt_mask)/(np.shape(data)[0]*np.shape(data)[1]) > 0.5:
                         tifffile.imsave(store+name, data)
                         test_map.append(frame_coord)
                         bad_frames[name] = 'Over 50% dirt coverage.'
                         logging.info('Over 50% dirt coverage in ' + name)
                     else:
                         try:
-                            result = autotune.check_tuning(imsize*1e9, im=data, check_astig=True, process_image=False)
+                            first_order, second_order = autotune.find_peaks(data, imsize*1e9, position_tolerance=9, second_order=True)
+                            number_peaks = len(first_order) + len(second_order)
                         except:
-                            intensities = (0,)
+                            first_order = second_order = 0
+                            number_peaks = 0
                             
-                        else:
-                            intensities, coordinates, absolute_astig_angle, relative_astig_angle = result
-                        #if not all 6 reflections are visible apply autofocus
-                        if len(intensities) < 6:
-                            focus_adjusted = autotune.kill_aberrations(focus_step=1.0, only_focus=True, average_frames=3)['EHTFocus']
-                            logging.info('Focus at x: ' + str(frame_coord[0]) + ' y: ' + str(frame_coord[1]) + 'adjusted by ' + str(focus_adjusted) + ' nm. (Originally: '+ str(frame_coord[3]*1e9) + ' nm)')
-                            #vt.as2_set_control('EHTFocus', focus_adjusted*1e-9+vt.as2_get_control('EHTFocus'))
-                            #time.sleep(0.1)
-                            frame_nr = ss.SS_Functions_SS_StartFrame(0)
-                            ss.SS_Functions_SS_WaitForEndOfFrame(frame_nr)
-                            #only keep changes if tuning was really improved
-                            data_new = np.asarray(ss.SS_Functions_SS_GetImageForFrame(frame_nr, 0))
+                        if number_peaks == 12:
+                            missing_peaks = 0                            
+                        elif number_peaks < 10:
+                            bad_frames[name] = 'Missing '+str(12 - number_peaks)+' peaks.'
+                            logging.info('No. '+str(frame_number[counter-1]) + ': Missing '+str(12 - number_peaks)+' peaks.')
+                            missing_peaks += 12 - number_peaks
+                        
+                        if missing_peaks > 12:
+                            logging.info('No. '+str(frame_number[counter-1]) + ': Retune because '+str(missing_peaks)+' peaks miss in total.')
+                            bad_frames[name] = 'Retune because '+str(missing_peaks)+' peaks miss in total.'
                             try:
-                                result_new = autotune.check_tuning(imsize*1e9, im=data, check_astig=True, process_image=False)
-                            except RuntimeError:
-                                bad_frames[name] = str('Dismissed focus adjustment by %.2f nm because it did not improve tuning. Originally: %.2f nm.' %(frame_coord[3]*1e9, focus_adjusted))
+                                tuning_result = autotune.kill_aberrations()
+                            except DirtError:
+                                logging.info('No. '+str(frame_number[counter-1]) + ': Tuning was aborted because of dirt coming in.')
+                                bad_frames[name] = 'Tuning was aborted because of dirt coming in.'
                                 tifffile.imsave(store+name, data)
                                 test_map.append(frame_coord)
                             else:
-                                intensities_new, coordinates_new, absolute_astig_angle_new, relative_astig_angle_new = result_new
-                                if len(intensities_new) >= len(intensities) and np.sum(intensities_new) > np.sum(intensities):
-                                    tifffile.imsave(store+name, data_new)
-                                    bad_frames[name] = str('Bad focus. Adjusted by %.2f nm. Originally: %.2f nm.' %(frame_coord[3]*1e9, focus_adjusted))
-                                    #add new focus as offset to all coordinates
-                                    for i in range(len(map_coords)):
-                                        map_coords[i] = np.array(map_coords[i])
-                                        map_coords[i][3] += focus_adjusted*1e-9
-                                        map_coords[i] = tuple(map_coords[i])
-                                    test_map.append(map_coords[counter-1])
-                                else:
-                                    bad_frames[name] = str('Dismissed focus adjustment by %.2f nm because it did not improve tuning. Originally: %.2f nm.' %(frame_coord[3]*1e9, focus_adjusted))
+                                logging.info('No. '+str(frame_number[counter-1]) + ': New tuning: '+str(tuning_result))
+                                bad_frames[name] = 'New tuning: '+str(tuning_result)
+                            
+                                frame_nr = ss.SS_Functions_SS_StartFrame(0)
+                                ss.SS_Functions_SS_WaitForEndOfFrame(frame_nr)
+                                
+                                data_new = np.asarray(ss.SS_Functions_SS_GetImageForFrame(frame_nr, 0))
+                                try:
+                                    first_order_new, second_order_new = autotune.find_peaks(data, imsize*1e9, position_tolerance=9, second_order=True)
+                                    number_peaks_new = len(first_order_new)+len(second_order_new)
+                                except RuntimeError:
+                                    bad_frames[name] = 'Dismissed result because it did not improve tuning: '+str(tuning_result)
+                                    logging.info('No. '+str(frame_number[counter-1]) + ': Dismissed result because it did not improve tuning: '+str(tuning_result))
                                     tifffile.imsave(store+name, data)
                                     test_map.append(frame_coord)
+                                    #reset aberrations to values before tuning
+                                    kwargs = {'relative_aberrations': True}
+                                    for key, value in tuning_result.items():
+                                        kwargs[key] = -value
+                                    autotune.image_grabber(acquire_image=False, **kwargs)
+                                    
+                                else:
+                                    if number_peaks_new > number_peaks:
+                                        tifffile.imsave(store+name, data_new)
+                                        #add new focus as offset to all coordinates
+                                        for i in range(len(map_coords)):
+                                            map_coords[i] = np.array(map_coords[i])
+                                            map_coords[i][3] += tuning_result['EHTFocus']*1e-9
+                                            map_coords[i] = tuple(map_coords[i])
+                                        test_map.append(map_coords[counter-1])
+                                        missing_peaks = 0
+                                    else:
+                                        bad_frames[name] = 'Dismissed result because it did not improve tuning: '+str(tuning_result)
+                                        logging.info('No. '+str(frame_number[counter-1]) + ': Dismissed result because it did not improve tuning: '+str(tuning_result))
+                                        tifffile.imsave(store+name, data)
+                                        test_map.append(frame_coord)
+                                        #reset aberrations to values before tuning
+                                        kwargs = {'relative_aberrations': True}
+                                        for key, value in tuning_result.items():
+                                            kwargs[key] = -value
+                                        autotune.image_grabber(acquire_image=False, **kwargs)
+                                        missing_peaks=0
 
                         else:
                             tifffile.imsave(store+name, data)

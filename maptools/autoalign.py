@@ -33,13 +33,15 @@ from nion.swift.model import HardwareSource
 try:
     import nionccd1010
 except:
+    pass
     #warnings.warn('Could not import nionccd1010. If You\'re not on an offline version of Swift the ronchigram camera might not work!')
-    logging.warn('Could not import nionccd1010. If You\'re not on an offline version of Swift the ronchigram camera might not work!')
+    #logging.warn('Could not import nionccd1010. If You\'re not on an offline version of Swift the ronchigram camera might not work!')
     
 try:    
     from superscan import SuperScanPy as ss    
 except:
-    logging.warn('Could not import SuperScanPy. Maybe you are running in offline mode.')
+    pass
+    #logging.warn('Could not import SuperScanPy. Maybe you are running in offline mode.')
     
     
 #def find_offset_and_rotation():

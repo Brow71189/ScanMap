@@ -177,7 +177,6 @@ class ScanMap(Panel.Panel):
 
         bottom_button_row = ui.create_row_widget()
         top_button_row = ui.create_row_widget()
-        #autofocus_z_drive_button_row = ui.create_row_widget()
         done_button_row = ui.create_row_widget()
         checkbox_row = ui.create_row_widget()
         tl_button = ui.create_push_button_widget(_("Top Left"))

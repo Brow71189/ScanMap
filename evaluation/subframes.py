@@ -10,7 +10,7 @@ import numpy as np
 import os
 import logging
 from multiprocessing import Pool
-import matplotlib.pyplot as plt
+#import matplotlib.pyplot as plt
 import time
 import tifffile
 import scipy.optimize
@@ -54,7 +54,7 @@ def rotation_radius(image, imsize, find_distortions=True):
         Angle (in rad) between x-axis and the first reflection in counter-clockwise direction
     """
     try:
-        peaks_first, peaks_second = at.find_peaks(image, imsize, half_line_thickness=2, position_tolerance = 9, second_order=True)
+        peaks_first, peaks_second = at.find_peaks(image, imsize, half_line_thickness=2, position_tolerance = 10, second_order=True)
     except:
         raise
     else:
@@ -113,22 +113,6 @@ def calculate_counts(image, threshold=1e-9):
 #                int_steps.append(difference)
     
     return (np.mean(int_steps), np.std(int_steps))
-    
-    
-def dirt_detector(image, threshold=0.02, median_blur_diam=85, gaussian_blur_radius=3):
-    """
-    Returns a mask with the same shape as "image" that is 1 where there is dirt and 0 otherwise
-    """
-    #apply Gaussian Blur to improve dirt detection
-    if gaussian_blur_radius > 0:
-        image = cv2.GaussianBlur(image, (0,0), gaussian_blur_radius)
-    #create mask
-    mask = np.zeros(np.shape(image), dtype='uint8')
-    mask[image>threshold] = 1
-    #apply median blur to mask to remove noise influence
-    if median_blur_diam%2==0:
-        median_blur_diam+=1
-    return cv2.medianBlur(mask, median_blur_diam)
 
 def counts(path):
     im = cv2.imread(path, -1)
@@ -149,7 +133,7 @@ def subframes_preprocessing(filename, dirname, imsize, counts_threshold=1e-9, di
         raise ValueError(dirname+filename+' is not an image file. Make sure you give the total path as input argument.')
     image_org = image.copy()
     #get mask to filter dirt and check if image is covered by more than "maximum_dirt_coverage"
-    mask = dirt_detector(image, threshold=dirt_threshold, median_blur_diam=median_blur_diameter, gaussian_blur_radius=gaussian_blur_radius)
+    mask = at.dirt_detector(image, threshold=dirt_threshold, median_blur_diam=median_blur_diameter, gaussian_blur_radius=gaussian_blur_radius)
     dirt_coverage = float(np.sum(mask))/(np.shape(image)[0]*np.shape(image)[1])
     if dirt_coverage > maximum_dirt_coverage:
         success = False
