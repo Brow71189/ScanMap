@@ -8,6 +8,7 @@ Created on Thu Mar 12 16:54:54 2015
 import logging
 import time
 import os
+import threading
 
 import numpy as np
 import scipy.optimize
@@ -66,7 +67,24 @@ def dirt_detector(image, threshold=0.02, median_blur_diam=39, gaussian_blur_radi
         median_blur_diam+=1
     return cv2.medianBlur(mask, median_blur_diam)
 
-def kill_aberrations(focus_step=2, astig2f_step=2, astig3f_step=75, coma_step=300, average_frames=3, integration_radius=1, image=None, imsize=None, only_focus=False, save_images=False, savepath=None):
+def kill_aberrations(focus_step=2, astig2f_step=2, astig3f_step=75, coma_step=300, average_frames=3, integration_radius=1, image=None, \
+                    imsize=None, only_focus=False, save_images=False, savepath=None, document_controller=None, event=None):
+    
+    def logwrite(msg, level='info'):
+        if document_controller is None:
+            if level == 'info':
+                logging.info(str(msg))
+            elif level == 'warn':
+                logging.warn(str(msg))
+            else:
+                logging.error(str(msg))
+        else:
+            if level == 'info':
+                document_controller.queue_main_thread_task(lambda: logging.info(str(msg)))
+            elif level == 'warn':
+                document_controller.queue_main_thread_task(lambda: logging.warn(str(msg)))
+            else:
+                document_controller.queue_main_thread_task(lambda: logging.error(str(msg)))
     
     def merit(intensities):
         return 1/np.sum(intensities)
@@ -113,35 +131,41 @@ def kill_aberrations(focus_step=2, astig2f_step=2, astig3f_step=75, coma_step=30
     except DirtError:
         if online:
             ss.SS_Functions_SS_SetFrameParams(*FrameParams)
-        logging.warn('Tuning ended because of too high dirt coverage.')
+        logwrite('Tuning ended because of too high dirt coverage.', level='warn')
         raise
         
     while counter < 11:
+        if event is not None and event.is_set():
+            break
         start_time = time.time()
         aberrations_last_run = global_aberrations.copy()
         if counter > 1 and len(total_tunings) < counter+1:
-            logging.info('Finished tuning because no improvements could be found anymore.')
+            logwrite('Finished tuning because no improvements could be found anymore.')
             break
 
         if len(total_tunings) > 1:        
-            logging.info('Improved tuning by '+str((total_tunings[-2]-total_tunings[-1])/(total_tunings[-2]+total_tunings[-1])*100)+'%.')
+            logwrite('Improved tuning by '+str((total_tunings[-2]-total_tunings[-1])/(total_tunings[-2]+total_tunings[-1])*100)+'%.')
 
         if len(total_tunings) > 2:
             if total_tunings[-2]-total_tunings[-1] < 0.1*(total_tunings[-3]-total_tunings[-2]):
-                logging.info('Finished tuning successfully after %d runs.' %(counter))
+                logwrite('Finished tuning successfully after %d runs.' %(counter))
                 break
         
-        logging.info('Starting run number '+str(counter+1))
+        logwrite('Starting run number '+str(counter+1))
         part_tunings = []
         part_lens = []
         
         for i in range(len(keys)):
+            
+            if event is not None and event.is_set():
+                break
+            
             if counter == 0 and i==0:
                 total_tunings.append(merit(current))
-                logging.info('Appending start value: ' + str(merit(current)))
+                logwrite('Appending start value: ' + str(merit(current)))
                 total_lens.append(len(current))
 
-            logging.info('Working on: '+keys[i])
+            logwrite('Working on: '+keys[i])
             #vt.as2_set_control(controls[i], start+steps[i]*1e-9)
             #time.sleep(0.1)
             step_multiplicator=1
@@ -159,7 +183,7 @@ def kill_aberrations(focus_step=2, astig2f_step=2, astig3f_step=75, coma_step=30
                             kwargs[key] = aberrations_last_run[key]-value
                         image_grabber(acqure_image=False, **kwargs)
                         ss.SS_Functions_SS_SetFrameParams(*FrameParams)
-                    logging.warn('Tuning ended because of too high dirt coverage.')
+                    logwrite('Tuning ended because of too high dirt coverage.', level='warn')
                     raise
     
                 #passing 2xstepsize to image_grabber to get from +1 to -1
@@ -175,7 +199,7 @@ def kill_aberrations(focus_step=2, astig2f_step=2, astig3f_step=75, coma_step=30
                             kwargs[key] = aberrations_last_run[key]-value
                         image_grabber(acqure_image=False, **kwargs)
                         ss.SS_Functions_SS_SetFrameParams(*FrameParams)
-                    logging.warn('Tuning ended because of too high dirt coverage.')
+                    logwrite('Tuning ended because of too high dirt coverage.', level='warn')
                     raise
                 
                 if merit(minus) < merit(plus) and merit(minus) < merit(current) and len(minus) >= len(plus) and len(minus) >= len(current):
@@ -199,7 +223,7 @@ def kill_aberrations(focus_step=2, astig2f_step=2, astig3f_step=75, coma_step=30
                     kwargs[keys[i]] = -changes
                     #update hardware
                     image_grabber(acquire_image=False, **kwargs)
-                    logging.info('Doubling the stepsize of '+keys[i]+'.')
+                    logwrite('Doubling the stepsize of '+keys[i]+'.')
                     kwargs[keys[i]] = 0
                     step_multiplicator *= 2
             #This 'else' belongs to the while loop. It is executed when the loop ends 'normally', e.g. not through break or continue
@@ -207,7 +231,7 @@ def kill_aberrations(focus_step=2, astig2f_step=2, astig3f_step=75, coma_step=30
                 #kwargs[keys[i]] = -changes
                 #update hardware
                 #image_grabber(acquire_image=False, **kwargs)
-                logging.info('Could not find a direction to improve '+keys[i]+'. Going to next aberration.')
+                logwrite('Could not find a direction to improve '+keys[i]+'. Going to next aberration.')
                 #reduce stepsize for next iteration
                 steps[i] *= 0.5
                 #kwargs[keys[i]] = 0
@@ -235,7 +259,7 @@ def kill_aberrations(focus_step=2, astig2f_step=2, astig3f_step=75, coma_step=30
                             kwargs[key] = aberrations_last_run[key]-value
                         image_grabber(acqure_image=False, **kwargs)
                         ss.SS_Functions_SS_SetFrameParams(*FrameParams)
-                    logging.warn('Tuning ended because of too high dirt coverage.')
+                    logwrite('Tuning ended because of too high dirt coverage.', level='warn')
                     raise
                 
                 if merit(next_frame) >= merit(current) or len(next_frame) < len(current):
@@ -262,21 +286,21 @@ def kill_aberrations(focus_step=2, astig2f_step=2, astig3f_step=75, coma_step=30
                                 kwargs[key] = aberrations_last_run[key]-value
                             image_grabber(acqure_image=False, **kwargs)
                             ss.SS_Functions_SS_SetFrameParams(*FrameParams)
-                        logging.warn('Tuning ended because of too high dirt coverage.')
+                        logwrite('Tuning ended because of too high dirt coverage.', level='warn')
                         raise
                     except:
                         pass
-                    logging.info('Dismissed changes at '+ keys[i])
+                    logwrite('Dismissed changes at '+ keys[i])
             #reduce stepsize for next iteration
             steps[i] *= 0.5
             #set current working aberration to zero
             kwargs[keys[i]] = 0
         
         if len(part_tunings) > 0:
-            logging.info('Appending best value of this run to total_tunings: '+str(np.amin(part_tunings)))
+            logwrite('Appending best value of this run to total_tunings: '+str(np.amin(part_tunings)))
             total_tunings.append(np.amin(part_tunings))
             total_lens.append(np.amax(part_lens))
-        logging.info('Finished run number '+str(counter+1)+' in '+str(time.time()-start_time)+' s.')
+        logwrite('Finished run number '+str(counter+1)+' in '+str(time.time()-start_time)+' s.')
         counter += 1
     
     if save_images:    
@@ -288,7 +312,7 @@ def kill_aberrations(focus_step=2, astig2f_step=2, astig3f_step=75, coma_step=30
                     kwargs[key] = aberrations_last_run[key]-value
                 image_grabber(acqure_image=False, **kwargs)
                 ss.SS_Functions_SS_SetFrameParams(*FrameParams)
-            logging.warn('Tuning ended because of too high dirt coverage.')
+            logwrite('Tuning ended because of too high dirt coverage.', level='warn')
             raise
         except:
             pass
