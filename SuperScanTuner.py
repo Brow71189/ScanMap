@@ -128,7 +128,7 @@ class SuperScanTuner(Panel.Panel):
             else:
                 save_images = False
 
-            logging.info('Started')
+            logging.info('Started tuning.')
             self.event = threading.Event()
             #self.thread = threading.Thread(target=do_something, args=(self.event, document_controller))
             self.thread = threading.Thread(target=autotune.kill_aberrations, kwargs={'focus_step': focus_step, 'astig2f_step': astig2f_step, 'astig3f_step': astig3f_step,\
@@ -138,6 +138,7 @@ class SuperScanTuner(Panel.Panel):
         
         def abort_button_clicked():
             #self.stop_tuning()
+            logging.info('Aborting tuning after current aberration. (May take a short while until abort)')
             self.event.set()
             self.thread.join()
         
