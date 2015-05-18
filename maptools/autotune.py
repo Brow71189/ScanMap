@@ -373,24 +373,29 @@ def image_grabber(acquire_image=True, **kwargs):#, defocus=0, astig=[0,0], im=No
     """
     acquire_image defines if an image is taken and returned or if just the correctors are updated.
     
-    kwargs contains all possible values for the correctors:
-    These are all lens aberrations up to threefold astigmatism. If an image is given, the function will simulate aberrations to this image and add poisson noise to it.
-    If not, an image with the current frame parameters and the corrector parameters given in kwargs is taken.
+    kwargs contains all possible values for the correctors : 
+        These are all lens aberrations up to threefold astigmatism. If an image is given, the function will simulate aberrations to this image and add poisson noise to it.
+        If not, an image with the current frame parameters and the corrector parameters given in kwargs is taken.
     
-    Possible Parameters are:
+    Possible Parameters
+    -------------------
     
-    lens aberrations: EHTFocus, C12_a, C12_b, C21_a, C21_b, C23_a,  C23_b (in nm)
-    image (as numpy array)
-    relative_aberrations: True/False
-    reset_aberrations: True/False
+    lens aberrations : 
+        EHTFocus, C12_a, C12_b, C21_a, C21_b, C23_a,  C23_b (in nm)
     
-    If 'relative_aberrations' is included and set to True, image_grabber will get the current value for each control first and add the given value for the respective aberration
-    to the current value. Otherwise, each aberration in kwargs is just set to the value given there.
-    
-    If 'reset_aberrations' is included and set to True, image_grabber will set each aberration back to its original value after acquiring an image. This is a good choice if
-    you want to try new values for the aberration correctors bur are not sure you want to keep them.
+    image : 
+        (as numpy array)
+            
+    relative_aberrations : True/False
+            If 'relative_aberrations' is included and set to True, image_grabber will get the current value for each control first and add the given value for the respective aberration
+            to the current value. Otherwise, each aberration in kwargs is just set to the value given there.    
+            
+    reset_aberrations : True/False    
+        If 'reset_aberrations' is included and set to True, image_grabber will set each aberration back to its original value after acquiring an image. This is a good choice if
+        you want to try new values for the aberration correctors bur are not sure you want to keep them.
     
     Example call of image_grabber:
+    ------------------------------
     
     result = image_grabber(EHTFocus=1, C12_a=0.5, image=graphene_lattice, imsize=10)
     
