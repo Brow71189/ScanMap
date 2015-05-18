@@ -144,7 +144,7 @@ class SuperScanTuner(Panel.Panel):
         
         descriptor_row1 = ui.create_row_widget()
         
-        descriptor_row1.add(ui.create_label_widget(_("Define the stepsizes for the tuning here. Leave fields empty to use default values.")))
+        descriptor_row1.add(ui.create_label_widget(_("Define stepsizes for tuning here. Leave fields empty to use default values.")))
         
         parameters_row1 = ui.create_row_widget()
         
