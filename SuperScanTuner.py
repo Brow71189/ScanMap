@@ -130,15 +130,15 @@ class SuperScanTuner(Panel.Panel):
 
             logging.info('Started tuning.')
             self.event = threading.Event()
-            #self.thread = threading.Thread(target=do_something, args=(self.event, document_controller))
-            self.thread = threading.Thread(target=autotune.kill_aberrations, kwargs={'focus_step': focus_step, 'astig2f_step': astig2f_step, 'astig3f_step': astig3f_step,\
-                                'coma_step': coma_step, 'average_frames': average_frames, 'integration_radius': integration_radius, 'only_focus': only_focus, \
-                                'save_images': save_images, 'savepath': savepath, 'document_controller': document_controller, 'event': self.event})
+            self.thread = threading.Thread(target=do_something, args=(self.event, document_controller))
+#            self.thread = threading.Thread(target=autotune.kill_aberrations, kwargs={'focus_step': focus_step, 'astig2f_step': astig2f_step, 'astig3f_step': astig3f_step,\
+#                                'coma_step': coma_step, 'average_frames': average_frames, 'integration_radius': integration_radius, 'only_focus': only_focus, \
+#                                'save_images': save_images, 'savepath': savepath, 'document_controller': document_controller, 'event': self.event})
             self.thread.start()
         
         def abort_button_clicked():
             #self.stop_tuning()
-            logging.info('Aborting tuning after current aberration. (May take a short while until abort)')
+            logging.info('Aborting tuning after current aberration. (May take a short while until actual abort)')
             self.event.set()
             self.thread.join()
         
@@ -240,19 +240,21 @@ class SuperScanTuner(Panel.Panel):
 
         self.widget = column
     
-#def do_something(event, document_controller):
-#    counter = 0
-#    while True:
-#        if not event.is_set() and counter < 6:
-#            #logging.info('Still working')
-#            document_controller.queue_main_thread_task(lambda: logging.info('Still working'))
-#            #panel.queue_task(lambda: logging.info('Still working'))
-#            time.sleep(2)
-#        else:
-#            #logging.info('Finished')
-#            document_controller.queue_main_thread_task(lambda: logging.info('Still working'))
-#            break
-#        counter +=1
+def do_something(event, document_controller):
+    counter = 0
+    while True:
+        if not event.is_set() and counter < 10:
+            #logging.info('Still working')
+            document_controller.queue_main_thread_task(lambda: logging.info('Still working'))
+            #panel.queue_task(lambda: logging.info('Still working'))
+            time.sleep(2)
+        else:
+            #logging.info('Finished')
+            document_controller.queue_main_thread_task(lambda: logging.info('Still working'))
+            break
+        counter +=1
+    
+    return 'Finished'
   
 workspace_manager = Workspace.WorkspaceManager()
 workspace_manager.register_panel(SuperScanTuner, "tuner-panel", _("SuperScan Tuning"), ["left", "right"], "right" )
