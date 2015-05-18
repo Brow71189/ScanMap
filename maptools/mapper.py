@@ -165,7 +165,8 @@ def find_nearest_neighbors(number, target, points):
     
     
 def SuperScan_mapping(coord_dict, filepath='Z:\\ScanMap\\', do_autofocus=False, offset = 0.0, rotation = 0.0, imsize=200, impix=512, \
-                      pixeltime=4, detectors=('MAADF'), use_z_drive=False, auto_offset=False, auto_rotation=False, autofocus_pattern='edges', number_of_images=1):
+                      pixeltime=4, detectors=('MAADF'), use_z_drive=False, auto_offset=False, auto_rotation=False, autofocus_pattern='edges', \
+                      number_of_images=1, acquire_overview=False):
     """
         This function will take a series of STEM images (subframes) to map a large rectangular sample area.
         coord_dict is a dictionary that has to consist of at least 4 tuples that hold stage coordinates in x,y,z - direction
@@ -336,7 +337,8 @@ def SuperScan_mapping(coord_dict, filepath='Z:\\ScanMap\\', do_autofocus=False, 
     config_file.write('#This file contains all parameters used for the mapping.\n\n')
     config_file.write('#Map parameters:\n')
     map_paras = {'Autofocus': translator(do_autofocus), 'Autofocus_pattern': autofocus_pattern, 'Auto Rotation': translator(auto_rotation), 'Auto Offset': translator(auto_offset), 'Z Drive': translator(use_z_drive), \
-                'top-left': str(coord_dict_sorted['top-left']), 'top-right': str(coord_dict_sorted['top-right']), 'bottom-left': str(coord_dict_sorted['bottom-left']), 'bottom-right': str(coord_dict_sorted['bottom-right']), 'Number of frames': str(num_subframes[0])+'x'+str(num_subframes[1])}
+                'top-left': str(coord_dict_sorted['top-left']), 'top-right': str(coord_dict_sorted['top-right']), 'bottom-left': str(coord_dict_sorted['bottom-left']), 'bottom-right': str(coord_dict_sorted['bottom-right']), \
+                'Number of frames': str(num_subframes[0])+'x'+str(num_subframes[1]), 'Acquire_Overview': translator(acquire_overview)}
     for key, value in map_paras.items():
         if key is not 'Autofocus_pattern' or do_autofocus:
             config_file.write('{0:18}{1:}\n'.format(key+':', value))
@@ -528,7 +530,26 @@ def SuperScan_mapping(coord_dict, filepath='Z:\\ScanMap\\', do_autofocus=False, 
         for key, value in bad_frames.items():
             bad_frames_file.write('{0:30}{1:}\n'.format(key+':', value))        
         config_file.close()
-    
+
+    #acquire overview image if desired
+    if acquire_overview:
+        #Use longest edge as image size
+        if abs(rightX-leftX) < abs(topY-botY):
+            over_size = abs(topY-botY)*1.25e3
+        else:
+            over_size = abs(rightX-leftX)*1.25e3
+        
+        #Find center of mapped area:
+        map_center = ((leftX+rightX)/2, (topY+botY)/2)
+        #Goto center
+        vt.as2_set_control('StageOutX', map_center[0])
+        vt.as2_set_control('StageOutY', map_center[1])
+        time.sleep(10)
+        #acquire image and save it
+        ss.SS_Functions_SS_SetFrameParams(4096, 4096, 0, 0, 2, over_size, rotation, False, True, False, False)
+        image = autotune.image_grabber()
+        tifffile.imsave(store+'Overview_'+str(over_size)+'_nm.tif', image)
+        
     x_map = np.zeros((num_subframes[1],num_subframes[0]))
     y_map = np.zeros((num_subframes[1],num_subframes[0]))
     z_map = np.zeros((num_subframes[1],num_subframes[0]))

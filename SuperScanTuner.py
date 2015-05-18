@@ -144,7 +144,7 @@ class SuperScanTuner(Panel.Panel):
         
         descriptor_row1 = ui.create_row_widget()
         
-        descriptor_row1.add(ui.create_label_widget(_("Define stepsizes for tuning here. Leave fields empty to use default values.")))
+        descriptor_row1.add(ui.create_label_widget(_("Define stepsizes for tuning here (default values are used for empty fields):")))
         
         parameters_row1 = ui.create_row_widget()
         
@@ -184,7 +184,7 @@ class SuperScanTuner(Panel.Panel):
         
         descriptor_row2 = ui.create_row_widget()
         
-        descriptor_row2.add(ui.create_label_widget(_("Additional parameters for tuning procedure")))
+        descriptor_row2.add(ui.create_label_widget(_("Additional parameters for tuning procedure:")))
         
         parameters_row3 = ui.create_row_widget()
         parameters_row3.add(ui.create_label_widget(_("Average images: ")))
@@ -225,12 +225,12 @@ class SuperScanTuner(Panel.Panel):
         
         column.add_spacing(15)
         column.add(descriptor_row1)
-        column.add_spacing(5)
+        column.add_spacing(3)
         column.add(parameters_row1)
         column.add(parameters_row2)
         column.add_spacing(15)
         column.add(descriptor_row2)
-        column.add_spacing(5)
+        column.add_spacing(3)
         column.add(parameters_row3)
         column.add_spacing(15)
         column.add(checkbox_row)

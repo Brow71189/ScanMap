@@ -28,6 +28,7 @@ do_autofocus = False
 use_z_drive = False
 auto_offset=False
 auto_rotation=False
+acquire_overview = True
 FOV = Size = Offset = Time = Rotation = None
 Number_of_images = 1
 
@@ -179,6 +180,7 @@ class ScanMap(Panel.Panel):
         top_button_row = ui.create_row_widget()
         done_button_row = ui.create_row_widget()
         checkbox_row = ui.create_row_widget()
+        checkbox_row2 = ui.create_row_widget()
         tl_button = ui.create_push_button_widget(_("Top Left"))
         tr_button = ui.create_push_button_widget(_("Top Right"))
         bl_button = ui.create_push_button_widget(_("Bottom Left"))
@@ -193,6 +195,8 @@ class ScanMap(Panel.Panel):
         autofocus_checkbox = ui.create_check_box_widget(_("Autofocus"))
         auto_offset_checkbox = ui.create_check_box_widget(_("Auto Offset"))
         auto_rotation_checkbox = ui.create_check_box_widget(_("Auto Rotation"))
+        overview_checkbox = ui.create_check_box_widget(_("Acquire Overview image"))
+        overview_checkbox.check_state = 'checked'
         
         descriptor_row = ui.create_row_widget()
         descriptor_row.add(ui.create_label_widget(_("Save Coordinates")))
@@ -221,16 +225,7 @@ class ScanMap(Panel.Panel):
         def drive_br_button_clicked():
             drive_coords('bottom-right')
         def done_button_clicked():
-            global FOV
-            global Offset
-            global Size
-            global Time
-            global Rotation
-            global do_autofocus
-            global use_z_drive
-            global auto_offset
-            global auto_rotation
-            global Number_of_images
+            global FOV, Offset, SIze, Time, Rotation, do_autofocus, use_z_drive, auto_offset, auto_rotation, Number_of_images, acquire_overview
             
             total_number_frames()
             
@@ -262,6 +257,12 @@ class ScanMap(Panel.Panel):
                 logging.info('Auto Offset: OFF')
                 auto_offset = False
             
+            if overview_checkbox.check_state == 'checked':
+                logging.info('Acquiring an overview image at the end of the mapping process.')
+                acquire_overview = True
+            else:
+                acquire_overview = False
+                
             logging.info('FOV: ' + str(FOV)+' nm')
             logging.info('Offset: ' + str(Offset)+' x image size')
             logging.info('Frame Rotation: ' + str(Rotation)+' deg')
@@ -281,7 +282,8 @@ class ScanMap(Panel.Panel):
             
             if not None in coord_dict.viewvalues() and not None in (FOV, Size, Offset, Time, Rotation, Number_of_images):
                 mapper.SuperScan_mapping(coord_dict, do_autofocus=do_autofocus, imsize = FOV, offset = Offset, rotation = Rotation, number_of_images = Number_of_images,\
-                impix = Size, pixeltime = Time, use_z_drive=use_z_drive, auto_offset=auto_offset, auto_rotation=auto_rotation, autofocus_pattern='testing')
+                        impix = Size, pixeltime = Time, use_z_drive=use_z_drive, auto_offset=auto_offset, auto_rotation=auto_rotation, autofocus_pattern='testing', \
+                        acquire_overview=acquire_overview)
             else:
                 logging.warn('You din\'t specify all necessary parameters.')
 
@@ -321,22 +323,27 @@ class ScanMap(Panel.Panel):
         checkbox_row.add(auto_offset_checkbox)
         checkbox_row.add_stretch()
         
+        checkbox_row2.add(overview_checkbox)
+        
         done_button_row.add(done_button)
         
+        column.add_spacing(15)
         column.add(edit_row1)
-        column.add_spacing(8)
+        column.add_spacing(5)
         column.add(edit_row2)
-        column.add_spacing(8)
+        column.add_spacing(5)
         column.add(edit_row3)
-        column.add_spacing(14)
+        column.add_spacing(15)
         column.add(descriptor_row)
-        column.add_spacing(8)
+        column.add_spacing(5)
         column.add(bottom_button_row)
-        column.add_spacing(8)
+        column.add_spacing(5)
         column.add(top_button_row)
-        column.add_spacing(14)
+        column.add_spacing(15)
         column.add(checkbox_row)
-        column.add_spacing(14)
+        column.add_spacing(5)
+        column.add(checkbox_row2)
+        column.add_spacing(15)
         column.add(done_button_row) 
         column.add_stretch()
 
@@ -363,12 +370,7 @@ def drive_coords(position):
         vt.as2_set_control('EHTFocus', coord_dict[position][3])
         
 def total_number_frames():
-    global Offset
-    global FOV
-    global Size
-    global Time
-    global coord_dict
-    global Number_of_images
+    global Offset, FOV, Size, Time, coord_dict, Number_of_images
     
     if not None in coord_dict.viewvalues() and not None in (Offset, FOV, Size, Time):
         corners = ('top-left', 'top-right', 'bottom-right', 'bottom-left')
