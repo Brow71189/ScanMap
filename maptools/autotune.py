@@ -87,7 +87,11 @@ def kill_aberrations(focus_step=2, astig2f_step=2, astig3f_step=75, coma_step=30
                 document_controller.queue_main_thread_task(lambda: logging.error(str(msg)))
     
     def merit(intensities):
-        return 1/np.sum(intensities)
+        if len(intensities) <= 6:
+            return 1/np.sum(intensities)
+        else:
+            return 1/(np.sum(intensities[:6])+10.0*np.sum(intensities[6:]))
+        
     
     #this is the simulated microscope
     global global_aberrations
@@ -120,7 +124,7 @@ def kill_aberrations(focus_step=2, astig2f_step=2, astig3f_step=75, coma_step=30
     
     #change frame parameters to values that are suited for automatic tuning
     try:
-        ss.SS_Functions_SS_SetFrameParams(512, 512, 0, 0, 2, imagesize, 0, False, True, False, False)
+        ss.SS_Functions_SS_SetFrameParams(1024, 1024, 0, 0, 1, imagesize, 0, False, True, False, False)
     except:
         pass
     
@@ -144,10 +148,11 @@ def kill_aberrations(focus_step=2, astig2f_step=2, astig3f_step=75, coma_step=30
             break
 
         if len(total_tunings) > 1:        
-            logwrite('Improved tuning by '+str((total_tunings[-2]-total_tunings[-1])/(total_tunings[-2]+total_tunings[-1])*100)+'%.')
+            logwrite('Improved tuning by '+str((total_tunings[-2]-total_tunings[-1])/((total_tunings[-2]+total_tunings[-1])*0.5)*100)+'%.')
 
         if len(total_tunings) > 2:
-            if total_tunings[-2]-total_tunings[-1] < 0.1*(total_tunings[-3]-total_tunings[-2]):
+            #if total_tunings[-2]-total_tunings[-1] < 0.1*(total_tunings[-3]-total_tunings[-2]):
+            if (total_tunings[-2]-total_tunings[-1])/((total_tunings[-2]+total_tunings[-1])*0.5) < 0.02:
                 logwrite('Finished tuning successfully after %d runs.' %(counter))
                 break
         
@@ -587,7 +592,7 @@ def check_tuning(imagesize, im=None, check_astig=False, average_frames=0, integr
             intensities.append(peak[3])
         for peak in peaks_second:
             intensities.append(peak[3])
-        intensities=np.array[intensities]
+        intensities=np.array(intensities)
         
     if check_astig:
         center = np.array(np.shape(im))/2
@@ -765,7 +770,6 @@ def find_peaks(im, imsize, half_line_thickness=5, position_tolerance=5, integrat
         return np.abs(1.0/(a*xdata))+offset
 
     shape = np.shape(im)
-    center = np.array(shape)/2
     
     fft = np.abs(np.fft.fftshift(np.fft.fft2(im)))  
     #If more than one image are passed to find_peaks, compute average of their fft's before going on
@@ -773,11 +777,13 @@ def find_peaks(im, imsize, half_line_thickness=5, position_tolerance=5, integrat
         fft  = np.mean(fft, axis=0)
         shape = shape[1:]
             
+    center = np.array(shape)/2
     fft_raw = fft.copy()
     
     first_order = imsize/0.213
     #second_order = imsize/0.123
     
+    #print('center: '+str(center)+', first_order: '+str(first_order))
     #blank out bright spot in center of fft
     cv2.circle(fft, tuple(center), int(first_order/2.0), -1, -1)
 

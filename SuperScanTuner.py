@@ -162,7 +162,7 @@ class SuperScanTuner(Panel.Panel):
         C12.placeholder_text = "Defaults to 2"
         parameters_row1.add(C12)
         parameters_row1.add(ui.create_label_widget(_("nm")))
-        C12.on_editing_finfished = C12_finished
+        C12.on_editing_finished = C12_finished
         
         parameters_row2 = ui.create_row_widget()
         
@@ -191,12 +191,14 @@ class SuperScanTuner(Panel.Panel):
         number_average = ui.create_line_edit_widget()
         number_average.placeholder_text = "Defaults to 3"
         parameters_row3.add(number_average)
+        number_average.on_editing_finished = average_finished
         parameters_row3.add_spacing(15)
         
         parameters_row3.add(ui.create_label_widget(_("Integration radius: ")))
         integration = ui.create_line_edit_widget()
         integration.placeholder_text = "Defaults to 1"
         parameters_row3.add(integration)
+        integration.on_editing_finished = integration_finished
         parameters_row3.add(ui.create_label_widget(_("px")))
         
         checkbox_row = ui.create_row_widget()
