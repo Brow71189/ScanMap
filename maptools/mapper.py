@@ -166,7 +166,7 @@ def find_nearest_neighbors(number, target, points):
     
 def SuperScan_mapping(coord_dict, filepath='Z:\\ScanMap\\', do_autofocus=False, offset = 0.0, rotation = 0.0, imsize=200, impix=512, \
                       pixeltime=4, detectors=('MAADF'), use_z_drive=False, auto_offset=False, auto_rotation=False, autofocus_pattern='edges', \
-                      number_of_images=1, acquire_overview=False):
+                      number_of_images=1, acquire_overview=False, document_controller=None, event=None):
     """
         This function will take a series of STEM images (subframes) to map a large rectangular sample area.
         coord_dict is a dictionary that has to consist of at least 4 tuples that hold stage coordinates in x,y,z - direction
@@ -177,19 +177,38 @@ def SuperScan_mapping(coord_dict, filepath='Z:\\ScanMap\\', do_autofocus=False, 
         Files will be saved to disk in a folder specified by the user. For each map a subfolder with current date and time is created.
         
     """
-    
+    def logwrite(msg, level='info'):
+        if document_controller is None:
+            if level.lower() == 'info':
+                logging.info(str(msg))
+            elif level.lower() == 'warn':
+                logging.warn(str(msg))
+            elif level.lower() == 'error':
+                logging.error(str(msg))
+            else:
+                logging.debug(str(msg))
+        else:
+            if level.lower() == 'info':
+                document_controller.queue_main_thread_task(lambda: logging.info(str(msg)))
+            elif level.lower() == 'warn':
+                document_controller.queue_main_thread_task(lambda: logging.warn(str(msg)))
+            elif level.lower() == 'error':
+                document_controller.queue_main_thread_task(lambda: logging.error(str(msg)))
+            else:
+                document_controller.queue_main_thread_task(lambda: logging.debug(str(msg)))
+                
     imsize = float(imsize)*1e-9
     rotation = float(rotation)*np.pi/180.0
     
     if autofocus_pattern not in ['edges', 'testing']:
-        logging.warn('Unknown option for autofocus_pattern. Defaulting to \'edges\'.')
+        logwrite('Unknown option for autofocus_pattern. Defaulting to \'edges\'.', level='warn')
         autofocus_pattern = 'edges'
     
     if np.size(pixeltime) > 1 and np.size(pixeltime) != number_of_images:
         raise ValueError('The number of given pixeltimes do not match the given number of frames that should be recorded per location. You can either input one number or a list with a matching length.')
     
     if np.size(pixeltime) > 1 and do_autofocus == True:
-        logging.warn('Acquiring an image series and using autofocus is currently not possible. Autofocus will be disabled.')
+        logwrite('Acquiring an image series and using autofocus is currently not possible. Autofocus will be disabled.', level='warn')
         do_autofocus = False
     #If not running on microscope computer this will be set to true later.
     #No functions that require real Microscope Hardware will be executed, so no errors appear (test mode)    
@@ -254,15 +273,11 @@ def SuperScan_mapping(coord_dict, filepath='Z:\\ScanMap\\', do_autofocus=False, 
         try:
             frame_rotation, frame_distance = autoalign.rot_dist_fft(im1, im2)
         except RuntimeError:
-            logging.error('Could not find offset and/or rotation automatically. Please disable these two options and set values manually.')
+            logwrite('Could not find offset and/or rotation automatically. Please disable these two options and set values manually.', level='error')
             raise
-        #check if the correlation worked correctly and raise an error if not
-#        if frame_rotation or frame_distance is None:
-#            logging.error('Could not find offset and/or rotation automatically. Please disable these two options and set values manually.')
-#            raise RuntimeError('Could not find offset and/or rotation automatically. Please disable these two options and set values manually.')
         
-        logging.info('Found rotation between x-axis of stage and scan to be: '+str(frame_rotation))
-        logging.info('Found that the stage moves %.2f times the image size when setting the moving distance to the image size.' % (frame_distance*2.0/impix))
+        logwrite('Found rotation between x-axis of stage and scan to be: '+str(frame_rotation))
+        logwrite('Found that the stage moves %.2f times the image size when setting the moving distance to the image size.' % (frame_distance*2.0/impix))
         if auto_offset:
             offset = impix/(frame_distance*2.0) - 1.0
         if auto_rotation:
@@ -274,10 +289,10 @@ def SuperScan_mapping(coord_dict, filepath='Z:\\ScanMap\\', do_autofocus=False, 
             ss.SS_Functions_SS_SetFrameParams(impix, impix, 0, 0, pixeltime[0], imsize*1e9, rotation, HAADF, MAADF, False, False)
         else:
             ss.SS_Functions_SS_SetFrameParams(impix, impix, 0, 0, pixeltime, imsize*1e9, rotation, HAADF, MAADF, False, False)
-        logging.info('Using frame rotation of: ' + str(rotation*180/np.pi) + ' deg')
+        logwrite('Using frame rotation of: ' + str(rotation*180/np.pi) + ' deg')
     except BaseException as detail:
         offline = True        
-        logging.warn('Not able to set frame parameters. Going back to offline mode. Reason: '+str(detail))
+        logwrite('Not able to set frame parameters. Going back to offline mode. Reason: '+str(detail), level='warn')
         
     
     #calculate the number of subframes in (x,y). A small distance is kept between the subframes
@@ -354,9 +369,11 @@ def SuperScan_mapping(coord_dict, filepath='Z:\\ScanMap\\', do_autofocus=False, 
     missing_peaks = 0
     
     for frame_coord in map_coords:
+        if event is not None and event.is_set():
+            break
         counter += 1        
         stagex, stagey, stagez, fine_focus = frame_coord
-        logging.info(str(counter)+': (No. '+str(frame_number[counter-1])+') x: '+str((stagex))+', y: '+str((stagey))+', z: '+str((stagez))+', focus: '+str((fine_focus)))
+        logwrite(str(counter)+': (No. '+str(frame_number[counter-1])+') x: '+str((stagex))+', y: '+str((stagey))+', z: '+str((stagez))+', focus: '+str((fine_focus)))
         #print(str(counter)+': x: '+str((stagex))+', y: '+str((stagey))+', z: '+str((stagez))+', focus: '+str((fine_focus)))
 
         #only do hardware operations when online
@@ -380,7 +397,7 @@ def SuperScan_mapping(coord_dict, filepath='Z:\\ScanMap\\', do_autofocus=False, 
                     if new_focus_point[counter-1] != None:
                         #find amount of focus adjusting
                         focus_adjusted = autotune.autofocus(start_stepsize=2, end_stepsize=0.5)
-                        logging.info('Focus at x: ' + str(frame_coord[0]) + ' y: ' + str(frame_coord[1]) + 'adjusted by ' + str(focus_adjusted) + ' nm. (Originally: '+ str(frame_coord[3]*1e9) + ' nm)')
+                        logwrite('Focus at x: ' + str(frame_coord[0]) + ' y: ' + str(frame_coord[1]) + 'adjusted by ' + str(focus_adjusted) + ' nm. (Originally: '+ str(frame_coord[3]*1e9) + ' nm)')
                         #update the respective coordinate with the new focus
                         new_point = np.array(coord_dict_sorted[new_focus_point[counter-1]])
                         new_point[3] += focus_adjusted*1e-9
@@ -424,7 +441,7 @@ def SuperScan_mapping(coord_dict, filepath='Z:\\ScanMap\\', do_autofocus=False, 
                         tifffile.imsave(store+name, data)
                         test_map.append(frame_coord)
                         bad_frames[name] = 'Over 50% dirt coverage.'
-                        logging.info('Over 50% dirt coverage in ' + name)
+                        logwrite('Over 50% dirt coverage in ' + name)
                     else:
                         try:
                             first_order, second_order = autotune.find_peaks(data, imsize*1e9, position_tolerance=9, second_order=True)
@@ -437,21 +454,23 @@ def SuperScan_mapping(coord_dict, filepath='Z:\\ScanMap\\', do_autofocus=False, 
                             missing_peaks = 0                            
                         elif number_peaks < 10:
                             bad_frames[name] = 'Missing '+str(12 - number_peaks)+' peaks.'
-                            logging.info('No. '+str(frame_number[counter-1]) + ': Missing '+str(12 - number_peaks)+' peaks.')
+                            logwrite('No. '+str(frame_number[counter-1]) + ': Missing '+str(12 - number_peaks)+' peaks.')
                             missing_peaks += 12 - number_peaks
                         
                         if missing_peaks > 12:
-                            logging.info('No. '+str(frame_number[counter-1]) + ': Retune because '+str(missing_peaks)+' peaks miss in total.')
+                            logwrite('No. '+str(frame_number[counter-1]) + ': Retune because '+str(missing_peaks)+' peaks miss in total.')
                             bad_frames[name] = 'Retune because '+str(missing_peaks)+' peaks miss in total.'
                             try:
-                                tuning_result = autotune.kill_aberrations()
+                                tuning_result = autotune.kill_aberrations(event=event, document_controller=document_controller)
+                                if event is not None and event.is_set():
+                                    break
                             except DirtError:
-                                logging.info('No. '+str(frame_number[counter-1]) + ': Tuning was aborted because of dirt coming in.')
+                                logwrite('No. '+str(frame_number[counter-1]) + ': Tuning was aborted because of dirt coming in.')
                                 bad_frames[name] = 'Tuning was aborted because of dirt coming in.'
                                 tifffile.imsave(store+name, data)
                                 test_map.append(frame_coord)
                             else:
-                                logging.info('No. '+str(frame_number[counter-1]) + ': New tuning: '+str(tuning_result))
+                                logwrite('No. '+str(frame_number[counter-1]) + ': New tuning: '+str(tuning_result))
                                 bad_frames[name] = 'New tuning: '+str(tuning_result)
                             
                                 frame_nr = ss.SS_Functions_SS_StartFrame(0)
@@ -463,7 +482,7 @@ def SuperScan_mapping(coord_dict, filepath='Z:\\ScanMap\\', do_autofocus=False, 
                                     number_peaks_new = len(first_order_new)+len(second_order_new)
                                 except RuntimeError:
                                     bad_frames[name] = 'Dismissed result because it did not improve tuning: '+str(tuning_result)
-                                    logging.info('No. '+str(frame_number[counter-1]) + ': Dismissed result because it did not improve tuning: '+str(tuning_result))
+                                    logwrite('No. '+str(frame_number[counter-1]) + ': Dismissed result because it did not improve tuning: '+str(tuning_result))
                                     tifffile.imsave(store+name, data)
                                     test_map.append(frame_coord)
                                     #reset aberrations to values before tuning
@@ -484,7 +503,7 @@ def SuperScan_mapping(coord_dict, filepath='Z:\\ScanMap\\', do_autofocus=False, 
                                         missing_peaks = 0
                                     else:
                                         bad_frames[name] = 'Dismissed result because it did not improve tuning: '+str(tuning_result)
-                                        logging.info('No. '+str(frame_number[counter-1]) + ': Dismissed result because it did not improve tuning: '+str(tuning_result))
+                                        logwrite('No. '+str(frame_number[counter-1]) + ': Dismissed result because it did not improve tuning: '+str(tuning_result))
                                         tifffile.imsave(store+name, data)
                                         test_map.append(frame_coord)
                                         #reset aberrations to values before tuning
@@ -574,5 +593,5 @@ def SuperScan_mapping(coord_dict, filepath='Z:\\ScanMap\\', do_autofocus=False, 
     tifffile.imsave(store+str('z_map.tif'),np.asarray(z_map, dtype='float32'))
     tifffile.imsave(store+str('focus_map.tif'),np.asarray(focus_map, dtype='float32'))
     
-    logging.info('\nDone')
+    logwrite('\nDone')
 

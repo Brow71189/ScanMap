@@ -72,19 +72,23 @@ def kill_aberrations(focus_step=2, astig2f_step=2, astig3f_step=75, coma_step=30
     
     def logwrite(msg, level='info'):
         if document_controller is None:
-            if level == 'info':
+            if level.lower() == 'info':
                 logging.info(str(msg))
-            elif level == 'warn':
+            elif level.lower() == 'warn':
                 logging.warn(str(msg))
-            else:
+            elif level.lower() == 'error':
                 logging.error(str(msg))
-        else:
-            if level == 'info':
-                document_controller.queue_main_thread_task(lambda: logging.info(str(msg)))
-            elif level == 'warn':
-                document_controller.queue_main_thread_task(lambda: logging.warn(str(msg)))
             else:
+                logging.debug(str(msg))
+        else:
+            if level.lower() == 'info':
+                document_controller.queue_main_thread_task(lambda: logging.info(str(msg)))
+            elif level.lower() == 'warn':
+                document_controller.queue_main_thread_task(lambda: logging.warn(str(msg)))
+            elif level.lower() == 'error':
                 document_controller.queue_main_thread_task(lambda: logging.error(str(msg)))
+            else:
+                document_controller.queue_main_thread_task(lambda: logging.debug(str(msg)))
     
     def merit(intensities):
         if len(intensities) <= 6:

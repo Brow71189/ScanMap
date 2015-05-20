@@ -2,6 +2,7 @@
 import gettext
 import logging
 import numpy as np
+import threading
 # third party libraries
 # None
 try:
@@ -190,6 +191,7 @@ class ScanMap(Panel.Panel):
         drive_bl = ui.create_push_button_widget(_("Bottom Left"))
         drive_br = ui.create_push_button_widget(_("Bottom Right"))
         done_button = ui.create_push_button_widget(_("Done"))
+        abort_button = ui.create_push_button_widget(_("Abort"))
    
         z_drive_checkbox = ui.create_check_box_widget(_("Use Z Drive"))
         autofocus_checkbox = ui.create_check_box_widget(_("Autofocus"))
@@ -281,13 +283,23 @@ class ScanMap(Panel.Panel):
                 logging.warn('Couldn\'t reload mapper')
             
             if not None in coord_dict.viewvalues() and not None in (FOV, Size, Offset, Time, Rotation, Number_of_images):
-                mapper.SuperScan_mapping(coord_dict, do_autofocus=do_autofocus, imsize = FOV, offset = Offset, rotation = Rotation, number_of_images = Number_of_images,\
-                        impix = Size, pixeltime = Time, use_z_drive=use_z_drive, auto_offset=auto_offset, auto_rotation=auto_rotation, autofocus_pattern='testing', \
-                        acquire_overview=acquire_overview)
+                self.event = threading.Event()
+                self.thread = threading.Thread(target=mapper.SuperScan_mapping, args=(coord_dict,), kwargs={'do_autofocus': do_autofocus, 'imsize': FOV, 'offset': Offset,\
+                            'rotation': Rotation, 'number_of_images': Number_of_images, 'impix': Size, 'pixeltime': Time, 'use_z_drive': use_z_drive, \
+                            'auto_offset': auto_offset, 'auto_rotation': auto_rotation, 'autofocus_pattern': 'testing', 'document_controller': document_controller, \
+                            'event': self.event})
+#                mapper.SuperScan_mapping(coord_dict, do_autofocus=do_autofocus, imsize = FOV, offset = Offset, rotation = Rotation, number_of_images = Number_of_images,\
+#                        impix = Size, pixeltime = Time, use_z_drive=use_z_drive, auto_offset=auto_offset, auto_rotation=auto_rotation, autofocus_pattern='testing', \
+#                        acquire_overview=acquire_overview)
             else:
                 logging.warn('You din\'t specify all necessary parameters.')
 
-
+        def abort_button_clicked():
+            #self.stop_tuning()
+            logging.info('Aborting after current frame is finished. (May take a short while until actual abort)')
+            self.event.set()
+            self.thread.join()
+            
         tl_button.on_clicked = tl_button_clicked
         tr_button.on_clicked = tr_button_clicked
         bl_button.on_clicked = bl_button_clicked
@@ -297,6 +309,7 @@ class ScanMap(Panel.Panel):
         drive_bl.on_clicked = drive_bl_button_clicked
         drive_br.on_clicked = drive_br_button_clicked
         done_button.on_clicked = done_button_clicked
+        abort_button.on_clicked = abort_button_clicked
         
         bottom_button_row.add(tl_button)
         bottom_button_row.add_spacing(2)
@@ -326,6 +339,8 @@ class ScanMap(Panel.Panel):
         checkbox_row2.add(overview_checkbox)
         
         done_button_row.add(done_button)
+        done_button_row.add_spacing(15)
+        done_button_row.add(abort_button)
         
         column.add_spacing(15)
         column.add(edit_row1)
