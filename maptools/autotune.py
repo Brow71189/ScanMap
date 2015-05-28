@@ -8,7 +8,7 @@ Created on Thu Mar 12 16:54:54 2015
 import logging
 import time
 import os
-import threading
+#from threading import Event
 
 import numpy as np
 import scipy.optimize
@@ -68,7 +68,8 @@ def dirt_detector(image, threshold=0.02, median_blur_diam=39, gaussian_blur_radi
     return cv2.medianBlur(mask, median_blur_diam)
 
 def kill_aberrations(focus_step=2, astig2f_step=2, astig3f_step=75, coma_step=300, average_frames=3, integration_radius=1, image=None, \
-                    imsize=None, only_focus=False, save_images=False, savepath=None, document_controller=None, event=None):
+                    imsize=None, only_focus=False, save_images=False, savepath=None, document_controller=None, event=None, \
+                    keys = ['EHTFocus', 'C12_a', 'C12_b', 'C21_a', 'C21_b', 'C23_a', 'C23_b']):
     
     def logwrite(msg, level='info'):
         if document_controller is None:
@@ -114,10 +115,10 @@ def kill_aberrations(focus_step=2, astig2f_step=2, astig3f_step=75, coma_step=30
     counter = 0
     imagesize=8
     #controls = ['EHTFocus', 'C12.a', 'C12.b', 'C21.a', 'C21.b', 'C23.a', 'C23.b']
-    if only_focus:
-        keys = ['EHTFocus']
-    else:        
-        keys = ['EHTFocus', 'C12_a', 'C12_b', 'C21_a', 'C21_b', 'C23_a', 'C23_b']
+#    if only_focus:
+#        keys = ['EHTFocus']
+#    else:        
+#        keys = ['EHTFocus', 'C12_a', 'C12_b', 'C21_a', 'C21_b', 'C23_a', 'C23_b']
     #kwargs = {'EHTFocus': 0.0, 'C12_a': 0.0, 'C12_b': 0.0, 'C21_a': 0.0, 'C21_b': 0.0, 'C23_a': 0.0, 'C23_b': 0.0, 'relative_aberrations': True, 'reset_aberrations': True, 'start_C23_a': 40, 'start_C21_b': 60, 'start_C12_a': 2}
     kwargs = {'EHTFocus': 0.0, 'C12_a': 0.0, 'C12_b': 0.0, 'C21_a': 0.0, 'C21_b': 0.0, 'C23_a': 0.0, 'C23_b': 0.0, 'relative_aberrations': True, 'reset_aberrations': False}
     #total_changes = {'EHTFocus': 0.0, 'C12_a': 0.0, 'C12_b': 0.0, 'C21_a': 0.0, 'C21_b': 0.0, 'C23_a': 0.0, 'C23_b': 0.0}
@@ -537,7 +538,7 @@ def check_tuning(imagesize, im=None, check_astig=False, average_frames=0, integr
         if im is not None and not kwargs.has_key('image'):
             kwargs['image'] = im
         im = image_grabber(**kwargs)
-        mask = dirt_detector(im, threshold=0.15)
+        mask = dirt_detector(im, threshold=0.015)
         if np.sum(mask) > 0.5*np.prod(np.array(np.shape(im))):
             raise DirtError('Cannot check tuning of images with more than 50% dirt coverage.')
             
@@ -545,7 +546,7 @@ def check_tuning(imagesize, im=None, check_astig=False, average_frames=0, integr
         im = []
         single_image = image_grabber(**kwargs)
 
-        mask = dirt_detector(single_image, threshold=0.15)
+        mask = dirt_detector(single_image, threshold=0.015)
         if np.sum(mask) > 0.5*np.prod(np.array(np.shape(single_image))):
             raise DirtError('Cannot check tuning of images with more than 50% dirt coverage.')
         

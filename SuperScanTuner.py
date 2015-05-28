@@ -21,11 +21,10 @@ _ = gettext.gettext
 
 focus_step=2
 astig2f_step=2
-astig3f_step=75
+astig3f_step=150
 coma_step=300
 average_frames=3
 integration_radius=1
-only_focus=False
 save_images=False
 savepath=None
 
@@ -77,7 +76,7 @@ class SuperScanTuner(Panel.Panel):
                 except:
                     logging.warn(text+' is not a valid stepsize. Please input a floating point number.')
             else:
-                astig3f_step = 75
+                astig3f_step = 150
                 
         def average_finished(text):
             global average_frames
@@ -110,14 +109,27 @@ class SuperScanTuner(Panel.Panel):
                 savepath = None
                 
         def start_button_clicked():
-            global focus_step, astig2f_step, astig3f_step, coma_step, average_frames, integration_radius, only_focus, save_images, savepath
+            global focus_step, astig2f_step, astig3f_step, coma_step, average_frames, integration_radius, save_images, savepath
+            
+            keys = []
             
             reload(autotune)
 
-            if focus_only.check_state == 'checked':
-                only_focus = True
-            else:
-                only_focus = False
+            if EHTFocus.check_state == 'checked':
+                keys.append('EHTFocus')
+            if Twofold.check_state == 'checked':
+                keys.append('C12_a')
+                keys.append('C12_b')
+            if Coma.check_state == 'checked':
+                keys.append('C21_a')
+                keys.append('C21_b')
+            if Threefold.check_state == 'checked':
+                keys.append('C23_a')
+                keys.append('C23_b')
+            
+            if len(keys) < 1:
+                logging.warn('Tuning not started because no aberrations are selected for the tuning.')
+                return
 
             if saving.check_state == 'checked':
                 if savepath is not None:
@@ -132,8 +144,9 @@ class SuperScanTuner(Panel.Panel):
             self.event = threading.Event()
             #self.thread = threading.Thread(target=do_something, args=(self.event, document_controller))
             self.thread = threading.Thread(target=autotune.kill_aberrations, kwargs={'focus_step': focus_step, 'astig2f_step': astig2f_step, 'astig3f_step': astig3f_step,\
-                                'coma_step': coma_step, 'average_frames': average_frames, 'integration_radius': integration_radius, 'only_focus': only_focus, \
-                                'save_images': save_images, 'savepath': savepath, 'document_controller': document_controller, 'event': self.event})
+                                'coma_step': coma_step, 'average_frames': average_frames, 'integration_radius': integration_radius, 'save_images': save_images, \
+                                'savepath': savepath, 'document_controller': document_controller, 'event': self.event, 'keys': keys})
+                                
             self.thread.start()
         
         def abort_button_clicked():
@@ -144,7 +157,7 @@ class SuperScanTuner(Panel.Panel):
         
         descriptor_row1 = ui.create_row_widget()
         
-        descriptor_row1.add(ui.create_label_widget(_("Define stepsizes for tuning here (default values are used for empty fields):")))
+        descriptor_row1.add(ui.create_label_widget(_("Define tuning stepsizes here (default values are used for empty fields):")))
         
         parameters_row1 = ui.create_row_widget()
         
@@ -177,7 +190,7 @@ class SuperScanTuner(Panel.Panel):
         
         parameters_row2.add(ui.create_label_widget(_("C23 (Astig 3f): ")))
         C23 = ui.create_line_edit_widget()
-        C23.placeholder_text = "Defaults to 75"
+        C23.placeholder_text = "Defaults to 150"
         parameters_row2.add(C23)
         parameters_row2.add(ui.create_label_widget(_("nm")))
         C23.on_editing_finished = C23_finished
@@ -201,12 +214,29 @@ class SuperScanTuner(Panel.Panel):
         integration.on_editing_finished = integration_finished
         parameters_row3.add(ui.create_label_widget(_("px")))
         
-        checkbox_row = ui.create_row_widget()
-        focus_only = ui.create_check_box_widget(_("Adjust focus only"))
-        checkbox_row.add(focus_only)
-        checkbox_row.add_spacing(15)
+        descriptor_row3 = ui.create_row_widget()
+        descriptor_row3.add(ui.create_label_widget(_("Check all aberrations you want to include in the auto-tuning:")))
+        
+        checkbox_row1 = ui.create_row_widget()
+        EHTFocus = ui.create_check_box_widget(_("EHTFocus"))
+        checkbox_row1.add(EHTFocus)
+        checkbox_row1.add_spacing(8)
+        Twofold = ui.create_check_box_widget(_("Twofold Astig"))
+        checkbox_row1.add(Twofold)
+        checkbox_row1.add_spacing(8)
+        Coma = ui.create_check_box_widget(_("Coma"))
+        checkbox_row1.add(Coma)
+        checkbox_row1.add_spacing(8)
+        Threefold = ui.create_check_box_widget(_("Threefold Astig"))
+        checkbox_row1.add(Threefold)
+        EHTFocus.check_state = 'checked'
+        Twofold.check_state = 'checked'
+        Coma.check_state = 'checked'
+        Threefold.check_state = 'checked'
+        
+        checkbox_row2 = ui.create_row_widget()
         saving = ui.create_check_box_widget(_("Save all images during tuning"))
-        checkbox_row.add(saving)
+        checkbox_row2.add(saving)
         
         parameters_row4 = ui.create_row_widget()
         
@@ -235,7 +265,11 @@ class SuperScanTuner(Panel.Panel):
         column.add_spacing(3)
         column.add(parameters_row3)
         column.add_spacing(15)
-        column.add(checkbox_row)
+        column.add(descriptor_row3)
+        column.add_spacing(3)
+        column.add(checkbox_row1)
+        column.add_spacing(15)
+        column.add(checkbox_row2)
         column.add(parameters_row4)
         column.add_spacing(25)
         column.add(button_row)
