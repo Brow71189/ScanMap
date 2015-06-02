@@ -554,9 +554,9 @@ def SuperScan_mapping(coord_dict, filepath='Z:\\ScanMap\\', do_autofocus=False, 
     if acquire_overview:
         #Use longest edge as image size
         if abs(rightX-leftX) < abs(topY-botY):
-            over_size = abs(topY-botY)*1.25e3
+            over_size = abs(topY-botY)*1.25e9
         else:
-            over_size = abs(rightX-leftX)*1.25e3
+            over_size = abs(rightX-leftX)*1.25e9
         
         #Find center of mapped area:
         map_center = ((leftX+rightX)/2, (topY+botY)/2)
@@ -568,30 +568,31 @@ def SuperScan_mapping(coord_dict, filepath='Z:\\ScanMap\\', do_autofocus=False, 
         ss.SS_Functions_SS_SetFrameParams(4096, 4096, 0, 0, 2, over_size, rotation, False, True, False, False)
         image = autotune.image_grabber()
         tifffile.imsave(store+'Overview_'+str(over_size)+'_nm.tif', image)
-        
-    x_map = np.zeros((num_subframes[1],num_subframes[0]))
-    y_map = np.zeros((num_subframes[1],num_subframes[0]))
-    z_map = np.zeros((num_subframes[1],num_subframes[0]))
-    focus_map = np.zeros((num_subframes[1],num_subframes[0]))
-        
-    for j in range(num_subframes[1]):
-        for i in range(num_subframes[0]):
-            if j%2 == 0: #Odd lines, e.g. map from left to right
-                x_map[j,i] = test_map[i+j*num_subframes[0]][0]
-                y_map[j,i] = test_map[i+j*num_subframes[0]][1]
-                z_map[j,i] = test_map[i+j*num_subframes[0]][2]
-                focus_map[j,i] = test_map[i+j*num_subframes[0]][3]
-            else: #Even lines, e.g. scan from right to left
-                x_map[j,(num_subframes[0]-(i+1))] = test_map[i+j*num_subframes[0]][0]
-                y_map[j,(num_subframes[0]-(i+1))] = test_map[i+j*num_subframes[0]][1]
-                z_map[j,(num_subframes[0]-(i+1))] = test_map[i+j*num_subframes[0]][2]
-                focus_map[j,(num_subframes[0]-(i+1))] = test_map[i+j*num_subframes[0]][3]
-
     
-    tifffile.imsave(store+str('x_map.tif'),np.asarray(x_map, dtype='float32'))
-    tifffile.imsave(store+str('y_map.tif'),np.asarray(y_map, dtype='float32'))
-    tifffile.imsave(store+str('z_map.tif'),np.asarray(z_map, dtype='float32'))
-    tifffile.imsave(store+str('focus_map.tif'),np.asarray(focus_map, dtype='float32'))
+    if event is None or not event.is_set():    
+        x_map = np.zeros((num_subframes[1],num_subframes[0]))
+        y_map = np.zeros((num_subframes[1],num_subframes[0]))
+        z_map = np.zeros((num_subframes[1],num_subframes[0]))
+        focus_map = np.zeros((num_subframes[1],num_subframes[0]))
+            
+        for j in range(num_subframes[1]):
+            for i in range(num_subframes[0]):
+                if j%2 == 0: #Odd lines, e.g. map from left to right
+                    x_map[j,i] = test_map[i+j*num_subframes[0]][0]
+                    y_map[j,i] = test_map[i+j*num_subframes[0]][1]
+                    z_map[j,i] = test_map[i+j*num_subframes[0]][2]
+                    focus_map[j,i] = test_map[i+j*num_subframes[0]][3]
+                else: #Even lines, e.g. scan from right to left
+                    x_map[j,(num_subframes[0]-(i+1))] = test_map[i+j*num_subframes[0]][0]
+                    y_map[j,(num_subframes[0]-(i+1))] = test_map[i+j*num_subframes[0]][1]
+                    z_map[j,(num_subframes[0]-(i+1))] = test_map[i+j*num_subframes[0]][2]
+                    focus_map[j,(num_subframes[0]-(i+1))] = test_map[i+j*num_subframes[0]][3]
+    
+        
+        tifffile.imsave(store+str('x_map.tif'),np.asarray(x_map, dtype='float32'))
+        tifffile.imsave(store+str('y_map.tif'),np.asarray(y_map, dtype='float32'))
+        tifffile.imsave(store+str('z_map.tif'),np.asarray(z_map, dtype='float32'))
+        tifffile.imsave(store+str('focus_map.tif'),np.asarray(focus_map, dtype='float32'))
     
     logwrite('\nDone')
 

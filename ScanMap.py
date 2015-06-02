@@ -287,7 +287,8 @@ class ScanMap(Panel.Panel):
                 self.thread = threading.Thread(target=mapper.SuperScan_mapping, args=(coord_dict,), kwargs={'do_autofocus': do_autofocus, 'imsize': FOV, 'offset': Offset,\
                             'rotation': Rotation, 'number_of_images': Number_of_images, 'impix': Size, 'pixeltime': Time, 'use_z_drive': use_z_drive, \
                             'auto_offset': auto_offset, 'auto_rotation': auto_rotation, 'autofocus_pattern': 'testing', 'document_controller': document_controller, \
-                            'event': self.event})
+                            'event': self.event, 'acquire_overview': acquire_overview})
+                self.thread.start()
 #                mapper.SuperScan_mapping(coord_dict, do_autofocus=do_autofocus, imsize = FOV, offset = Offset, rotation = Rotation, number_of_images = Number_of_images,\
 #                        impix = Size, pixeltime = Time, use_z_drive=use_z_drive, auto_offset=auto_offset, auto_rotation=auto_rotation, autofocus_pattern='testing', \
 #                        acquire_overview=acquire_overview)

@@ -129,7 +129,7 @@ def kill_aberrations(focus_step=2, astig2f_step=2, astig3f_step=75, coma_step=30
     
     #change frame parameters to values that are suited for automatic tuning
     try:
-        ss.SS_Functions_SS_SetFrameParams(1024, 1024, 0, 0, 1, imagesize, 0, False, True, False, False)
+        ss.SS_Functions_SS_SetFrameParams(512, 512, 0, 0, 2, imagesize, 0, False, True, False, False)
     except:
         pass
     
