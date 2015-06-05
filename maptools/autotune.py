@@ -25,25 +25,7 @@ except:
     except:
         logging.warn('Could not import Vienna tools!')
 
-from nion.swift import Application
-from nion.swift.model import Image
-from nion.swift.model import Operation
-from nion.swift.model import Region
-from nion.swift.model import HardwareSource
 
-try:
-    import nionccd1010
-except:
-    pass
-    #warnings.warn('Could not import nionccd1010. If You\'re not on an offline version of Swift the ronchigram camera might not work!')
-    #logging.warn('Could not import nionccd1010. If You\'re not on an offline version of Swift the ronchigram camera might not work!')
-    
-try:    
-    from superscan import SuperScanPy as ss    
-except:
-    pass
-    #logging.warn('Could not import SuperScanPy. Maybe you are running in offline mode.')
-    
 #global variable to store aberrations when simulating them (see function image_grabber() for details)
 global_aberrations = {'EHTFocus': 1.5, 'C12_a': -1.0, 'C12_b': 1.5, 'C21_a': 438.0, 'C21_b': 205.0, 'C23_a': 90, 'C23_b': -60.0}
     
@@ -67,7 +49,7 @@ def dirt_detector(image, threshold=0.02, median_blur_diam=39, gaussian_blur_radi
         median_blur_diam+=1
     return cv2.medianBlur(mask, median_blur_diam)
 
-def kill_aberrations(focus_step=2, astig2f_step=2, astig3f_step=75, coma_step=300, average_frames=3, integration_radius=1, image=None, \
+def kill_aberrations(superscan=None, focus_step=2, astig2f_step=2, astig3f_step=75, coma_step=300, average_frames=3, integration_radius=1, image=None, \
                     imsize=None, only_focus=False, save_images=False, savepath=None, document_controller=None, event=None, \
                     keys = ['EHTFocus', 'C12_a', 'C12_b', 'C21_a', 'C21_b', 'C23_a', 'C23_b']):
     
@@ -102,7 +84,7 @@ def kill_aberrations(focus_step=2, astig2f_step=2, astig3f_step=75, coma_step=30
     global global_aberrations
     #global_aberrations = {'EHTFocus': 0.0, 'C12_a': 1.0, 'C12_b': -1.0, 'C21_a': 600.0, 'C21_b': 300.0, 'C23_a': 120, 'C23_b': -90.0}
     try:    
-        FrameParams = ss.SS_Functions_SS_GetFrameParams()
+        FrameParamsOrg = superscan.get_default_frame_parameters()
     except:
         online=False
         pass
@@ -128,10 +110,8 @@ def kill_aberrations(focus_step=2, astig2f_step=2, astig3f_step=75, coma_step=30
     steps = [focus_step, astig2f_step, astig2f_step, coma_step, coma_step, astig3f_step, astig3f_step]
     
     #change frame parameters to values that are suited for automatic tuning
-    try:
-        ss.SS_Functions_SS_SetFrameParams(512, 512, 0, 0, 2, imagesize, 0, False, True, False, False)
-    except:
-        pass
+    if online:
+        vt.superscan_configure(superscan, 512, 512, 0, 0, 2, imagesize, 0, False, True)
     
     try:
         current = check_tuning(imagesize, average_frames=average_frames, integration_radius=integration_radius, save_images=save_images, savepath=savepath, **kwargs)
@@ -139,6 +119,7 @@ def kill_aberrations(focus_step=2, astig2f_step=2, astig3f_step=75, coma_step=30
         current = (1e-5,)
     except DirtError:
         if online:
+#TODO: set original frame parameters
             ss.SS_Functions_SS_SetFrameParams(*FrameParams)
         logwrite('Tuning ended because of too high dirt coverage.', level='warn')
         raise
@@ -337,49 +318,7 @@ def kill_aberrations(focus_step=2, astig2f_step=2, astig3f_step=75, coma_step=30
     
     return global_aberrations
 
-
-def autofocus(imsize=None, image=None, start_stepsize=4, end_stepsize=1, position_tolerance=1,start_def=None):
-    """
-    Outdated, use kill_aberations(only_focus=True) instead if possible.
-    
-    Tries to find the correct focus in an atomically resolved STEM image of graphene.
-    The focus is optimized by maximizing the intensity of the 6 first-order peaks in the FFT
-    
-    Parameters
-    ----------
-    imsize : Optional, float
-        FOV set in the SuperScan settings
-    image : Optional, numpy array
-        
-    
-    """
-    flag  = False    
-    if imsize == None:
-        imsize = ss.SS_Functions_SS_GetFrameParams()[5]
-    try:
-        FrameParams = ss.SS_Functions_SS_GetFrameParams()
-        if FrameParams[0] > 2048:
-            ss.SS_Functions_SS_SetFrameParams(2048, 2048,FrameParams[2],FrameParams[3], FrameParams[4], FrameParams[5], FrameParams[6], FrameParams[7], FrameParams[8], FrameParams[9], FrameParams[10])
-            flag = True
-    except:
-        logging.warn('Could not check Frame Parameters.')
-        
-    estimated_focus = optimize_focus(imsize, im=image, start_stepsize=start_stepsize, end_stepsize=end_stepsize)
-    try:
-        current_focus = vt.as2_get_control('EHTFocus')
-        vt.as2_set_control('EHTFocus', current_focus+estimated_focus*1e-9)
-    except:
-        pass
-    #ss.SS_Functions_SS_StartFrame(1)
-    if flag:
-        ss.SS_Functions_SS_SetFrameParams(FrameParams[0], FrameParams[1],FrameParams[2],FrameParams[3], FrameParams[4], FrameParams[5], FrameParams[6], FrameParams[7], FrameParams[8], FrameParams[9], FrameParams[10])
-    
-    return estimated_focus
-
-
-
-#generates the defocused, noisy image
-def image_grabber(acquire_image=True, **kwargs):#, defocus=0, astig=[0,0], im=None, start_def=0.0, start_astig=[0,0], imsize=1.0):
+def image_grabber(acquire_image=True, **kwargs):
     """
     acquire_image defines if an image is taken and returned or if just the correctors are updated.
     
@@ -728,32 +667,6 @@ def optimize_tuning(imsize, im=None, astig_stepsize=0.1, focus_stepsize=1.0, tun
     
     if plus < minus and plus < current:
         pass
-
-        
-def optimize_focus(imsize, im=None, start_stepsize=4, end_stepsize=1):
-    stepsize = start_stepsize
-    defocus = 0
-    current = check_tuning(imsize, im=im)
-    
-    while stepsize >= end_stepsize:
-        #previous = current
-        #last_defocus = defocus
-        #initial = check_focus(defocus, im, shape)
-        plus = check_tuning(imsize, defocus=(defocus + stepsize), im=im)
-        minus = check_tuning(imsize, defocus=(defocus - stepsize), im=im)
-        if plus < current and minus < current:
-            logging.warn('Found ambigious focusing!')
-        
-        if minus < plus and minus < current:
-            defocus -= stepsize
-            current = minus
-        elif  plus < minus and plus < current:
-            defocus += stepsize
-            current = plus
-
-        stepsize /= 2.0
-    
-    return defocus
 
 def find_peaks(im, imsize, half_line_thickness=5, position_tolerance=5, integration_radius=0, second_order=False, debug_mode=False):
     """

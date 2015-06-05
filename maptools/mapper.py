@@ -22,25 +22,6 @@ except:
         from ViennaTools import tifffile
     except:
         logging.warn('Could not import Vienna tools!')
-
-from nion.swift import Application
-from nion.swift.model import Image
-from nion.swift.model import Operation
-from nion.swift.model import Region
-from nion.swift.model import HardwareSource
-
-try:
-    import nionccd1010
-except:
-    pass
-    #warnings.warn('Could not import nionccd1010. If You\'re not on an offline version of Swift the ronchigram camera might not work!')
-    #logging.warn('Could not import nionccd1010. If You\'re not on an offline version of Swift the ronchigram camera might not work!')
-    
-try:    
-    from superscan import SuperScanPy as ss    
-except:
-    pass
-    #logging.warn('Could not import SuperScanPy. Maybe you are running in offline mode.')
     
 import autotune
 from autotune import DirtError
@@ -166,7 +147,7 @@ def find_nearest_neighbors(number, target, points):
     
 def SuperScan_mapping(coord_dict, filepath='Z:\\ScanMap\\', do_autofocus=False, offset = 0.0, rotation = 0.0, imsize=200, impix=512, \
                       pixeltime=4, detectors=('MAADF'), use_z_drive=False, auto_offset=False, auto_rotation=False, autofocus_pattern='edges', \
-                      number_of_images=1, acquire_overview=False, document_controller=None, event=None):
+                      number_of_images=1, acquire_overview=False, document_controller=None, event=None, superscan=None):
     """
         This function will take a series of STEM images (subframes) to map a large rectangular sample area.
         coord_dict is a dictionary that has to consist of at least 4 tuples that hold stage coordinates in x,y,z - direction
@@ -241,54 +222,54 @@ def SuperScan_mapping(coord_dict, filepath='Z:\\ScanMap\\', do_autofocus=False, 
     topY = np.max((coords[0][1],coords[1][1]))
     botY = np.min((coords[2][1],coords[3][1]))
     
-    #Find scan rotation and offset between the images if desired by the user    
-    if auto_offset or auto_rotation:
-        #set scan parameters for finding rotation and offset
-        ss.SS_Functions_SS_SetFrameParams(impix, impix, 0, 0, 2, imsize*1e9, 0, False, True, False, False)
-        #Go first some distance into the opposite direction to reduce the influence of backlash in the mechanics on the calibration
-        vt.as2_set_control('StageOutX', leftX-5.0*imsize)
-        vt.as2_set_control('StageOutY', topY)
-        time.sleep(4)
-        #Goto point for first image and aquire it
-        vt.as2_set_control('StageOutX', leftX)
-        vt.as2_set_control('StageOutY', topY)
-        if use_z_drive:
-            vt.as2_set_control('StageOutZ', interpolation((leftX,  topY), coords)[0])
-        vt.as2_set_control('EHTFocus', interpolation((leftX,  topY), coords)[1])
-        time.sleep(4)
-        frame_nr = ss.SS_Functions_SS_StartFrame(0)
-        ss.SS_Functions_SS_WaitForEndOfFrame(frame_nr)
-        im1 = np.asarray(ss.SS_Functions_SS_GetImageForFrame(frame_nr, 0))
-        #Go to the right by one half image size
-        vt.as2_set_control('StageOutX', leftX+imsize/2.0)
-        if use_z_drive:
-            vt.as2_set_control('StageOutZ', interpolation((leftX+imsize/2.0,  topY), coords)[0])
-        vt.as2_set_control('EHTFocus', interpolation((leftX+imsize/2.0,  topY), coords)[1])
-        time.sleep(2)
-        frame_nr = ss.SS_Functions_SS_StartFrame(0)
-        ss.SS_Functions_SS_WaitForEndOfFrame(frame_nr)
-        im2 = np.asarray(ss.SS_Functions_SS_GetImageForFrame(frame_nr, 0))
-        #find offset between the two images        
-        #frame_rotation, frame_distance = autoalign.rot_dist(im1, im2)
-        try:
-            frame_rotation, frame_distance = autoalign.rot_dist_fft(im1, im2)
-        except RuntimeError:
-            logwrite('Could not find offset and/or rotation automatically. Please disable these two options and set values manually.', level='error')
-            raise
-        
-        logwrite('Found rotation between x-axis of stage and scan to be: '+str(frame_rotation))
-        logwrite('Found that the stage moves %.2f times the image size when setting the moving distance to the image size.' % (frame_distance*2.0/impix))
-        if auto_offset:
-            offset = impix/(frame_distance*2.0) - 1.0
-        if auto_rotation:
-            rotation = -frame_rotation/180*np.pi
+#    #Find scan rotation and offset between the images if desired by the user    
+#    if auto_offset or auto_rotation:
+#        #set scan parameters for finding rotation and offset
+#        ss.SS_Functions_SS_SetFrameParams(impix, impix, 0, 0, 2, imsize*1e9, 0, False, True, False, False)
+#        #Go first some distance into the opposite direction to reduce the influence of backlash in the mechanics on the calibration
+#        vt.as2_set_control('StageOutX', leftX-5.0*imsize)
+#        vt.as2_set_control('StageOutY', topY)
+#        time.sleep(4)
+#        #Goto point for first image and aquire it
+#        vt.as2_set_control('StageOutX', leftX)
+#        vt.as2_set_control('StageOutY', topY)
+#        if use_z_drive:
+#            vt.as2_set_control('StageOutZ', interpolation((leftX,  topY), coords)[0])
+#        vt.as2_set_control('EHTFocus', interpolation((leftX,  topY), coords)[1])
+#        time.sleep(4)
+#        frame_nr = ss.SS_Functions_SS_StartFrame(0)
+#        ss.SS_Functions_SS_WaitForEndOfFrame(frame_nr)
+#        im1 = np.asarray(ss.SS_Functions_SS_GetImageForFrame(frame_nr, 0))
+#        #Go to the right by one half image size
+#        vt.as2_set_control('StageOutX', leftX+imsize/2.0)
+#        if use_z_drive:
+#            vt.as2_set_control('StageOutZ', interpolation((leftX+imsize/2.0,  topY), coords)[0])
+#        vt.as2_set_control('EHTFocus', interpolation((leftX+imsize/2.0,  topY), coords)[1])
+#        time.sleep(2)
+#        frame_nr = ss.SS_Functions_SS_StartFrame(0)
+#        ss.SS_Functions_SS_WaitForEndOfFrame(frame_nr)
+#        im2 = np.asarray(ss.SS_Functions_SS_GetImageForFrame(frame_nr, 0))
+#        #find offset between the two images        
+#        #frame_rotation, frame_distance = autoalign.rot_dist(im1, im2)
+#        try:
+#            frame_rotation, frame_distance = autoalign.rot_dist_fft(im1, im2)
+#        except RuntimeError:
+#            logwrite('Could not find offset and/or rotation automatically. Please disable these two options and set values manually.', level='error')
+#            raise
+#        
+#        logwrite('Found rotation between x-axis of stage and scan to be: '+str(frame_rotation))
+#        logwrite('Found that the stage moves %.2f times the image size when setting the moving distance to the image size.' % (frame_distance*2.0/impix))
+#        if auto_offset:
+#            offset = impix/(frame_distance*2.0) - 1.0
+#        if auto_rotation:
+#            rotation = -frame_rotation/180*np.pi
         
     #Scan configuration
     try:
         if np.size(pixeltime) > 1:
-            ss.SS_Functions_SS_SetFrameParams(impix, impix, 0, 0, pixeltime[0], imsize*1e9, rotation, HAADF, MAADF, False, False)
+            vt.superscan_configure(superscan, impix, impix, 0, 0, pixeltime[0], imsize*1e9, rotation, HAADF, MAADF)
         else:
-            ss.SS_Functions_SS_SetFrameParams(impix, impix, 0, 0, pixeltime, imsize*1e9, rotation, HAADF, MAADF, False, False)
+            vt.superscan_configure(superscan, impix, impix, 0, 0, pixeltime, imsize*1e9, rotation, HAADF, MAADF)
         logwrite('Using frame rotation of: ' + str(rotation*180/np.pi) + ' deg')
     except BaseException as detail:
         offline = True        
@@ -405,9 +386,7 @@ def SuperScan_mapping(coord_dict, filepath='Z:\\ScanMap\\', do_autofocus=False, 
                         #take frame at this point with the new focus                    
                         vt.as2_set_control('EHTFocus', new_point[3])
                         time.sleep(0.1)
-                        frame_nr = ss.SS_Functions_SS_StartFrame(0)
-                        ss.SS_Functions_SS_WaitForEndOfFrame(frame_nr)
-                        data = np.asarray(ss.SS_Functions_SS_GetImageForFrame(frame_nr, 0))
+                        data=autotune.image_grabber()
                         tifffile.imsave(store+str('%.4d_%.2f_%.2f.tif' % (frame_number[counter-1],stagex*1e6,stagey*1e6)), data)
                         test_map.append(tuple(new_point))
                    #make list of tuples from sorted dictionary with new value inside
@@ -421,9 +400,7 @@ def SuperScan_mapping(coord_dict, filepath='Z:\\ScanMap\\', do_autofocus=False, 
                         vt.as2_set_control('EHTFocus',  new_focus)
                         time.sleep(0.1)
                         #take frame
-                        frame_nr = ss.SS_Functions_SS_StartFrame(0)
-                        ss.SS_Functions_SS_WaitForEndOfFrame(frame_nr)
-                        data = np.asarray(ss.SS_Functions_SS_GetImageForFrame(frame_nr, 0))
+                        data=autotune.image_grabber()
                         tifffile.imsave(store+str('%.4d_%.3f_%.3f.tif' % (frame_number[counter-1],stagex*1e6,stagey*1e6)), data)
                         test_map.append(frame_coord[0:3] + (new_focus,))
                         
@@ -431,9 +408,7 @@ def SuperScan_mapping(coord_dict, filepath='Z:\\ScanMap\\', do_autofocus=False, 
                     #tests in each frame after aquisition if all 6 reflections in the fft are still there (only for frames where less than 50% of the area are
                     #covered with dirt). If not all reflections are visible, autofocus is applied and the result is added as offset to the interpolated focus values.
                     #The dirt coverage is calculated by considering all pixels intensities that are higher than 0.02 as dirt
-                    frame_nr = ss.SS_Functions_SS_StartFrame(0)
-                    ss.SS_Functions_SS_WaitForEndOfFrame(frame_nr)
-                    data = np.asarray(ss.SS_Functions_SS_GetImageForFrame(frame_nr, 0))
+                    data=autotune.image_grabber()
                     name = str('%.4d_%.3f_%.3f.tif' % (frame_number[counter-1],stagex*1e6,stagey*1e6))
                     dirt_mask = autotune.dirt_detector(data, threshold=0.01, median_blur_diam=39, gaussian_blur_radius=3)
                     #calculate the fraction of 'bad' pixels and save frame if fraction is >0.5, but add note to "bad_frames" file
@@ -473,10 +448,7 @@ def SuperScan_mapping(coord_dict, filepath='Z:\\ScanMap\\', do_autofocus=False, 
                                 logwrite('No. '+str(frame_number[counter-1]) + ': New tuning: '+str(tuning_result))
                                 bad_frames[name] = 'New tuning: '+str(tuning_result)
                             
-                                frame_nr = ss.SS_Functions_SS_StartFrame(0)
-                                ss.SS_Functions_SS_WaitForEndOfFrame(frame_nr)
-                                
-                                data_new = np.asarray(ss.SS_Functions_SS_GetImageForFrame(frame_nr, 0))
+                                data_new = autotune.image_grabber()
                                 try:
                                     first_order_new, second_order_new = autotune.find_peaks(data, imsize*1e9, position_tolerance=9, second_order=True)
                                     number_peaks_new = len(first_order_new)+len(second_order_new)
@@ -520,9 +492,7 @@ def SuperScan_mapping(coord_dict, filepath='Z:\\ScanMap\\', do_autofocus=False, 
             else:
                 #Take frame and save it to disk
                 if number_of_images < 2:
-                    frame_nr = ss.SS_Functions_SS_StartFrame(0)
-                    ss.SS_Functions_SS_WaitForEndOfFrame(frame_nr)
-                    data = np.asarray(ss.SS_Functions_SS_GetImageForFrame(frame_nr, 0))
+                    data = autotune.image_grabber()
                     tifffile.imsave(store+str('%.4d_%.3f_%.3f.tif' % (frame_number[counter-1],stagex*1e6,stagey*1e6)), data)
                     test_map.append(frame_coord)
                 else:
@@ -533,9 +503,7 @@ def SuperScan_mapping(coord_dict, filepath='Z:\\ScanMap\\', do_autofocus=False, 
                         if np.size(pixeltime) > 1:                        
                             frame_params[4] = pixeltime[i]
                             ss.SS_Functions_SS_SetFrameParams(*frame_params)
-                        frame_nr = ss.SS_Functions_SS_StartFrame(0)
-                        ss.SS_Functions_SS_WaitForEndOfFrame(frame_nr)
-                        data = np.asarray(ss.SS_Functions_SS_GetImageForFrame(frame_nr, 0))
+                        data = autotune.image_grabber()
                         tifffile.imsave(store+str('%.4d_%.3f_%.3f_%.2d.tif' % (frame_number[counter-1],stagex*1e6,stagey*1e6, i)), data)
                     ss.SS_Functions_SS_SetFrameParams(*original_frame_params)
                     test_map.append(frame_coord)
@@ -565,7 +533,7 @@ def SuperScan_mapping(coord_dict, filepath='Z:\\ScanMap\\', do_autofocus=False, 
         vt.as2_set_control('StageOutY', map_center[1])
         time.sleep(10)
         #acquire image and save it
-        ss.SS_Functions_SS_SetFrameParams(4096, 4096, 0, 0, 2, over_size, rotation, False, True, False, False)
+        vt.superscan_configure(superscan, 4096, 4096, 0, 0, 2, over_size, rotation, False, True)
         image = autotune.image_grabber()
         tifffile.imsave(store+'Overview_'+str(over_size)+'_nm.tif', image)
     
