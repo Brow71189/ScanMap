@@ -188,11 +188,11 @@ if __name__ == '__main__':
     
     overall_starttime = time.time()
 
-    dirpath = '/3tb/maps_data/map_2015_04_15_13_13/'
+    dirpath = '/3tb/maps_data/map_2015_06_02_11_37/'
     #dirpath = '/3tb/Dark_noise/'
-    imsize = 12
-    dirt_threshold = 0.0085
-    dirt_border = 100
+    imsize = 20
+    dirt_threshold = 0.0033
+    dirt_border = 50
 
 
     if not dirpath.endswith('/'):
@@ -209,7 +209,8 @@ if __name__ == '__main__':
     #starttime = time.time()
     
     pool = Pool()
-    res = [pool.apply_async(subframes_preprocessing, (filename, dirpath, imsize), {'dirt_threshold': dirt_threshold, 'dirt_border':dirt_border, 'save_fft': True}) for filename in matched_dirlist]
+    res = [pool.apply_async(subframes_preprocessing, (filename, dirpath, imsize), {'dirt_threshold': dirt_threshold, 'dirt_border':dirt_border, \
+            'median_blur_diameter': 59, 'gaussian_blur_radius': 5,'save_fft': True}) for filename in matched_dirlist]
     res_list = [p.get() for p in res]
     pool.close()
     pool.terminate()

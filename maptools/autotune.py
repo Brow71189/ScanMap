@@ -33,7 +33,131 @@ class DirtError(Exception):
     """
     Custom Exception to specify that too much dirt was found in an image to perform a certain operation.
     """
+    
+def set_frame_parameters(superscan, frame_parameters):
+    """
+    Sets the parameters for image acqusition in the microscope.
+    
+    Parameters
+    -----------
+    superscan : hardware source object
+        An instance of the superscan hardware source
+    
+    frame_parameters : dictionary
+        Frame parameters to set in the microscope. Possible keys are:
+        
+        - size_pixels: Number of pixels in x- and y-direction of the acquired frame as tuple (x,y)
+        - center: Offset for the center of the scanned area in x- and y-direction (nm) as tuple (x,y)
+        - pixeltime: Time per pixel (us)
+        - fov: Field-of-view of the acquired frame (nm)
+        - rotation: Scan rotation (deg)
+    
+    Returns
+    --------
+    None
+    """
+    
+    parameters = superscan.get_default_frame_parameters()
+    
+    if frame_parameters.has_key('size_pixels') and frame_parameters['size_pixels'] is not None:
+        parameters.size = frame_parameters['size_pixels']
+    
+    if frame_parameters.has_key('center') and frame_parameters['center'] is not None:
+        parameters.center_nm = frame_parameters['center']
+    
+    if frame_parameters.has_key('pixeltime') and frame_parameters['pixeltime'] is not None:
+        parameters.pixel_time_us = frame_parameters['pixeltime']
+    
+    if frame_parameters.has_key('fov') and frame_parameters['fov'] is not None:
+        parameters.fov_nm = frame_parameters['fov']
+    
+    if frame_parameters.has_key('rotation') and frame_parameters['rotation'] is not None:
+        parameters.rotation_deg = frame_parameters['rotation']
+        
+    superscan.set_default_frame_parameters(parameters)
+        
+def get_frame_parameters(superscan):
+    """
+    Gets the current frame parameters of the microscope.
+    
+    Parameters
+    -----------
+    superscan : hardware source object
+        An instance of the superscan hardware source
+    
+    Returns
+    --------
+    frame_parameters : dictionary
+        Contains the following keys:
+        
+        - size_pixels: Number of pixels in x- and y-direction of the acquired frame as tuple (x,y)
+        - center: Offset for the center of the scanned area in x- and y-direction (nm) as tuple (x,y)
+        - pixeltime: Time per pixel (us)
+        - fov: Field-of-view of the acquired frame (nm)
+        - rotation: Scan rotation (deg)
+    """
+    
+    parameters = superscan.get_default_frame_parameters()
+    
+    return {'size_pixels': parameters.size, 'center': parameters.center_nm, 'pixeltime': parameters.pixel_time_us, \
+            'fov': parameters.fov_nm, 'rotation': parameters.rotation_deg}
 
+def create_record_parameters(superscan, frame_parameters, detectors={'HAADF': False, 'MAADF': True}):
+    """
+    Returns the frame parameters in a form that they can be used in the record and view functions.
+    
+    Parameters
+    -----------
+    superscan : hardware source object
+        An instance of the superscan hardware source
+    
+    frame_parameters : dictionary
+        Frame parameters to set in the microscope. Possible keys are:
+        
+        - size_pixels: Number of pixels in x- and y-direction of the acquired frame as tuple (x,y)
+        - center: Offset for the center of the scanned area in x- and y-direction (nm) as tuple (x,y)
+        - pixeltime: Time per pixel (us)
+        - fov: Field-of-view of the acquired frame (nm)
+        - rotation: Scan rotation (deg)
+        
+    detectors : optional, dictionary
+        By default, only MAADF is used. Dictionary has to be in the form:
+        {'HAADF': False, 'MAADF': True}
+    
+    Returns
+    --------
+    record_parameters : dictionary
+        It has the form: {'frame_parameters': frame_parameters, 'channels_enabled': [HAADF, MAADF, False, False]}
+    """
+    if frame_parameters is not None:
+        parameters = superscan.get_default_frame_parameters()
+        
+        if frame_parameters.get('size_pixels') is not None:
+            parameters.size = frame_parameters['size_pixels']
+        
+        if frame_parameters.get('center') is not None:
+            parameters.center_nm = frame_parameters['center']
+        
+        if frame_parameters.get('pixeltime') is not None:
+            parameters.pixel_time_us = frame_parameters['pixeltime']
+        
+        if frame_parameters.get('fov') is not None:
+            parameters.fov_nm = frame_parameters['fov']
+        
+        if frame_parameters.get('rotation') is not None:
+            parameters.rotation_deg = frame_parameters['rotation']
+    else:
+        parameters = None
+        
+    if detectors is not None:
+        channels_enabled = [detectors['HAADF'], detectors['MAADF'], False, False]
+    else:
+        channels_enabled = None
+
+    return {'frame_parameters': parameters, 'channels_enabled': channels_enabled}
+        
+        
+    
 def dirt_detector(image, threshold=0.02, median_blur_diam=39, gaussian_blur_radius=3):
     """
     Returns a mask with the same shape as "image" that is 1 where there is dirt and 0 otherwise
@@ -318,7 +442,7 @@ def kill_aberrations(superscan=None, focus_step=2, astig2f_step=2, astig3f_step=
     
     return global_aberrations
 
-def image_grabber(acquire_image=True, **kwargs):
+def image_grabber(superscan = None, as2 = None, acquire_image=True, **kwargs):
     """
     acquire_image defines if an image is taken and returned or if just the correctors are updated.
     
@@ -343,6 +467,12 @@ def image_grabber(acquire_image=True, **kwargs):
         If 'reset_aberrations' is included and set to True, image_grabber will set each aberration back to its original value after acquiring an image. This is a good choice if
         you want to try new values for the aberration correctors bur are not sure you want to keep them.
     
+    frame_parameters : dictionary
+        Contains the frame parameters for acquisition. See function create_record_parameters() for details.
+        
+    detectors : dictionary
+        Contains the dectectors used for acquisition. See function create_record_parameters() for details.
+        
     Example call of image_grabber:
     ------------------------------
     
@@ -359,23 +489,26 @@ def image_grabber(acquire_image=True, **kwargs):
     if not kwargs.has_key('image'):
         for i in range(len(keys)):
             if kwargs.has_key(keys[i]):
+                if as2 is None:
+                    raise RuntimeError('You have to provide an instance of as2 to perform as2-related operations.')
                 offset=0.0
                 offset2=0.0
                 if kwargs.has_key('reset_aberrations'):
                     if kwargs['reset_aberrations']:
-                        originals[controls[i]] = vt.as2_get_control(controls[i])
+                        originals[controls[i]] = vt.as2_get_control(as2, controls[i])
                 if kwargs.has_key('relative_aberrations'):
                     if kwargs['relative_aberrations']:
-                        offset = vt.as2_get_control(controls[i])
+                        offset = vt.as2_get_control(as2, controls[i])
                         offset2 = global_aberrations[keys[i]]
                 #time.sleep(0.1)
-                vt.as2_set_control(controls[i], offset+kwargs[keys[i]]*1e-9)
+                vt.as2_set_control(as2, controls[i], offset+kwargs[keys[i]]*1e-9)
                 global_aberrations[keys[i]] = offset2+kwargs[keys[i]]
         #time.sleep(0.2)
         if acquire_image:
-            frame_nr = ss.SS_Functions_SS_StartFrame(0)
-            ss.SS_Functions_SS_WaitForEndOfFrame(frame_nr)
-            im = np.asarray(ss.SS_Functions_SS_GetImageForFrame(frame_nr, 0))
+            if superscan is None:
+                raise RuntimeError('You have to provide an instance of superscan to perform superscan-related operations.')
+            record_parameters = create_record_parameters(superscan, kwargs.get('frame_parameters'), detectors=kwargs.get('detectors'))
+            im = superscan.record(**record_parameters)
             if len(originals) > 0:
                 for key in originals.keys():
                     #time.sleep(0.1)

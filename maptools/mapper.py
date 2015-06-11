@@ -147,7 +147,7 @@ def find_nearest_neighbors(number, target, points):
     
 def SuperScan_mapping(coord_dict, filepath='Z:\\ScanMap\\', do_autofocus=False, offset = 0.0, rotation = 0.0, imsize=200, impix=512, \
                       pixeltime=4, detectors=('MAADF'), use_z_drive=False, auto_offset=False, auto_rotation=False, autofocus_pattern='edges', \
-                      number_of_images=1, acquire_overview=False, document_controller=None, event=None, superscan=None):
+                      number_of_images=1, acquire_overview=False, document_controller=None, event=None, superscan=None, as2=None):
     """
         This function will take a series of STEM images (subframes) to map a large rectangular sample area.
         coord_dict is a dictionary that has to consist of at least 4 tuples that hold stage coordinates in x,y,z - direction
@@ -267,9 +267,12 @@ def SuperScan_mapping(coord_dict, filepath='Z:\\ScanMap\\', do_autofocus=False, 
     #Scan configuration
     try:
         if np.size(pixeltime) > 1:
-            vt.superscan_configure(superscan, impix, impix, 0, 0, pixeltime[0], imsize*1e9, rotation, HAADF, MAADF)
+            frame_parameters = {'size_pixels': (impix, impix), 'center': (0,0), 'pixeltime': pixeltime[0], \
+                                'fov': imsize*1e9, 'rotation': rotation}
         else:
-            vt.superscan_configure(superscan, impix, impix, 0, 0, pixeltime, imsize*1e9, rotation, HAADF, MAADF)
+            frame_parameters = {'size_pixels': (impix, impix), 'center': (0,0), 'pixeltime': pixeltime, \
+                                'fov': imsize*1e9, 'rotation': rotation}
+        record_parameters = autotune.create_record_parameters(superscan, frame_parameters)
         logwrite('Using frame rotation of: ' + str(rotation*180/np.pi) + ' deg')
     except BaseException as detail:
         offline = True        
@@ -359,11 +362,11 @@ def SuperScan_mapping(coord_dict, filepath='Z:\\ScanMap\\', do_autofocus=False, 
 
         #only do hardware operations when online
         if not offline:
-            vt.as2_set_control('StageOutX', stagex)
-            vt.as2_set_control('StageOutY', stagey)
+            vt.as2_set_control(as2, 'StageOutX', stagex)
+            vt.as2_set_control(as2, 'StageOutY', stagey)
             if use_z_drive:
-                vt.as2_set_control('StageOutZ', stagez)
-            vt.as2_set_control('EHTFocus', fine_focus)
+                vt.as2_set_control(as2, 'StageOutZ', stagez)
+            vt.as2_set_control(as2, 'EHTFocus', fine_focus)
             
             #Wait until movement of stage is done (wait longer time before first frame)
             if counter == 1:            
@@ -384,7 +387,7 @@ def SuperScan_mapping(coord_dict, filepath='Z:\\ScanMap\\', do_autofocus=False, 
                         new_point[3] += focus_adjusted*1e-9
                         coord_dict_sorted[new_focus_point[counter-1]] = tuple(new_point)
                         #take frame at this point with the new focus                    
-                        vt.as2_set_control('EHTFocus', new_point[3])
+                        vt.as2_set_control(as2, 'EHTFocus', new_point[3])
                         time.sleep(0.1)
                         data=autotune.image_grabber()
                         tifffile.imsave(store+str('%.4d_%.2f_%.2f.tif' % (frame_number[counter-1],stagex*1e6,stagey*1e6)), data)
@@ -397,7 +400,7 @@ def SuperScan_mapping(coord_dict, filepath='Z:\\ScanMap\\', do_autofocus=False, 
                             coords.append(coord_dict_sorted[corner])
                         #set focus to new interpolated value
                         new_focus = interpolation(frame_coord[0:2], coords)[1]
-                        vt.as2_set_control('EHTFocus',  new_focus)
+                        vt.as2_set_control(as2, 'EHTFocus',  new_focus)
                         time.sleep(0.1)
                         #take frame
                         data=autotune.image_grabber()
@@ -519,7 +522,7 @@ def SuperScan_mapping(coord_dict, filepath='Z:\\ScanMap\\', do_autofocus=False, 
         config_file.close()
 
     #acquire overview image if desired
-    if acquire_overview:
+    if not offline and acquire_overview:
         #Use longest edge as image size
         if abs(rightX-leftX) < abs(topY-botY):
             over_size = abs(topY-botY)*1.25e9
@@ -529,8 +532,8 @@ def SuperScan_mapping(coord_dict, filepath='Z:\\ScanMap\\', do_autofocus=False, 
         #Find center of mapped area:
         map_center = ((leftX+rightX)/2, (topY+botY)/2)
         #Goto center
-        vt.as2_set_control('StageOutX', map_center[0])
-        vt.as2_set_control('StageOutY', map_center[1])
+        vt.as2_set_control(as2, 'StageOutX', map_center[0])
+        vt.as2_set_control(as2, 'StageOutY', map_center[1])
         time.sleep(10)
         #acquire image and save it
         vt.superscan_configure(superscan, 4096, 4096, 0, 0, 2, over_size, rotation, False, True)

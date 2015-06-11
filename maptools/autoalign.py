@@ -24,24 +24,24 @@ except:
     except:
         logging.warn('Could not import Vienna tools!')
 
-from nion.swift import Application
-from nion.swift.model import Image
-from nion.swift.model import Operation
-from nion.swift.model import Region
-from nion.swift.model import HardwareSource
-
-try:
-    import nionccd1010
-except:
-    pass
-    #warnings.warn('Could not import nionccd1010. If You\'re not on an offline version of Swift the ronchigram camera might not work!')
-    #logging.warn('Could not import nionccd1010. If You\'re not on an offline version of Swift the ronchigram camera might not work!')
-    
-try:    
-    from superscan import SuperScanPy as ss    
-except:
-    pass
-    #logging.warn('Could not import SuperScanPy. Maybe you are running in offline mode.')
+#from nion.swift import Application
+#from nion.swift.model import Image
+#from nion.swift.model import Operation
+#from nion.swift.model import Region
+#from nion.swift.model import HardwareSource
+#
+#try:
+#    import nionccd1010
+#except:
+#    pass
+#    #warnings.warn('Could not import nionccd1010. If You\'re not on an offline version of Swift the ronchigram camera might not work!')
+#    #logging.warn('Could not import nionccd1010. If You\'re not on an offline version of Swift the ronchigram camera might not work!')
+#    
+#try:    
+#    from superscan import SuperScanPy as ss    
+#except:
+#    pass
+#    #logging.warn('Could not import SuperScanPy. Maybe you are running in offline mode.')
 
 import autotune    
     

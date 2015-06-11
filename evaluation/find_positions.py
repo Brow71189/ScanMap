@@ -37,12 +37,12 @@ from ctypes import c_float
 
 if __name__=='__main__':
     
-    dirpath = '/3tb/maps_data/map_2015_04_15_13_13/'
+    dirpath = '/3tb/maps_data/map_2015_05_29_12_01/'
     
-    overview = '/3tb/maps_data/map_2015_04_15_13_13/overview.tif'
+    overview = '/3tb/maps_data/map_2015_05_29_12_01/Overview_898.156649193_nm.tif'
     
-    size_overview = 256 #nm
-    size_frames = 12 #nm
+    size_overview = 898.156649193 #nm
+    size_frames = 64 #nm
     
     
     
@@ -58,7 +58,7 @@ if __name__=='__main__':
             
     
     matched_frames.sort()
-    over = np.array(cv2.imread(overview, -1))[1023:3072, 0:2048]*3
+    over = np.array(cv2.imread(overview, -1))#[1023:3072, 0:2048]*3
     shape_over = np.shape(over)
     over = cv2.GaussianBlur(over, None, 1)
 #    l = Lock()
@@ -66,13 +66,13 @@ if __name__=='__main__':
     added = over.copy()
     color = 1
     
-    for name in matched_frames[0:50]:
-        im = np.array(cv2.imread(dirpath+name, -1))*3
+    for name in matched_frames:
+        im = np.array(cv2.imread(dirpath+name, -1))#*3
         shape_im = np.shape(im)
         scale = (size_frames/float(shape_im[0])/(size_overview/float(shape_over[0])))
         im = cv2.resize(im, None, fx=scale, fy=scale, interpolation=cv2.INTER_AREA)
-        result = cv2.matchTemplate(over, im, method=cv2.TM_SQDIFF)
-        maxi = np.unravel_index(np.argmin(result), result.shape)
+        result = cv2.matchTemplate(over, im, method=cv2.TM_CCOEFF_NORMED)
+        maxi = np.unravel_index(np.argmax(result), result.shape)
         added[maxi[0]:maxi[0]+im.shape[0], maxi[1]:maxi[1]+im.shape[1]] += im
         #cv2.rectangle(added, (maxi[1],maxi[0]), (maxi[1]+im.shape[1], maxi[0]+im.shape[0]), color, thickness=2)
         cv2.putText(added, name[0:4], (maxi[1]-4,maxi[0]-2), cv2.FONT_HERSHEY_PLAIN, 3, color, thickness=2)
