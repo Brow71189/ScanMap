@@ -10,7 +10,7 @@ import cv2
 import os
 #import matplotlib.pyplot as plt
 #from multiprocessing import Pool, Lock, Array
-from ctypes import c_float
+#from ctypes import c_float
     
 #def find_position(name, added, over, shape_over, size_frames, size_overview, color):
 #    #global added, l, over, shape_over, size_frame, size_overview, color

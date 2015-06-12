@@ -265,19 +265,18 @@ def SuperScan_mapping(coord_dict, filepath='Z:\\ScanMap\\', do_autofocus=False, 
 #            rotation = -frame_rotation/180*np.pi
         
     #Scan configuration
-    try:
+    if superscan is None or as2 is None:
         if np.size(pixeltime) > 1:
             frame_parameters = {'size_pixels': (impix, impix), 'center': (0,0), 'pixeltime': pixeltime[0], \
                                 'fov': imsize*1e9, 'rotation': rotation}
         else:
             frame_parameters = {'size_pixels': (impix, impix), 'center': (0,0), 'pixeltime': pixeltime, \
                                 'fov': imsize*1e9, 'rotation': rotation}
-        record_parameters = autotune.create_record_parameters(superscan, frame_parameters)
+        #record_parameters = autotune.create_record_parameters(superscan, frame_parameters)
         logwrite('Using frame rotation of: ' + str(rotation*180/np.pi) + ' deg')
-    except BaseException as detail:
+    else:
         offline = True        
-        logwrite('Not able to set frame parameters. Going back to offline mode. Reason: '+str(detail), level='warn')
-        
+        logwrite('Going back to offline mode because no instance of as2 or superscan was provided.', level='warn')
     
     #calculate the number of subframes in (x,y). A small distance is kept between the subframes
     #to ensure they do not overlap
@@ -495,20 +494,15 @@ def SuperScan_mapping(coord_dict, filepath='Z:\\ScanMap\\', do_autofocus=False, 
             else:
                 #Take frame and save it to disk
                 if number_of_images < 2:
-                    data = autotune.image_grabber()
+                    data = autotune.image_grabber(superscan=superscan, **frame_parameters)
                     tifffile.imsave(store+str('%.4d_%.3f_%.3f.tif' % (frame_number[counter-1],stagex*1e6,stagey*1e6)), data)
                     test_map.append(frame_coord)
                 else:
-                    if np.size(pixeltime) > 1:
-                        original_frame_params = ss.SS_Functions_SS_GetFrameParams()
-                        frame_params = list(original_frame_params)
                     for i in range(number_of_images):
                         if np.size(pixeltime) > 1:                        
-                            frame_params[4] = pixeltime[i]
-                            ss.SS_Functions_SS_SetFrameParams(*frame_params)
-                        data = autotune.image_grabber()
+                            frame_parameters['pixeltime'] = pixeltime[i]
+                        data = autotune.image_grabber(superscan=superscan, **frame_parameters)
                         tifffile.imsave(store+str('%.4d_%.3f_%.3f_%.2d.tif' % (frame_number[counter-1],stagex*1e6,stagey*1e6, i)), data)
-                    ss.SS_Functions_SS_SetFrameParams(*original_frame_params)
                     test_map.append(frame_coord)
         
         else:
@@ -536,8 +530,9 @@ def SuperScan_mapping(coord_dict, filepath='Z:\\ScanMap\\', do_autofocus=False, 
         vt.as2_set_control(as2, 'StageOutY', map_center[1])
         time.sleep(10)
         #acquire image and save it
-        vt.superscan_configure(superscan, 4096, 4096, 0, 0, 2, over_size, rotation, False, True)
-        image = autotune.image_grabber()
+        overview_parameters = {'size_pixels': (4096, 4096), 'center': (0,0), 'pixeltime': 2, \
+                            'fov': over_size, 'rotation': rotation}
+        image = autotune.image_grabber(superscan=superscan, **overview_parameters)
         tifffile.imsave(store+'Overview_'+str(over_size)+'_nm.tif', image)
     
     if event is None or not event.is_set():    

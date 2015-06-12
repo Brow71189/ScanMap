@@ -173,9 +173,10 @@ def dirt_detector(image, threshold=0.02, median_blur_diam=39, gaussian_blur_radi
         median_blur_diam+=1
     return cv2.medianBlur(mask, median_blur_diam)
 
-def kill_aberrations(superscan=None, focus_step=2, astig2f_step=2, astig3f_step=75, coma_step=300, average_frames=3, integration_radius=1, image=None, \
+def kill_aberrations(superscan=None, as2=None, focus_step=2, astig2f_step=2, astig3f_step=75, coma_step=300, average_frames=3, integration_radius=1, image=None, \
                     imsize=None, only_focus=False, save_images=False, savepath=None, document_controller=None, event=None, \
-                    keys = ['EHTFocus', 'C12_a', 'C12_b', 'C21_a', 'C21_b', 'C23_a', 'C23_b']):
+                    keys = ['EHTFocus', 'C12_a', 'C12_b', 'C21_a', 'C21_b', 'C23_a', 'C23_b'], \
+                    frame_parameters={'size_pixels': (512, 512), 'center': (0,0), 'pixeltime': 2, 'fov': 4, 'rotation': 0}):
     
     def logwrite(msg, level='info'):
         if document_controller is None:
@@ -201,17 +202,15 @@ def kill_aberrations(superscan=None, focus_step=2, astig2f_step=2, astig3f_step=
         if len(intensities) <= 6:
             return 1/np.sum(intensities)
         else:
-            return 1/(np.sum(intensities[:6])+10.0*np.sum(intensities[6:]))
+            return 1/(np.sum(intensities[:6])+np.sum(intensities[6:]))
         
     
     #this is the simulated microscope
     global global_aberrations
     #global_aberrations = {'EHTFocus': 0.0, 'C12_a': 1.0, 'C12_b': -1.0, 'C21_a': 600.0, 'C21_b': 300.0, 'C23_a': 120, 'C23_b': -90.0}
-    try:    
-        FrameParamsOrg = superscan.get_default_frame_parameters()
-    except:
+    if superscan is None or as2 is None:
         online=False
-        pass
+        logwrite('Going to offline mode because no instance of superscan and as2 was provided.')
     else:
         online=True
         global_aberrations = {'EHTFocus': 0.0, 'C12_a': 0.0, 'C12_b': 0.0, 'C21_a': 0.0, 'C21_b': 0.0, 'C23_a': 0.0, 'C23_b': 0.0}
@@ -219,32 +218,24 @@ def kill_aberrations(superscan=None, focus_step=2, astig2f_step=2, astig3f_step=
     total_tunings = []
     total_lens = []
     counter = 0
-    imagesize=8
-    #controls = ['EHTFocus', 'C12.a', 'C12.b', 'C21.a', 'C21.b', 'C23.a', 'C23.b']
-#    if only_focus:
-#        keys = ['EHTFocus']
-#    else:        
-#        keys = ['EHTFocus', 'C12_a', 'C12_b', 'C21_a', 'C21_b', 'C23_a', 'C23_b']
-    #kwargs = {'EHTFocus': 0.0, 'C12_a': 0.0, 'C12_b': 0.0, 'C21_a': 0.0, 'C21_b': 0.0, 'C23_a': 0.0, 'C23_b': 0.0, 'relative_aberrations': True, 'reset_aberrations': True, 'start_C23_a': 40, 'start_C21_b': 60, 'start_C12_a': 2}
-    kwargs = {'EHTFocus': 0.0, 'C12_a': 0.0, 'C12_b': 0.0, 'C21_a': 0.0, 'C21_b': 0.0, 'C23_a': 0.0, 'C23_b': 0.0, 'relative_aberrations': True, 'reset_aberrations': False}
-    #total_changes = {'EHTFocus': 0.0, 'C12_a': 0.0, 'C12_b': 0.0, 'C21_a': 0.0, 'C21_b': 0.0, 'C23_a': 0.0, 'C23_b': 0.0}
-    if image is not None and imsize is not None:
-        kwargs['image'] = image
-        kwargs['imsize'] = imsize
+
+    kwargs = {'EHTFocus': 0.0, 'C12_a': 0.0, 'C12_b': 0.0, 'C21_a': 0.0, 'C21_b': 0.0, 'C23_a': 0.0, 'C23_b': 0.0, 'relative_aberrations': True,\
+            'reset_aberrations': False, 'frame_parameters': frame_parameters, 'superscan': superscan, 'as2': as2}
+    
+    if not online:    
+        if image is not None and imsize is not None:
+            kwargs['image'] = image
+            kwargs['imsize'] = imsize
+        else:
+            raise RuntimeError('You have to provide an image and its size (in nm) to use the offline mode.')
     steps = [focus_step, astig2f_step, astig2f_step, coma_step, coma_step, astig3f_step, astig3f_step]
     
-    #change frame parameters to values that are suited for automatic tuning
-    if online:
-        vt.superscan_configure(superscan, 512, 512, 0, 0, 2, imagesize, 0, False, True)
-    
     try:
-        current = check_tuning(imagesize, average_frames=average_frames, integration_radius=integration_radius, save_images=save_images, savepath=savepath, **kwargs)
+        current = check_tuning(frame_parameters['fov'], average_frames=average_frames, integration_radius=integration_radius, \
+                                save_images=save_images, savepath=savepath, **kwargs)
     except RuntimeError:
         current = (1e-5,)
     except DirtError:
-        if online:
-#TODO: set original frame parameters
-            ss.SS_Functions_SS_SetFrameParams(*FrameParams)
         logwrite('Tuning ended because of too high dirt coverage.', level='warn')
         raise
         
@@ -289,15 +280,15 @@ def kill_aberrations(superscan=None, focus_step=2, astig2f_step=2, astig3f_step=
                 kwargs[keys[i]] = steps[i]*step_multiplicator
                 changes += steps[i]*step_multiplicator
                 try:            
-                    plus = check_tuning(imagesize, average_frames=average_frames, integration_radius=integration_radius, save_images=save_images, savepath=savepath, **kwargs)
+                    plus = check_tuning(frame_parameters['fov'], average_frames=average_frames, integration_radius=integration_radius, \
+                                        save_images=save_images, savepath=savepath, **kwargs)
                 except RuntimeError:
                     plus = (1e-5,)
                 except DirtError:
                     if online:
                         for key, value in global_aberrations.items():
                             kwargs[key] = aberrations_last_run[key]-value
-                        image_grabber(acqure_image=False, **kwargs)
-                        ss.SS_Functions_SS_SetFrameParams(*FrameParams)
+                        image_grabber(acquire_image=False, **kwargs)
                     logwrite('Tuning ended because of too high dirt coverage.', level='warn')
                     raise
     
@@ -305,15 +296,15 @@ def kill_aberrations(superscan=None, focus_step=2, astig2f_step=2, astig3f_step=
                 kwargs[keys[i]] = -2.0*steps[i]*step_multiplicator
                 changes += -2.0*steps[i]*step_multiplicator
                 try:
-                    minus = check_tuning(imagesize, average_frames=average_frames, integration_radius=integration_radius, save_images=save_images, savepath=savepath, **kwargs)
+                    minus = check_tuning(frame_parameters['fov'], average_frames=average_frames, integration_radius=integration_radius, \
+                                        save_images=save_images, savepath=savepath, **kwargs)
                 except RuntimeError:
                     minus = (1e-5,)
                 except DirtError:
                     if online:
                         for key, value in global_aberrations.items():
                             kwargs[key] = aberrations_last_run[key]-value
-                        image_grabber(acqure_image=False, **kwargs)
-                        ss.SS_Functions_SS_SetFrameParams(*FrameParams)
+                        image_grabber(acquire_image=False, **kwargs)
                     logwrite('Tuning ended because of too high dirt coverage.', level='warn')
                     raise
                 
@@ -360,7 +351,8 @@ def kill_aberrations(superscan=None, focus_step=2, astig2f_step=2, astig3f_step=
                 kwargs[keys[i]] = direction*steps[i]
                 changes += direction*steps[i]
                 try:
-                    next_frame = check_tuning(imagesize, average_frames=average_frames, integration_radius=integration_radius, save_images=save_images, savepath=savepath, **kwargs)
+                    next_frame = check_tuning(frame_parameters['fov'], average_frames=average_frames, integration_radius=integration_radius, \
+                                            save_images=save_images, savepath=savepath, **kwargs)
                 except RuntimeError:
                     #vt.as2_set_control(controls[i], start+direction*(small_counter-1)*steps[i]*1e-9)
                     kwargs[keys[i]] = -direction*steps[i]
@@ -372,8 +364,7 @@ def kill_aberrations(superscan=None, focus_step=2, astig2f_step=2, astig3f_step=
                     if online:
                         for key, value in global_aberrations.items():
                             kwargs[key] = aberrations_last_run[key]-value
-                        image_grabber(acqure_image=False, **kwargs)
-                        ss.SS_Functions_SS_SetFrameParams(*FrameParams)
+                        image_grabber(acquire_image=False, **kwargs)
                     logwrite('Tuning ended because of too high dirt coverage.', level='warn')
                     raise
                 
@@ -394,13 +385,13 @@ def kill_aberrations(superscan=None, focus_step=2, astig2f_step=2, astig3f_step=
                     kwargs[keys[i]] = -changes
                     #update hardware
                     try:
-                        current = check_tuning(imagesize, average_frames=average_frames, integration_radius=integration_radius, save_images=save_images, savepath=savepath, **kwargs)
+                        current = check_tuning(frame_parameters['fov'], average_frames=average_frames, integration_radius=integration_radius, \
+                                                save_images=save_images, savepath=savepath, **kwargs)
                     except DirtError:
                         if online:
                             for key, value in global_aberrations.items():
                                 kwargs[key] = aberrations_last_run[key]-value
-                            image_grabber(acqure_image=False, **kwargs)
-                            ss.SS_Functions_SS_SetFrameParams(*FrameParams)
+                            image_grabber(acquire_image=False, **kwargs)
                         logwrite('Tuning ended because of too high dirt coverage.', level='warn')
                         raise
                     except:
@@ -420,25 +411,19 @@ def kill_aberrations(superscan=None, focus_step=2, astig2f_step=2, astig3f_step=
     
     if save_images:    
         try:
-            check_tuning(imagesize, average_frames=0, integration_radius=integration_radius, save_images=save_images, savepath=savepath, **kwargs)
+            check_tuning(frame_parameters['fov'], average_frames=0, integration_radius=integration_radius, \
+                        save_images=save_images, savepath=savepath, **kwargs)
         except DirtError:
             if online:
                 for key, value in global_aberrations.items():
                     kwargs[key] = aberrations_last_run[key]-value
-                image_grabber(acqure_image=False, **kwargs)
-                ss.SS_Functions_SS_SetFrameParams(*FrameParams)
+                image_grabber(acquire_image=False, **kwargs)
             logwrite('Tuning ended because of too high dirt coverage.', level='warn')
             raise
         except:
             pass
     else:
         image_grabber(acquire_image=False, **kwargs)
-        
-    try:
-        ss.SS_Functions_SS_SetFrameParams(FrameParams[0], FrameParams[1],FrameParams[2],FrameParams[3], FrameParams[4], FrameParams[5], FrameParams[6], FrameParams[7], FrameParams[8], FrameParams[9], FrameParams[10])
-    except:
-        pass
-        #logging.warn('Couldn\'t reset frame parameters to previous values.')
     
     return global_aberrations
 
@@ -500,10 +485,8 @@ def image_grabber(superscan = None, as2 = None, acquire_image=True, **kwargs):
                     if kwargs['relative_aberrations']:
                         offset = vt.as2_get_control(as2, controls[i])
                         offset2 = global_aberrations[keys[i]]
-                #time.sleep(0.1)
                 vt.as2_set_control(as2, controls[i], offset+kwargs[keys[i]]*1e-9)
                 global_aberrations[keys[i]] = offset2+kwargs[keys[i]]
-        #time.sleep(0.2)
         if acquire_image:
             if superscan is None:
                 raise RuntimeError('You have to provide an instance of superscan to perform superscan-related operations.')
@@ -511,33 +494,16 @@ def image_grabber(superscan = None, as2 = None, acquire_image=True, **kwargs):
             im = superscan.record(**record_parameters)
             if len(originals) > 0:
                 for key in originals.keys():
-                    #time.sleep(0.1)
                     vt.as2_set_control(key, originals[key])
             return im
     else:
-#        if not kwargs.has_key('imsize'):
-#            raise KeyError('You din\'t enter a image size for your input image. The parameter has to be called \'imsize\'.')
-#        else:
-#            imsize = kwargs['imsize']
         im = kwargs['image']
-        #defocus -= start_def
         shape = np.shape(im)
-        #astig = np.array(astig)
-        #start_astig = np.array(start_astig)
-        #astig -= start_astig
-        
-#        if defocus == 0 and (astig == 0).all():
-#            im = np.random.poisson(lam=im.flatten(), size=np.size(im))
-#            return im.reshape(shape)
-            
-        #fft = np.fft.fftshift(np.fft.fft2(im))
-        #kernelsize = np.around((np.array(shape)/2.0)-0.5, 1)
-        #kernelsize = (np.array(shape)-1)/imsize
+
         kernelsize=[63.5,63.5]
-        y,x = np.mgrid[-kernelsize[0]:kernelsize[0]+1.0, -kernelsize[1]:kernelsize[1]+1.0]/2.0#imsize#/(kernelsize[0])
+        y,x = np.mgrid[-kernelsize[0]:kernelsize[0]+1.0, -kernelsize[1]:kernelsize[1]+1.0]/2.0
         
         raw_kernel = 0
-        #EHTFocus = C12_a = C12_b = C21_a = C21_b = C23_a = C23_b = 0
         keys = ['EHTFocus', 'C12_a', 'C12_b', 'C21_a', 'C21_b', 'C23_a', 'C23_b']
         start_keys = ['start_EHTFocus', 'start_C12_a', 'start_C12_b', 'start_C21_a', 'start_C21_b', 'start_C23_a', 'start_C23_b']
         aberrations = np.zeros(len(keys))
@@ -559,8 +525,7 @@ def image_grabber(superscan = None, as2 = None, acquire_image=True, **kwargs):
                     global_aberrations[keys[i]] = aberrations[i]
             else:
                 aberrations[i] = global_aberrations[keys[i]]
-        #print(kwargs)
-        #print(aberrations)
+
         if acquire_image:
             #compute aberration function up to threefold astigmatism
             #formula taken from "Advanced Computing in Electron Microscopy", Earl J. Kirkland, 2nd edition, 2010, p. 18
@@ -571,26 +536,17 @@ def image_grabber(superscan = None, as2 = None, acquire_image=True, **kwargs):
             raw_kernel = np.pi*4.87e-3*(-aberrations[0]*(x**2+y**2) + np.sqrt(aberrations[1]**2+aberrations[2]**2)*(x**2+y**2)*np.cos(2*(np.arctan2(y,x)-np.arctan2(aberrations[2], aberrations[1]))) \
                 + (2.0/3.0)*np.sqrt(aberrations[3]**2+aberrations[4]**2)*4.87e-3*np.sqrt(x**2+y**2)**3*np.cos(np.arctan2(y,x)-np.arctan2(aberrations[4], aberrations[3])) \
                 + (2.0/3.0)*np.sqrt(aberrations[5]**2+aberrations[6]**2)*4.87e-3*np.sqrt(x**2+y**2)**3*np.cos(3*(np.arctan2(y,x)-np.arctan2(aberrations[6], aberrations[5]))))
-            #raw_kernel = -np.pi*defocus*4.87e-3*(x**2+y**2) + np.pi*np.sum(np.power(astig,2))*4.87e-3*(x**2+y**2)*np.cos(2*(np.arctan2(y,x)-np.arctan2(astig[1], astig[0])) )
             scale = 1.0/np.sqrt(shape[0]*shape[1])
-            #scale=1.0
             kernel = np.cos(raw_kernel)*scale+1j*np.sin(raw_kernel)*(-scale)
-            #kernel = np.exp(-np.sign(defocus)*raw_kernel)
             aperture = np.zeros(kernel.shape)
             cv2.circle(aperture, tuple(np.array(kernel.shape, dtype='int')/2), int(kernelsize[0]/4.86), 1.0, thickness=-1)
             kernel *= aperture
-            #kernel *= np.exp(-(x**2+y**2)/(1*kernelsize[0]))
             kernel = np.abs(np.fft.fftshift(np.fft.ifft2(kernel)))**2
             kernel /= np.sum(kernel)
             im = cv2.filter2D(im, -1, kernel)
-            #fft = np.real(fft) * kernel/np.sum(np.abs(kernel)) + 1j * np.imag(fft)
-            #fft *= kernel/np.sum(np.abs(kernel))
-            #im = np.abs(np.real(np.fft.ifft2(np.fft.fftshift(fft))))
-            im = np.random.poisson(lam=im.flatten(), size=np.size(im))
-            time.sleep(1)
+            im = np.random.poisson(lam=im.flatten(), size=np.size(im)).astype(im.dtype)
             return im.reshape(shape)
             #return kernel
-
 
 def positive_angle(angle):
     """
@@ -601,26 +557,28 @@ def positive_angle(angle):
     else:
         return angle
 
-def check_tuning(imagesize, im=None, check_astig=False, average_frames=0, integration_radius=0, save_images=False, savepath=None, process_image=True, **kwargs):
+def check_tuning(imagesize, im=None, average_frames=0, integration_radius=0, save_images=False, \
+                savepath=None, process_image=True, **kwargs):
     if not kwargs.has_key('imsize'):
         kwargs['imsize'] = imagesize
     else:
         imagesize=kwargs['imsize']
+        
     if (process_image or im is None) and average_frames < 2:
         if im is not None and not kwargs.has_key('image'):
             kwargs['image'] = im
         im = image_grabber(**kwargs)
-        mask = dirt_detector(im, threshold=0.015)
-        if np.sum(mask) > 0.5*np.prod(np.array(np.shape(im))):
-            raise DirtError('Cannot check tuning of images with more than 50% dirt coverage.')
+#        mask = dirt_detector(im, threshold=0.015)
+#        if np.sum(mask) > 0.5*np.prod(np.array(np.shape(im))):
+#            raise DirtError('Cannot check tuning of images with more than 50% dirt coverage.')
             
     if average_frames > 1:
         im = []
         single_image = image_grabber(**kwargs)
 
-        mask = dirt_detector(single_image, threshold=0.015)
-        if np.sum(mask) > 0.5*np.prod(np.array(np.shape(single_image))):
-            raise DirtError('Cannot check tuning of images with more than 50% dirt coverage.')
+#        mask = dirt_detector(single_image, threshold=0.015)
+#        if np.sum(mask) > 0.5*np.prod(np.array(np.shape(single_image))):
+#            raise DirtError('Cannot check tuning of images with more than 50% dirt coverage.')
         
         im.append(single_image)
         
@@ -633,104 +591,44 @@ def check_tuning(imagesize, im=None, check_astig=False, average_frames=0, integr
         
         for i in range(average_frames-1):
             im.append(image_grabber(**kwargs2))
+            
+    if average_frames > 1:
+        for image in im:
+            mask = dirt_detector(image, threshold=0.015)
+            if np.sum(mask) > 0.5*np.prod(np.array(np.shape(image))):
+                raise DirtError('Cannot check tuning of images with more than 50% dirt coverage.')
+    elif not kwargs.has_key('image') or not process_image:
+        mask = dirt_detector(im, threshold=0.015)
+        if np.sum(mask) > 0.5*np.prod(np.array(np.shape(im))):
+            raise DirtError('Cannot check tuning of images with more than 50% dirt coverage.')
     
     if save_images:
-            if not os.path.exists(savepath):
-                os.makedirs(savepath)
-            name = str(int(time.time()*100))+'.tif'
-            logfile = open(savepath+'log.txt', 'a')
-            kwargs2 = kwargs.copy()
-            kwargs2.pop('image', 0)
-            logfile.write(name+': '+str(kwargs2)+'\n')
-            logfile.close()
-            if average_frames < 2:
-                tifffile.imsave(savepath+name, im.astype('float32'))
-            else:
-                tifffile.imsave(savepath+name, im[0].astype('float32'))
+        if not os.path.exists(savepath):
+            os.makedirs(savepath)
+        name = str(int(time.time()*100))+'.tif'
+        logfile = open(savepath+'log.txt', 'a')
+        kwargs2 = kwargs.copy()
+        kwargs2.pop('image', 0)
+        logfile.write(name+': '+str(kwargs2)+'\n')
+        logfile.close()
+        if average_frames < 2:
+            tifffile.imsave(savepath+name, im.astype('float32'))
+        else:
+            tifffile.imsave(savepath+name, im[0].astype('float32'))
             
     try:
-        if check_astig:
-            peaks = find_peaks(im, imagesize, integration_radius=integration_radius, position_tolerance=9)
-        else:
-            peaks_first, peaks_second = find_peaks(im, imagesize, integration_radius=integration_radius, second_order=True, position_tolerance=9)
-        
+        peaks_first, peaks_second = find_peaks(im, imagesize, integration_radius=integration_radius, second_order=True, position_tolerance=9)
     except RuntimeError as detail:
         raise RuntimeError('Tuning check failed. Reason: '+ str(detail))
+
+    intensities = []
+    for peak in peaks_first:
+        intensities.append(peak[3])
+    for peak in peaks_second:
+        intensities.append(peak[3])
+    intensities=np.array(intensities)
     
-    if check_astig:
-        coordinates = np.zeros((len(peaks), 2))
-        intensities = np.zeros(len(peaks))
-        for i in range(len(peaks)):
-            coordinates[i,:] = np.array(peaks[i][0:2], dtype='int')
-            intensities[i] = peaks[i][3]
-    else:
-        intensities = []
-        for peak in peaks_first:
-            intensities.append(peak[3])
-        for peak in peaks_second:
-            intensities.append(peak[3])
-        intensities=np.array(intensities)
-        
-    if check_astig:
-        center = np.array(np.shape(im))/2
-        if len(peaks) == 6:
-            max_pos = np.argmax(intensities)
-            #find point with maximum intensitiy and its neighbours such that left < right < maximum
-            if max_pos != 0 and max_pos != 5:
-                if intensities[max_pos-1] < intensities[max_pos+1]:
-                    left = max_pos-1
-                    right  = max_pos+1
-                else:
-                    left = max_pos+1
-                    right = max_pos-1
-            elif max_pos == 0:
-                if intensities[5] < intensities[1]:
-                    left = 5
-                    right = 1
-                else:
-                    left = 1
-                    right = 5
-            else:
-                if intensities[4] < intensities[0]:
-                    left = 4
-                    right = 0
-                else:
-                    left = 0
-                    right = 4
-            #Empirical formula for finding the angle of the twofold astigmatism in an FFT-image
-            #From 3 reflections with different intensities the direction of the astigmatism can be calculated
-            #positive angles are clockwise
-            #print('right: ' + str(right) + ' left: ' + str(left) + ' max_pos: ' + str(max_pos))
-            relative_astig_angle = (intensities[left]-intensities[right])/(1.9*(intensities[left]-intensities[max_pos]))                    
-            absolute_astig_angle = np.arctan2(coordinates[max_pos,0]-center[0],coordinates[max_pos,1]-center[1]) + relative_astig_angle*np.sign(positive_angle(np.arctan2(coordinates[right,0]-center[0],coordinates[right,1]-center[1]))-positive_angle(np.arctan2(coordinates[max_pos,0]-center[0],coordinates[max_pos,1]-center[1])))
-        elif len(peaks) == 4:
-            #if only 4 peaks are visible, assume that the missing peak has the intensity 0
-            #calculate angle between first two reflections (first one is the brightest)
-            max_pos = np.argmax(intensities)
-            if max_pos != 3:
-                right = max_pos + 1
-            else:
-                right = 0
-                
-#            angle_first = np.arctan2(coordinates[max_pos,0]-center[0],coordinates[max_pos, 1]-center[1]) - np.arctan2(coordinates[right,0]-center[0], coordinates[right,1]-center[1])
-            
-#            #calculate coordinates of missing reflection
-#            if np.abs(angle_first) < np.pi/2.0:
-#                missing_coords = coordinates[max_pos] - coordinates[right]
-#            else:
-#                missing_coords = coordinates[max_pos]-center + coordinates[right]-center
-            #calculate angle of astigmatism as in case of 6 visible reflections (setting intensities[left] to zero)
-            relative_astig_angle = (0.0-intensities[right])/(1.9*(0.0-intensities[max_pos]))
-            absolute_astig_angle = np.arctan2(coordinates[max_pos,0]-center[0],coordinates[max_pos,1]-center[1]) + relative_astig_angle*np.sign(positive_angle(np.arctan2(coordinates[right,0]-center[0],coordinates[right,1]-center[1]))-positive_angle(np.arctan2(coordinates[max_pos,0]-center[0],coordinates[max_pos,1]-center[1])))
-        elif len(peaks) == 2:
-            #if only two peaks are visible, assume that astigmatism is in direction of brightest peak
-            max_pos = np.argmax(intensities)
-            absolute_astig_angle = relative_astig_angle = np.arctan2(coordinates[max_pos, 0]-center[0], coordinates[max_pos, 1]-center[1])
-            
-        return (intensities, coordinates, absolute_astig_angle, relative_astig_angle)
-        
-    else:
-        return intensities
+    return intensities
         
 
 def optimize_tuning(imsize, im=None, astig_stepsize=0.1, focus_stepsize=1.0, tune_astig=False, save_iterations=False):
