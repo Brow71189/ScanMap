@@ -189,13 +189,13 @@ def SuperScan_mapping(coord_dict, filepath='Z:\\ScanMap\\', do_autofocus=False, 
                 logging.debug(str(msg))
         else:
             if level.lower() == 'info':
-                document_controller.queue_main_thread_task(lambda: logging.info(str(msg)))
+                document_controller.queue_task(lambda: logging.info(str(msg)))
             elif level.lower() == 'warn':
-                document_controller.queue_main_thread_task(lambda: logging.warn(str(msg)))
+                document_controller.queue_task(lambda: logging.warn(str(msg)))
             elif level.lower() == 'error':
-                document_controller.queue_main_thread_task(lambda: logging.error(str(msg)))
+                document_controller.queue_task(lambda: logging.error(str(msg)))
             else:
-                document_controller.queue_main_thread_task(lambda: logging.debug(str(msg)))
+                document_controller.queue_task(lambda: logging.debug(str(msg)))
                 
     imsize = float(imsize)*1e-9
     rotation = float(rotation)*np.pi/180.0
@@ -431,7 +431,7 @@ def SuperScan_mapping(coord_dict, filepath='Z:\\ScanMap\\', do_autofocus=False, 
                     #tests in each frame after aquisition if all 6 reflections in the fft are still there (only for frames where less than 50% of the area are
                     #covered with dirt). If not all reflections are visible, autofocus is applied and the result is added as offset to the interpolated focus values.
                     #The dirt coverage is calculated by considering all pixels intensities that are higher than 0.02 as dirt
-                    frame_nr = ss.SS_Functions_SS_StartFrame(0)
+                    frame_nr = ss.SS_Functions_SS_StartFrame(False)
                     ss.SS_Functions_SS_WaitForEndOfFrame(frame_nr)
                     data = np.asarray(ss.SS_Functions_SS_GetImageForFrame(frame_nr, 0))
                     name = str('%.4d_%.3f_%.3f.tif' % (frame_number[counter-1],stagex*1e6,stagey*1e6))
@@ -473,7 +473,7 @@ def SuperScan_mapping(coord_dict, filepath='Z:\\ScanMap\\', do_autofocus=False, 
                                 logwrite('No. '+str(frame_number[counter-1]) + ': New tuning: '+str(tuning_result))
                                 bad_frames[name] = 'New tuning: '+str(tuning_result)
                             
-                                frame_nr = ss.SS_Functions_SS_StartFrame(0)
+                                frame_nr = ss.SS_Functions_SS_StartFrame(False)
                                 ss.SS_Functions_SS_WaitForEndOfFrame(frame_nr)
                                 
                                 data_new = np.asarray(ss.SS_Functions_SS_GetImageForFrame(frame_nr, 0))
@@ -520,7 +520,7 @@ def SuperScan_mapping(coord_dict, filepath='Z:\\ScanMap\\', do_autofocus=False, 
             else:
                 #Take frame and save it to disk
                 if number_of_images < 2:
-                    frame_nr = ss.SS_Functions_SS_StartFrame(0)
+                    frame_nr = ss.SS_Functions_SS_StartFrame(False)
                     ss.SS_Functions_SS_WaitForEndOfFrame(frame_nr)
                     data = np.asarray(ss.SS_Functions_SS_GetImageForFrame(frame_nr, 0))
                     tifffile.imsave(store+str('%.4d_%.3f_%.3f.tif' % (frame_number[counter-1],stagex*1e6,stagey*1e6)), data)
@@ -533,7 +533,7 @@ def SuperScan_mapping(coord_dict, filepath='Z:\\ScanMap\\', do_autofocus=False, 
                         if np.size(pixeltime) > 1:                        
                             frame_params[4] = pixeltime[i]
                             ss.SS_Functions_SS_SetFrameParams(*frame_params)
-                        frame_nr = ss.SS_Functions_SS_StartFrame(0)
+                        frame_nr = ss.SS_Functions_SS_StartFrame(False)
                         ss.SS_Functions_SS_WaitForEndOfFrame(frame_nr)
                         data = np.asarray(ss.SS_Functions_SS_GetImageForFrame(frame_nr, 0))
                         tifffile.imsave(store+str('%.4d_%.3f_%.3f_%.2d.tif' % (frame_number[counter-1],stagex*1e6,stagey*1e6, i)), data)
@@ -563,9 +563,9 @@ def SuperScan_mapping(coord_dict, filepath='Z:\\ScanMap\\', do_autofocus=False, 
         #Goto center
         vt.as2_set_control('StageOutX', map_center[0])
         vt.as2_set_control('StageOutY', map_center[1])
+        ss.SS_Functions_SS_SetFrameParams(4096, 4096, 0, 0, 2, over_size, rotation, False, True, False, False)
         time.sleep(10)
         #acquire image and save it
-        ss.SS_Functions_SS_SetFrameParams(4096, 4096, 0, 0, 2, over_size, rotation, False, True, False, False)
         image = autotune.image_grabber()
         tifffile.imsave(store+'Overview_'+str(over_size)+'_nm.tif', image)
     

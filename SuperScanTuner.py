@@ -154,6 +154,7 @@ class SuperScanTuner(Panel.Panel):
             logging.info('Aborting tuning after current aberration. (May take a short while until actual abort)')
             self.event.set()
             self.thread.join()
+            logging.info('Finished')
         
         descriptor_row1 = ui.create_row_widget()
         

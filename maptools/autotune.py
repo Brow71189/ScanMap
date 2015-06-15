@@ -83,13 +83,13 @@ def kill_aberrations(focus_step=2, astig2f_step=2, astig3f_step=75, coma_step=30
                 logging.debug(str(msg))
         else:
             if level.lower() == 'info':
-                document_controller.queue_main_thread_task(lambda: logging.info(str(msg)))
+                document_controller.queue_task(lambda: logging.info(str(msg)))
             elif level.lower() == 'warn':
-                document_controller.queue_main_thread_task(lambda: logging.warn(str(msg)))
+                document_controller.queue_task(lambda: logging.warn(str(msg)))
             elif level.lower() == 'error':
-                document_controller.queue_main_thread_task(lambda: logging.error(str(msg)))
+                document_controller.queue_task(lambda: logging.error(str(msg)))
             else:
-                document_controller.queue_main_thread_task(lambda: logging.debug(str(msg)))
+                document_controller.queue_task(lambda: logging.debug(str(msg)))
     
     def merit(intensities):
         if len(intensities) <= 6:
@@ -113,7 +113,7 @@ def kill_aberrations(focus_step=2, astig2f_step=2, astig3f_step=75, coma_step=30
     total_tunings = []
     total_lens = []
     counter = 0
-    imagesize=8
+    imagesize=2
     #controls = ['EHTFocus', 'C12.a', 'C12.b', 'C21.a', 'C21.b', 'C23.a', 'C23.b']
 #    if only_focus:
 #        keys = ['EHTFocus']
@@ -129,7 +129,7 @@ def kill_aberrations(focus_step=2, astig2f_step=2, astig3f_step=75, coma_step=30
     
     #change frame parameters to values that are suited for automatic tuning
     try:
-        ss.SS_Functions_SS_SetFrameParams(512, 512, 0, 0, 2, imagesize, 0, False, True, False, False)
+        ss.SS_Functions_SS_SetFrameParams(512, 512, 0, 0, 4, imagesize, 0, False, True, False, False)
     except:
         pass
     
@@ -434,7 +434,7 @@ def image_grabber(acquire_image=True, **kwargs):#, defocus=0, astig=[0,0], im=No
                 global_aberrations[keys[i]] = offset2+kwargs[keys[i]]
         #time.sleep(0.2)
         if acquire_image:
-            frame_nr = ss.SS_Functions_SS_StartFrame(0)
+            frame_nr = ss.SS_Functions_SS_StartFrame(False)
             ss.SS_Functions_SS_WaitForEndOfFrame(frame_nr)
             im = np.asarray(ss.SS_Functions_SS_GetImageForFrame(frame_nr, 0))
             if len(originals) > 0:
