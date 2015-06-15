@@ -170,13 +170,13 @@ def SuperScan_mapping(coord_dict, filepath='Z:\\ScanMap\\', do_autofocus=False, 
                 logging.debug(str(msg))
         else:
             if level.lower() == 'info':
-                document_controller.queue_main_thread_task(lambda: logging.info(str(msg)))
+                document_controller.queue_task(lambda: logging.info(str(msg)))
             elif level.lower() == 'warn':
-                document_controller.queue_main_thread_task(lambda: logging.warn(str(msg)))
+                document_controller.queue_task(lambda: logging.warn(str(msg)))
             elif level.lower() == 'error':
-                document_controller.queue_main_thread_task(lambda: logging.error(str(msg)))
+                document_controller.queue_task(lambda: logging.error(str(msg)))
             else:
-                document_controller.queue_main_thread_task(lambda: logging.debug(str(msg)))
+                document_controller.queue_task(lambda: logging.debug(str(msg)))
                 
     imsize = float(imsize)*1e-9
     rotation = float(rotation)*np.pi/180.0
