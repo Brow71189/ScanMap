@@ -91,8 +91,8 @@ def shift_fft(im1, im2, return_cps=False):
     translation = np.real(np.fft.ifft2((fft1*np.conjugate(fft2))/np.abs(fft1*fft2)))
     if return_cps:
         return translation
-    translation = cv2.GaussianBlur(translation, (0,0), 3)
-    if np.amax(translation) < 3.0*np.std(translation)+np.abs(np.amin(translation)):
+    #translation = cv2.GaussianBlur(translation, (0,0), 3)
+    if np.amax(translation) <= 0.03: #3.0*np.std(translation)+np.abs(np.amin(translation)):
         #return np.zeros(2)
         raise RuntimeError('Could not determine any match between the input images.')
     transy, transx = np.unravel_index(np.argmax(translation), shape)
