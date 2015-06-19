@@ -113,7 +113,7 @@ def kill_aberrations(focus_step=2, astig2f_step=2, astig3f_step=75, coma_step=30
     total_tunings = []
     total_lens = []
     counter = 0
-    imagesize=2
+    imagesize=8
     #controls = ['EHTFocus', 'C12.a', 'C12.b', 'C21.a', 'C21.b', 'C23.a', 'C23.b']
 #    if only_focus:
 #        keys = ['EHTFocus']
@@ -125,7 +125,19 @@ def kill_aberrations(focus_step=2, astig2f_step=2, astig3f_step=75, coma_step=30
     if image is not None and imsize is not None:
         kwargs['image'] = image
         kwargs['imsize'] = imsize
-    steps = [focus_step, astig2f_step, astig2f_step, coma_step, coma_step, astig3f_step, astig3f_step]
+
+    steps = []        
+    if 'EHTFocus' in keys:
+        steps.append(focus_step)
+    if 'C12_a' in keys:
+        steps.append(astig2f_step)
+        steps.append(astig2f_step)
+    if 'C21_a' in keys:
+        steps.append(coma_step)
+        steps.append(coma_step)
+    if 'C23_a' in keys:
+        steps.append(astig3f_step)
+        steps.append(astig3f_step)
     
     #change frame parameters to values that are suited for automatic tuning
     try:
