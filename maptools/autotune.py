@@ -45,7 +45,7 @@ except:
     #logging.warn('Could not import SuperScanPy. Maybe you are running in offline mode.')
     
 #global variable to store aberrations when simulating them (see function image_grabber() for details)
-global_aberrations = {'EHTFocus': 1.5, 'C12_a': -1.0, 'C12_b': 1.5, 'C21_a': 438.0, 'C21_b': 205.0, 'C23_a': 90, 'C23_b': -60.0}
+global_aberrations = {'EHTFocus': 1.5, 'C12_a': -3.0, 'C12_b': 2.5, 'C21_a': 1138.0, 'C21_b': 200, 'C23_a': 90, 'C23_b': 60.0}
     
 class DirtError(Exception):
     """
@@ -92,8 +92,11 @@ def kill_aberrations(focus_step=2, astig2f_step=2, astig3f_step=75, coma_step=30
                 document_controller.queue_task(lambda: logging.debug(str(msg)))
     
     def merit(intensities):
-        return (intensities[0]-intensities[1])**2 + (intensities[0]-intensities[2])**2 + (intensities[1]-intensities[2])**2/ \
-                (np.count_nonzero(intensities)*np.sum(intensities**2))
+#        return (np.sqrt((intensities[0]-intensities[1])**2 + (intensities[0]-intensities[2])**2 + (intensities[1]-intensities[2])**2 + 1))/ \
+#                (np.count_nonzero(intensities)*np.sum(intensities**2)+1)
+        return 1 / (np.sum(intensities) - \
+            np.sqrt((intensities[0]-intensities[1])**2 + (intensities[0]-intensities[2])**2 + (intensities[1]-intensities[2])**2))
+#        return 1.0/np.sum(intensities)
         
     
     #this is the simulated microscope
@@ -144,9 +147,10 @@ def kill_aberrations(focus_step=2, astig2f_step=2, astig3f_step=75, coma_step=30
         pass
     
     try:
-        current = check_tuning(imagesize, average_frames=average_frames, integration_radius=integration_radius, save_images=save_images, savepath=savepath, mode=mode, **kwargs)
+        current = check_tuning(imagesize, average_frames=average_frames, integration_radius=integration_radius, save_images=save_images, \
+                                savepath=savepath, mode=mode, dirt_threshold=dirt_threshold, **kwargs)
     except RuntimeError:
-        current = (1e-5,)
+        current = np.ones(12)
     except DirtError:
         if online:
             ss.SS_Functions_SS_SetFrameParams(*FrameParams)
@@ -197,7 +201,7 @@ def kill_aberrations(focus_step=2, astig2f_step=2, astig3f_step=75, coma_step=30
                     plus = check_tuning(imagesize, average_frames=average_frames, integration_radius=integration_radius, save_images=save_images, \
                                         savepath=savepath, mode=mode, dirt_threshold=dirt_threshold, **kwargs)
                 except RuntimeError:
-                    plus = (1e-5,)
+                    plus = np.ones(12)
                 except DirtError:
                     if online:
                         for key, value in global_aberrations.items():
@@ -214,7 +218,7 @@ def kill_aberrations(focus_step=2, astig2f_step=2, astig3f_step=75, coma_step=30
                     minus = check_tuning(imagesize, average_frames=average_frames, integration_radius=integration_radius, save_images=save_images, \
                                         savepath=savepath, mode=mode, dirt_threshold=dirt_threshold, **kwargs)
                 except RuntimeError:
-                    minus = (1e-5,)
+                    minus = np.ones(12)
                 except DirtError:
                     if online:
                         for key, value in global_aberrations.items():
@@ -527,12 +531,12 @@ def image_grabber(acquire_image=True, **kwargs):#, defocus=0, astig=[0,0], im=No
             #kernel *= np.exp(-(x**2+y**2)/(1*kernelsize[0]))
             kernel = np.abs(np.fft.fftshift(np.fft.ifft2(kernel)))**2
             kernel /= np.sum(kernel)
-            im = cv2.filter2D(im, -1, kernel)
+            im = cv2.filter2D(im, -1, kernel).astype(im.dtype)
             #fft = np.real(fft) * kernel/np.sum(np.abs(kernel)) + 1j * np.imag(fft)
             #fft *= kernel/np.sum(np.abs(kernel))
             #im = np.abs(np.real(np.fft.ifft2(np.fft.fftshift(fft))))
-            im = np.random.poisson(lam=im.flatten(), size=np.size(im))
-            time.sleep(1)
+            im = np.random.poisson(lam=im.flatten(), size=np.size(im)).astype(im.dtype)
+
             return im.reshape(shape)
             #return kernel
 
@@ -556,7 +560,7 @@ def check_tuning(imagesize, im=None, check_astig=False, average_frames=0, integr
         if im is not None and not kwargs.has_key('image'):
             kwargs['image'] = im
         im = image_grabber(**kwargs)
-        mask = dirt_detector(im, threshold=0.015)
+        mask = dirt_detector(im, threshold=dirt_threshold)
         if np.sum(mask) > 0.5*np.prod(np.array(np.shape(im))):
             raise DirtError('Cannot check tuning of images with more than 50% dirt coverage.')
             
@@ -564,7 +568,7 @@ def check_tuning(imagesize, im=None, check_astig=False, average_frames=0, integr
         im = []
         single_image = image_grabber(**kwargs)
 
-        mask = dirt_detector(single_image, threshold=0.015)
+        mask = dirt_detector(single_image, threshold=dirt_threshold)
         if np.sum(mask) > 0.5*np.prod(np.array(np.shape(single_image))):
             raise DirtError('Cannot check tuning of images with more than 50% dirt coverage.')
         
