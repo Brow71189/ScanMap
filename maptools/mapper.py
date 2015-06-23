@@ -445,7 +445,7 @@ def SuperScan_mapping(coord_dict, filepath='Z:\\ScanMap\\', do_autofocus=False, 
                     else:
                         try:
                             first_order, second_order = autotune.find_peaks(data, imsize*1e9, position_tolerance=9, second_order=True)
-                            number_peaks = len(first_order) + len(second_order)
+                            number_peaks = np.count_nonzero(first_order[:,-1])+np.count_nonzero(second_order[:,-1])
                         except:
                             first_order = second_order = 0
                             number_peaks = 0
@@ -479,7 +479,7 @@ def SuperScan_mapping(coord_dict, filepath='Z:\\ScanMap\\', do_autofocus=False, 
                                 data_new = np.asarray(ss.SS_Functions_SS_GetImageForFrame(frame_nr, 0))
                                 try:
                                     first_order_new, second_order_new = autotune.find_peaks(data, imsize*1e9, position_tolerance=9, second_order=True)
-                                    number_peaks_new = len(first_order_new)+len(second_order_new)
+                                    number_peaks_new = np.count_nonzero(first_order_new[:,-1])+np.count_nonzero(second_order_new[:,-1])
                                 except RuntimeError:
                                     bad_frames[name] = 'Dismissed result because it did not improve tuning: '+str(tuning_result)
                                     logwrite('No. '+str(frame_number[counter-1]) + ': Dismissed result because it did not improve tuning: '+str(tuning_result))
