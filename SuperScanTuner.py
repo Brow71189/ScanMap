@@ -154,10 +154,10 @@ class SuperScanTuner(Panel.Panel):
             logging.info('Started tuning.')
             
             self.event = threading.Event()
-            self.thread = threading.Thread(target=do_something, args=(self.event, document_controller))
-            #self.thread = threading.Thread(target=autotune.kill_aberrations, kwargs={'focus_step': focus_step, 'astig2f_step': astig2f_step, 'astig3f_step': astig3f_step,\
-            #                    'coma_step': coma_step, 'average_frames': average_frames, 'integration_radius': integration_radius, 'save_images': save_images, \
-            #                    'savepath': savepath, 'document_controller': document_controller, 'event': self.event, 'keys': keys, 'dirt_threshold': dirt_threshold})
+            #self.thread = threading.Thread(target=do_something, args=(self.event, document_controller))
+            self.thread = threading.Thread(target=autotune.kill_aberrations, kwargs={'focus_step': focus_step, 'astig2f_step': astig2f_step, 'astig3f_step': astig3f_step,\
+                                'coma_step': coma_step, 'average_frames': average_frames, 'integration_radius': integration_radius, 'save_images': save_images, \
+                                'savepath': savepath, 'document_controller': document_controller, 'event': self.event, 'keys': keys, 'dirt_threshold': dirt_threshold})
                                 
             self.thread.start()
             

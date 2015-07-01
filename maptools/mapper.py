@@ -537,7 +537,8 @@ def SuperScan_mapping(coord_dict, filepath='Z:\\ScanMap\\', do_autofocus=False, 
                         ss.SS_Functions_SS_WaitForEndOfFrame(frame_nr)
                         data = np.asarray(ss.SS_Functions_SS_GetImageForFrame(frame_nr, 0))
                         tifffile.imsave(store+str('%.4d_%.3f_%.3f_%.2d.tif' % (frame_number[counter-1],stagex*1e6,stagey*1e6, i)), data)
-                    ss.SS_Functions_SS_SetFrameParams(*original_frame_params)
+                    if np.size(pixeltime) > 1:
+                        ss.SS_Functions_SS_SetFrameParams(*original_frame_params)
                     test_map.append(frame_coord)
         
         else:

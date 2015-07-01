@@ -94,9 +94,9 @@ def kill_aberrations(focus_step=2, astig2f_step=2, astig3f_step=75, coma_step=30
     def merit(intensities):
 #        return (np.sqrt((intensities[0]-intensities[1])**2 + (intensities[0]-intensities[2])**2 + (intensities[1]-intensities[2])**2 + 1))/ \
 #                (np.count_nonzero(intensities)*np.sum(intensities**2)+1)
-        return 1 / (np.sum(intensities) - \
-            np.sqrt((intensities[0]-intensities[1])**2 + (intensities[0]-intensities[2])**2 + (intensities[1]-intensities[2])**2))
-#        return 1.0/np.sum(intensities)
+#        return 1 / (np.sum(intensities) - \
+#            np.sqrt((intensities[0]-intensities[1])**2 + (intensities[0]-intensities[2])**2 + (intensities[1]-intensities[2])**2))
+        return 1.0/np.sum(intensities)
         
     
     #this is the simulated microscope
