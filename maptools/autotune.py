@@ -27,7 +27,7 @@ except:
 
 
 #global variable to store aberrations when simulating them (see function image_grabber() for details)
-global_aberrations = {'EHTFocus': 1.5, 'C12_a': -1.0, 'C12_b': 1.5, 'C21_a': 438.0, 'C21_b': 205.0, 'C23_a': 90, 'C23_b': -60.0}
+global_aberrations = {'EHTFocus': 1.5, 'C12_a': -3.0, 'C12_b': 2.5, 'C21_a': 1138.0, 'C21_b': 200, 'C23_a': 90, 'C23_b': 60.0}
     
 class DirtError(Exception):
     """
@@ -174,9 +174,9 @@ def dirt_detector(image, threshold=0.02, median_blur_diam=39, gaussian_blur_radi
     return cv2.medianBlur(mask, median_blur_diam)
 
 def kill_aberrations(superscan=None, as2=None, focus_step=2, astig2f_step=2, astig3f_step=75, coma_step=300, average_frames=3, integration_radius=1, image=None, \
-                    imsize=None, only_focus=False, save_images=False, savepath=None, document_controller=None, event=None, \
+                    imsize=None, only_focus=False, save_images=False, savepath=None, document_controller=None, event=None, mode='magnitude', dirt_threshold=0.015, \
                     keys = ['EHTFocus', 'C12_a', 'C12_b', 'C21_a', 'C21_b', 'C23_a', 'C23_b'], \
-                    frame_parameters={'size_pixels': (512, 512), 'center': (0,0), 'pixeltime': 2, 'fov': 4, 'rotation': 0}):
+                    frame_parameters={'size_pixels': (512, 512), 'center': (0,0), 'pixeltime': 4, 'fov': 8, 'rotation': 0}):
     
     def logwrite(msg, level='info'):
         if document_controller is None:
@@ -199,11 +199,11 @@ def kill_aberrations(superscan=None, as2=None, focus_step=2, astig2f_step=2, ast
                 document_controller.queue_task(lambda: logging.debug(str(msg)))
     
     def merit(intensities):
-        if len(intensities) <= 6:
-            return 1/np.sum(intensities)
-        else:
-            return 1/(np.sum(intensities[:6])+np.sum(intensities[6:]))
-        
+#        return (np.sqrt((intensities[0]-intensities[1])**2 + (intensities[0]-intensities[2])**2 + (intensities[1]-intensities[2])**2 + 1))/ \
+#                (np.count_nonzero(intensities)*np.sum(intensities**2)+1)
+#        return 1 / (np.sum(intensities) - \
+#            np.sqrt((intensities[0]-intensities[1])**2 + (intensities[0]-intensities[2])**2 + (intensities[1]-intensities[2])**2))
+        return 1.0/np.sum(intensities)        
     
     #this is the simulated microscope
     global global_aberrations
@@ -228,13 +228,25 @@ def kill_aberrations(superscan=None, as2=None, focus_step=2, astig2f_step=2, ast
             kwargs['imsize'] = imsize
         else:
             raise RuntimeError('You have to provide an image and its size (in nm) to use the offline mode.')
-    steps = [focus_step, astig2f_step, astig2f_step, coma_step, coma_step, astig3f_step, astig3f_step]
+    
+    steps = []        
+    if 'EHTFocus' in keys:
+        steps.append(focus_step)
+    if 'C12_a' in keys:
+        steps.append(astig2f_step)
+        steps.append(astig2f_step)
+    if 'C21_a' in keys:
+        steps.append(coma_step)
+        steps.append(coma_step)
+    if 'C23_a' in keys:
+        steps.append(astig3f_step)
+        steps.append(astig3f_step)
     
     try:
         current = check_tuning(frame_parameters['fov'], average_frames=average_frames, integration_radius=integration_radius, \
                                 save_images=save_images, savepath=savepath, **kwargs)
     except RuntimeError:
-        current = (1e-5,)
+        current = np.ones(12)
     except DirtError:
         logwrite('Tuning ended because of too high dirt coverage.', level='warn')
         raise
@@ -269,7 +281,7 @@ def kill_aberrations(superscan=None, as2=None, focus_step=2, astig2f_step=2, ast
             if counter == 0 and i==0:
                 total_tunings.append(merit(current))
                 logwrite('Appending start value: ' + str(merit(current)))
-                total_lens.append(len(current))
+                total_lens.append(np.count_nonzero(current))
 
             logwrite('Working on: '+keys[i])
             #vt.as2_set_control(controls[i], start+steps[i]*1e-9)
@@ -281,14 +293,15 @@ def kill_aberrations(superscan=None, as2=None, focus_step=2, astig2f_step=2, ast
                 changes += steps[i]*step_multiplicator
                 try:            
                     plus = check_tuning(frame_parameters['fov'], average_frames=average_frames, integration_radius=integration_radius, \
-                                        save_images=save_images, savepath=savepath, **kwargs)
+                                        save_images=save_images, savepath=savepath, mode=mode, dirt_threshold=dirt_threshold, **kwargs)
                 except RuntimeError:
-                    plus = (1e-5,)
+                    plus = np.ones(12)
                 except DirtError:
                     if online:
                         for key, value in global_aberrations.items():
                             kwargs[key] = aberrations_last_run[key]-value
                         image_grabber(acquire_image=False, **kwargs)
+
                     logwrite('Tuning ended because of too high dirt coverage.', level='warn')
                     raise
     
@@ -297,24 +310,27 @@ def kill_aberrations(superscan=None, as2=None, focus_step=2, astig2f_step=2, ast
                 changes += -2.0*steps[i]*step_multiplicator
                 try:
                     minus = check_tuning(frame_parameters['fov'], average_frames=average_frames, integration_radius=integration_radius, \
-                                        save_images=save_images, savepath=savepath, **kwargs)
+                                        save_images=save_images, savepath=savepath, mode=mode, dirt_threshold=dirt_threshold, **kwargs)
                 except RuntimeError:
-                    minus = (1e-5,)
+                    minus = np.ones(12)
                 except DirtError:
                     if online:
                         for key, value in global_aberrations.items():
                             kwargs[key] = aberrations_last_run[key]-value
                         image_grabber(acquire_image=False, **kwargs)
+                    
                     logwrite('Tuning ended because of too high dirt coverage.', level='warn')
                     raise
                 
-                if merit(minus) < merit(plus) and merit(minus) < merit(current) and len(minus) >= len(plus) and len(minus) >= len(current):
+                if merit(minus) < merit(plus) and merit(minus) < merit(current) \
+                    and np.count_nonzero(minus) >= np.count_nonzero(plus) and np.count_nonzero(minus) >= np.count_nonzero(current):
                     direction = -1
                     current = minus
                     #setting the stepsize to new value
                     steps[i] *= step_multiplicator
                     break
-                elif merit(plus) < merit(minus) and merit(plus) < merit(current) and len(plus) >= len(minus) and len(plus) >= len(current):
+                elif merit(plus) < merit(minus) and merit(plus) < merit(current) \
+                    and np.count_nonzero(plus) >= np.count_nonzero(minus) and np.count_nonzero(plus) >= np.count_nonzero(current):
                     direction = 1
                     current = plus
                     #setting the stepsize to new value
@@ -352,7 +368,7 @@ def kill_aberrations(superscan=None, as2=None, focus_step=2, astig2f_step=2, ast
                 changes += direction*steps[i]
                 try:
                     next_frame = check_tuning(frame_parameters['fov'], average_frames=average_frames, integration_radius=integration_radius, \
-                                            save_images=save_images, savepath=savepath, **kwargs)
+                                            save_images=save_images, savepath=savepath, mode=mode, dirt_threshold=dirt_threshold, **kwargs)
                 except RuntimeError:
                     #vt.as2_set_control(controls[i], start+direction*(small_counter-1)*steps[i]*1e-9)
                     kwargs[keys[i]] = -direction*steps[i]
@@ -368,25 +384,25 @@ def kill_aberrations(superscan=None, as2=None, focus_step=2, astig2f_step=2, ast
                     logwrite('Tuning ended because of too high dirt coverage.', level='warn')
                     raise
                 
-                if merit(next_frame) >= merit(current) or len(next_frame) < len(current):
+                if merit(next_frame) >= merit(current) or np.count_nonzero(next_frame) < np.count_nonzero(current):
                     #vt.as2_set_control(controls[i], start+direction*(small_counter-1)*steps[i]*1e-9)
                     kwargs[keys[i]] = -direction*steps[i]
                     changes -= direction*steps[i]
                     #update hardware
                     image_grabber(acquire_image=False, **kwargs)
                     part_tunings.append(merit(current))
-                    part_lens.append(len(current))
+                    part_lens.append(np.count_nonzero(current))
                     break
                 current = next_frame
             #only keep changes if they improve the overall tuning
             if len(total_tunings) > 0:
-                if merit(current) > np.amin(total_tunings) or len(current) < np.amax(total_lens):
+                if merit(current) > np.amin(total_tunings) or np.count_nonzero(current) < np.amax(total_lens):
                     #vt.as2_set_control(controls[i], start)
                     kwargs[keys[i]] = -changes
                     #update hardware
                     try:
                         current = check_tuning(frame_parameters['fov'], average_frames=average_frames, integration_radius=integration_radius, \
-                                                save_images=save_images, savepath=savepath, **kwargs)
+                                                save_images=save_images, savepath=savepath, mode=mode, dirt_threshold=dirt_threshold, **kwargs)
                     except DirtError:
                         if online:
                             for key, value in global_aberrations.items():
@@ -412,7 +428,7 @@ def kill_aberrations(superscan=None, as2=None, focus_step=2, astig2f_step=2, ast
     if save_images:    
         try:
             check_tuning(frame_parameters['fov'], average_frames=0, integration_radius=integration_radius, \
-                        save_images=save_images, savepath=savepath, **kwargs)
+                        save_images=save_images, savepath=savepath, mode=mode, dirt_threshold=dirt_threshold, **kwargs)
         except DirtError:
             if online:
                 for key, value in global_aberrations.items():
@@ -557,8 +573,8 @@ def positive_angle(angle):
     else:
         return angle
 
-def check_tuning(imagesize, im=None, average_frames=0, integration_radius=0, save_images=False, \
-                savepath=None, process_image=True, **kwargs):
+def check_tuning(imagesize, im=None, check_astig=False, average_frames=0, integration_radius=0, save_images=False, savepath=None, \
+                process_image=True, mode='magnitude', dirt_threshold = 0.015, **kwargs):
     if not kwargs.has_key('imsize'):
         kwargs['imsize'] = imagesize
     else:
@@ -568,18 +584,18 @@ def check_tuning(imagesize, im=None, average_frames=0, integration_radius=0, sav
         if im is not None and not kwargs.has_key('image'):
             kwargs['image'] = im
         im = image_grabber(**kwargs)
-#        mask = dirt_detector(im, threshold=0.015)
-#        if np.sum(mask) > 0.5*np.prod(np.array(np.shape(im))):
-#            raise DirtError('Cannot check tuning of images with more than 50% dirt coverage.')
+        mask = dirt_detector(im, threshold=dirt_threshold)
+        if np.sum(mask) > 0.5*np.prod(np.array(np.shape(im))):
+            raise DirtError('Cannot check tuning of images with more than 50% dirt coverage.')
             
     if average_frames > 1:
         im = []
         single_image = image_grabber(**kwargs)
 
-#        mask = dirt_detector(single_image, threshold=0.015)
-#        if np.sum(mask) > 0.5*np.prod(np.array(np.shape(single_image))):
-#            raise DirtError('Cannot check tuning of images with more than 50% dirt coverage.')
-        
+        mask = dirt_detector(single_image, threshold=dirt_threshold)
+        if np.sum(mask) > 0.5*np.prod(np.array(np.shape(single_image))):
+            raise DirtError('Cannot check tuning of images with more than 50% dirt coverage.')
+            
         im.append(single_image)
         
         kwargs2 = kwargs.copy()
@@ -628,8 +644,7 @@ def check_tuning(imagesize, im=None, average_frames=0, integration_radius=0, sav
         intensities.append(peak[3])
     intensities=np.array(intensities)
     
-    return intensities
-        
+    return intensities        
 
 def optimize_tuning(imsize, im=None, astig_stepsize=0.1, focus_stepsize=1.0, tune_astig=False, save_iterations=False):
     #Take a focus series to find correct astigmatism 
@@ -698,13 +713,41 @@ def optimize_tuning(imsize, im=None, astig_stepsize=0.1, focus_stepsize=1.0, tun
     
     if plus < minus and plus < current:
         pass
+        
+def optimize_focus(imsize, im=None, start_stepsize=4, end_stepsize=1):
+    stepsize = start_stepsize
+    defocus = 0
+    current = check_tuning(imsize, im=im)
+    
+    while stepsize >= end_stepsize:
+        #previous = current
+        #last_defocus = defocus
+        #initial = check_focus(defocus, im, shape)
+        plus = check_tuning(imsize, defocus=(defocus + stepsize), im=im)
+        minus = check_tuning(imsize, defocus=(defocus - stepsize), im=im)
+        if plus < current and minus < current:
+            logging.warn('Found ambigious focusing!')
+        
+        if minus < plus and minus < current:
+            defocus -= stepsize
+            current = minus
+        elif  plus < minus and plus < current:
+            defocus += stepsize
+            current = plus
 
-def find_peaks(im, imsize, half_line_thickness=5, position_tolerance=5, integration_radius=0, second_order=False, debug_mode=False):
+        stepsize /= 2.0
+    
+    return defocus
+
+def find_peaks(im, imsize, half_line_thickness=5, position_tolerance=5, integration_radius=0, second_order=False, debug_mode=False, mode='magnitude'):
     """
         This function can find the 6 first-order peaks in the FFT of an atomic-resolution image of graphene.
         Input:
                 im: Image as a numpy array or any type that can be simply casted to a numpy array.
                 imsize: Size of the input image in nm.
+                return_type: 'magnitude', 'phase' or 'amplitude', depending on the values of the fft you want to use.
+                            When chosing 'amplitude' or 'phase', the abolutes of the respective parts of the fft are summed
+                            (Otherwise all values would be close to zero, because there is a sign change at the peak location).
         Output:
                 List of tuples that contain the coordinates of the reflections. The tuples have the form (y, x, intensity_of_peak_maximum)
                 If no peaks were found the return value will be None.
@@ -720,14 +763,22 @@ def find_peaks(im, imsize, half_line_thickness=5, position_tolerance=5, integrat
 
     shape = np.shape(im)
     
-    fft = np.abs(np.fft.fftshift(np.fft.fft2(im)))  
+    fft = np.fft.fftshift(np.fft.fft2(im))
     #If more than one image are passed to find_peaks, compute average of their fft's before going on
     if len(shape) > 2:
         fft  = np.mean(fft, axis=0)
         shape = shape[1:]
             
     center = np.array(shape)/2
-    fft_raw = fft.copy()
+    
+    if mode.lower() == 'phase':
+        fft_raw = np.abs(np.imag(fft))
+    elif mode.lower() == 'amplitude':
+        fft_raw = np.abs(np.real(fft))
+    else:    
+        fft_raw = np.abs(fft)
+    
+    fft = np.abs(fft)
     
     first_order = imsize/0.213
     #second_order = imsize/0.123
@@ -756,20 +807,6 @@ def find_peaks(im, imsize, half_line_thickness=5, position_tolerance=5, integrat
         cross[ydata+center[0], center[1]+i] = hyperbola1D(ydata, *vertical_popt)-1.5*mean_fft
     
     fft-=cross
-    #fft *= gaussian2D(np.mgrid[0:shape[0], 0:shape[1]], shape[1]/2, shape[0]/2, np.sqrt(first_order), np.sqrt(first_order), -1, 1).reshape(shape)
-    #remove vertical and horizontal lines
-    #central_area = fft[shape[0]/2-half_line_thickness:shape[0]/2+half_line_thickness+1, shape[1]/2-half_line_thickness:shape[1]/2+half_line_thickness+1].copy()
-    
-#    horizontal = fft[shape[0]/2-half_line_thickness:shape[0]/2+half_line_thickness+1, :]
-#    horizontal_popt, horizontal_pcov = scipy.optimize.curve_fit(gaussian2D, np.mgrid[0:2*half_line_thickness+1, 0:shape[0]],horizontal.ravel(), p0=(shape[1]/2, half_line_thickness, 1, 1, np.amax(horizontal),0))
-#    vertical = fft[:,shape[1]/2-half_line_thickness:shape[1]/2+half_line_thickness+1]
-#    vertical_popt, vertical_pcov = scipy.optimize.curve_fit(gaussian2D, np.mgrid[0:shape[1], 0:2*half_line_thickness+1],vertical.ravel(), p0=(half_line_thickness, shape[0]/2, 1, 1, np.amax(vertical),0))
-#    
-#    fft[shape[0]/2-half_line_thickness:shape[0]/2+half_line_thickness+1, :] /= gaussian2D(np.mgrid[0:2*half_line_thickness+1, 0:shape[1]], horizontal_popt[0], horizontal_popt[1], horizontal_popt[2], horizontal_popt[3], horizontal_popt[4], horizontal_popt[5]).reshape((2*half_line_thickness+1,shape[1])) #horizontal
-#    fft[shape[0]/2-half_line_thickness:shape[0]/2+half_line_thickness+1, :] *= np.mean(fft)    
-#    fft[shape[0]/2-half_line_thickness:shape[0]/2+half_line_thickness+1, shape[1]/2-half_line_thickness:shape[1]/2+half_line_thickness+1] = central_area
-#    fft[:, shape[1]/2-half_line_thickness:shape[1]/2+half_line_thickness+1] /= gaussian2D(np.mgrid[0:shape[0], 0:2*half_line_thickness+1], vertical_popt[0], vertical_popt[1], vertical_popt[2], vertical_popt[3], vertical_popt[4], vertical_popt[5]).reshape((shape[0], 2*half_line_thickness+1)) #vertical
-#    fft[:, shape[1]/2-half_line_thickness:shape[1]/2+half_line_thickness+1] *= np.mean(fft)
     
     if (4*int(first_order) < center).all():
         fft[center[0]-4*int(first_order):center[0]+4*int(first_order)+1, center[1]-4*int(first_order):center[1]+4*int(first_order)+1] *= gaussian2D(np.mgrid[center[0]-4*int(first_order):center[0]+4*int(first_order)+1, center[1]-4*int(first_order):center[1]+4*int(first_order)+1], shape[1]/2, shape[0]/2, 0.75*first_order, 0.75*first_order, -1, 1)#.reshape(np.array(shape)/2)
@@ -783,44 +820,57 @@ def find_peaks(im, imsize, half_line_thickness=5, position_tolerance=5, integrat
         counter += 1
         if counter > np.sqrt(shape[0]):
             raise RuntimeError('No peaks could be found in the FFT of im.')
-        peaks = []
+        if second_order:
+            peaks = np.zeros((2,6,4))
+        else:
+            peaks = np.zeros((6,4))
+        #peaks = []
         first_peak = np.unravel_index(np.argmax(fft), shape)+(np.amax(fft), )
         area_first_peak = fft[first_peak[0]-position_tolerance:first_peak[0]+position_tolerance+1, first_peak[1]-position_tolerance:first_peak[1]+position_tolerance+1]
-        #check if found peak is on cross
-#        if first_peak[0] in range(center[0]-half_line_thickness,center[0]+half_line_thickness+1) or first_peak[1] in range(center[1]-half_line_thickness,center[1]+half_line_thickness+1):
-#            fft[first_peak[0]-position_tolerance:first_peak[0]+position_tolerance+1, first_peak[1]-position_tolerance:first_peak[1]+position_tolerance+1] = 0
-        #if first_peak[2] < mean_fft + 6.0*std_dev_fft:
+
         if first_peak[2] < np.mean(area_first_peak)+6*np.std(area_first_peak):
             fft[first_peak[0]-position_tolerance:first_peak[0]+position_tolerance+1, first_peak[1]-position_tolerance:first_peak[1]+position_tolerance+1] = 1
         elif np.sqrt(np.sum((np.array(first_peak[0:2])-center)**2)) < first_order*0.6667 or np.sqrt(np.sum((np.array(first_peak[0:2])-center)**2)) > first_order*1.333:
             fft[first_peak[0]-position_tolerance:first_peak[0]+position_tolerance+1, first_peak[1]-position_tolerance:first_peak[1]+position_tolerance+1] = 2
         else:
             try:            
-                peaks.append(first_peak+(np.sum(fft_raw[first_peak[0]-integration_radius:first_peak[0]+integration_radius+1, first_peak[1]-integration_radius:first_peak[1]+integration_radius+1]),))
+                #peaks.append(first_peak+(np.sum(fft_raw[first_peak[0]-integration_radius:first_peak[0]+integration_radius+1, first_peak[1]-integration_radius:first_peak[1]+integration_radius+1]),))
+                if second_order:
+                    peaks[0,0] = np.array(first_peak+(np.sum(fft_raw[first_peak[0]-integration_radius:first_peak[0]+integration_radius+1, first_peak[1]-integration_radius:first_peak[1]+integration_radius+1]),))
+                else:
+                    peaks[0] = np.array(first_peak+(np.sum(fft_raw[first_peak[0]-integration_radius:first_peak[0]+integration_radius+1, first_peak[1]-integration_radius:first_peak[1]+integration_radius+1]),))
                 
                 for i in range(1,6):
                     rotation_matrix = np.array( ( (np.cos(i*np.pi/3), -np.sin(i*np.pi/3)), (np.sin(i*np.pi/3), np.cos(i*np.pi/3)) ) )
-                    next_peak = np.rint(np.dot( rotation_matrix , (np.array(peaks[0][0:2])-center) ) + center).astype(int)
+                    if second_order:
+                        next_peak = np.rint(np.dot( rotation_matrix , peaks[0,0,0:2]-center ) + center).astype(int)
+                    else:
+                        next_peak = np.rint(np.dot( rotation_matrix , peaks[0,0:2]-center ) + center).astype(int)
                     area_next_peak = fft[next_peak[0]-position_tolerance:next_peak[0]+position_tolerance+1, next_peak[1]-position_tolerance:next_peak[1]+position_tolerance+1]
                     max_next_peak = np.amax(area_next_peak)
                    #if  max_next_peak > mean_fft + 5.0*std_dev_fft:#peaks[0][2]/4:
                     if max_next_peak > np.mean(area_next_peak)+5*np.std(area_next_peak):
                         next_peak += np.array( np.unravel_index( np.argmax(area_next_peak), np.shape(area_next_peak) ) ) - position_tolerance
-                        peaks.append(tuple(next_peak)+(max_next_peak,np.sum(fft_raw[next_peak[0]-integration_radius:next_peak[0]+integration_radius+1, next_peak[1]-integration_radius:next_peak[1]+integration_radius+1])))
+                        #peaks.append(tuple(next_peak)+(max_next_peak,np.sum(fft_raw[next_peak[0]-integration_radius:next_peak[0]+integration_radius+1, next_peak[1]-integration_radius:next_peak[1]+integration_radius+1])))
+                        if second_order:
+                            peaks[0,i] = np.array(tuple(next_peak)+(max_next_peak,np.sum(fft_raw[next_peak[0]-integration_radius:next_peak[0]+integration_radius+1, next_peak[1]-integration_radius:next_peak[1]+integration_radius+1])))
+                        else:
+                            peaks[i] = np.array(tuple(next_peak)+(max_next_peak,np.sum(fft_raw[next_peak[0]-integration_radius:next_peak[0]+integration_radius+1, next_peak[1]-integration_radius:next_peak[1]+integration_radius+1])))
                 
                 if second_order:
-                    peaks = (peaks, [])
+                    #peaks = (peaks, [])
                     org_pos_tol = position_tolerance
                     position_tolerance = int(np.rint(position_tolerance*np.sqrt(3)))
                     for i in range(6):
                         rotation_matrix = np.array( ( (np.cos(i*np.pi/3+np.pi/6), -np.sin(i*np.pi/3+np.pi/6)), (np.sin(i*np.pi/3+np.pi/6), np.cos(i*np.pi/3+np.pi/6)) ) )
-                        next_peak = np.rint(np.dot( rotation_matrix , (np.array(peaks[0][0][0:2])-center)*(0.213/0.123) ) + center).astype(int)
+                        next_peak = np.rint(np.dot( rotation_matrix , (peaks[0,0,0:2]-center)*(0.213/0.123) ) + center).astype(int)
                         area_next_peak = fft[next_peak[0]-position_tolerance:next_peak[0]+position_tolerance+1, next_peak[1]-position_tolerance:next_peak[1]+position_tolerance+1]
                         max_next_peak = np.amax(area_next_peak)
                         #if  max_next_peak > mean_fft + 4.0*std_dev_fft:#peaks[0][2]/4:
                         if max_next_peak > np.mean(area_next_peak)+4*np.std(area_next_peak):
                             next_peak += np.array( np.unravel_index( np.argmax(area_next_peak), np.shape(area_next_peak) ) ) - position_tolerance
-                            peaks[1].append(tuple(next_peak)+(max_next_peak,np.sum(fft_raw[next_peak[0]-integration_radius:next_peak[0]+integration_radius+1, next_peak[1]-integration_radius:next_peak[1]+integration_radius+1])))
+                            #peaks[1].append(tuple(next_peak)+(max_next_peak,np.sum(fft_raw[next_peak[0]-integration_radius:next_peak[0]+integration_radius+1, next_peak[1]-integration_radius:next_peak[1]+integration_radius+1])))
+                            peaks[1,i] = np.array(tuple(next_peak)+(max_next_peak,np.sum(fft_raw[next_peak[0]-integration_radius:next_peak[0]+integration_radius+1, next_peak[1]-integration_radius:next_peak[1]+integration_radius+1])))
                     position_tolerance = org_pos_tol
                 success = True
             except Exception as detail:

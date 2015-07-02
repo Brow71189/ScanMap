@@ -10,8 +10,6 @@ import time
 import os
 
 import numpy as np
-import scipy.optimize
-import cv2
 
 try:
     import ViennaTools.ViennaTools as vt
@@ -25,7 +23,6 @@ except:
     
 import autotune
 from autotune import DirtError
-import autoalign
     
 def interpolation(target, points):
     """
@@ -195,11 +192,11 @@ def SuperScan_mapping(coord_dict, filepath='Z:\\ScanMap\\', do_autofocus=False, 
     #No functions that require real Microscope Hardware will be executed, so no errors appear (test mode)    
     offline = False
     
-    HAADF = MAADF = False
-    if 'MAADF' in detectors:
-        MAADF = True
-    if 'HAADF' in detectors:
-        HAADF = True
+#    HAADF = MAADF = False
+#    if 'MAADF' in detectors:
+#        MAADF = True
+#    if 'HAADF' in detectors:
+#        HAADF = True
     
     #start with getting the corners of the area that will be mapped
     corners = ('top-left', 'top-right', 'bottom-right', 'bottom-left')
@@ -411,6 +408,7 @@ def SuperScan_mapping(coord_dict, filepath='Z:\\ScanMap\\', do_autofocus=False, 
                     #covered with dirt). If not all reflections are visible, autofocus is applied and the result is added as offset to the interpolated focus values.
                     #The dirt coverage is calculated by considering all pixels intensities that are higher than 0.02 as dirt
                     data=autotune.image_grabber()
+
                     name = str('%.4d_%.3f_%.3f.tif' % (frame_number[counter-1],stagex*1e6,stagey*1e6))
                     dirt_mask = autotune.dirt_detector(data, threshold=0.01, median_blur_diam=39, gaussian_blur_radius=3)
                     #calculate the fraction of 'bad' pixels and save frame if fraction is >0.5, but add note to "bad_frames" file
@@ -422,7 +420,7 @@ def SuperScan_mapping(coord_dict, filepath='Z:\\ScanMap\\', do_autofocus=False, 
                     else:
                         try:
                             first_order, second_order = autotune.find_peaks(data, imsize*1e9, position_tolerance=9, second_order=True)
-                            number_peaks = len(first_order) + len(second_order)
+                            number_peaks = np.count_nonzero(first_order[:,-1])+np.count_nonzero(second_order[:,-1])
                         except:
                             first_order = second_order = 0
                             number_peaks = 0
@@ -453,7 +451,7 @@ def SuperScan_mapping(coord_dict, filepath='Z:\\ScanMap\\', do_autofocus=False, 
                                 data_new = autotune.image_grabber()
                                 try:
                                     first_order_new, second_order_new = autotune.find_peaks(data, imsize*1e9, position_tolerance=9, second_order=True)
-                                    number_peaks_new = len(first_order_new)+len(second_order_new)
+                                    number_peaks_new = np.count_nonzero(first_order_new[:,-1])+np.count_nonzero(second_order_new[:,-1])
                                 except RuntimeError:
                                     bad_frames[name] = 'Dismissed result because it did not improve tuning: '+str(tuning_result)
                                     logwrite('No. '+str(frame_number[counter-1]) + ': Dismissed result because it did not improve tuning: '+str(tuning_result))
@@ -495,14 +493,16 @@ def SuperScan_mapping(coord_dict, filepath='Z:\\ScanMap\\', do_autofocus=False, 
                 #Take frame and save it to disk
                 if number_of_images < 2:
                     data = autotune.image_grabber(superscan=superscan, **frame_parameters)
+
                     tifffile.imsave(store+str('%.4d_%.3f_%.3f.tif' % (frame_number[counter-1],stagex*1e6,stagey*1e6)), data)
                     test_map.append(frame_coord)
                 else:
                     for i in range(number_of_images):
-                        if np.size(pixeltime) > 1:                        
+                        if np.size(pixeltime) > 1:
                             frame_parameters['pixeltime'] = pixeltime[i]
                         data = autotune.image_grabber(superscan=superscan, **frame_parameters)
                         tifffile.imsave(store+str('%.4d_%.3f_%.3f_%.2d.tif' % (frame_number[counter-1],stagex*1e6,stagey*1e6, i)), data)
+
                     test_map.append(frame_coord)
         
         else:
@@ -528,11 +528,12 @@ def SuperScan_mapping(coord_dict, filepath='Z:\\ScanMap\\', do_autofocus=False, 
         #Goto center
         vt.as2_set_control(as2, 'StageOutX', map_center[0])
         vt.as2_set_control(as2, 'StageOutY', map_center[1])
-        time.sleep(10)
+        time.sleep(5)
         #acquire image and save it
         overview_parameters = {'size_pixels': (4096, 4096), 'center': (0,0), 'pixeltime': 2, \
                             'fov': over_size, 'rotation': rotation}
         image = autotune.image_grabber(superscan=superscan, **overview_parameters)
+
         tifffile.imsave(store+'Overview_'+str(over_size)+'_nm.tif', image)
     
     if event is None or not event.is_set():    

@@ -64,7 +64,7 @@ def rotation_radius(image, imsize, find_distortions=True):
         center = np.array(np.shape(image))/2
         
         for peak in peaks_first:
-            peak = np.array(peak[0:2])-center
+            peak = peak[0:2]-center
             angles.append(at.positive_angle(np.arctan2(-peak[0], peak[1])))
             radii.append(np.sqrt(np.sum(peak**2)))
             
@@ -75,9 +75,9 @@ def rotation_radius(image, imsize, find_distortions=True):
             sum_rotation += angle%(np.pi/3)
         
         if find_distortions:
-            return (sum_rotation/float(len(angles)), np.mean(radii), len(peaks_first)+len(peaks_second)) + fit_ellipse(angles, radii)
+            return (sum_rotation/float(len(angles)), np.mean(radii), np.count_nonzero(peaks_first[:,-1])+np.count_nonzero(peaks_second[:,-1])) + fit_ellipse(angles, radii)
         else:
-            return (sum_rotation/float(len(angles)), np.mean(radii), len(peaks_first)+len(peaks_second))
+            return (sum_rotation/float(len(angles)), np.mean(radii), np.count_nonzero(peaks_first[:,-1])+np.count_nonzero(peaks_second[:,-1]))
     
 def calculate_counts(image, threshold=1e-9):
     """
@@ -188,12 +188,11 @@ if __name__ == '__main__':
     
     overall_starttime = time.time()
 
-    dirpath = '/3tb/maps_data/map_2015_06_02_11_37/'
+    dirpath = '/3tb/maps_data/map_2015_06_19_12_56/'
     #dirpath = '/3tb/Dark_noise/'
     imsize = 20
-    dirt_threshold = 0.0033
-    dirt_border = 50
-
+    dirt_threshold = 0.0037
+    dirt_border = 100
 
     if not dirpath.endswith('/'):
         dirpath += '/'
@@ -224,7 +223,7 @@ if __name__ == '__main__':
     if not os.path.exists(dirpath+'prep_'+dirpath.split('/')[-2]+'/'):
         os.makedirs(dirpath+'prep_'+dirpath.split('/')[-2]+'/')
     
-    frame_data_file = open(dirpath+'prep_'+dirpath.split('/')[-2]+'/'+'frame_init.txt', 'w')
+    frame_data_file = open(dirpath+'prep_'+dirpath.split('/')[-2]+'/'+'frame_init_' + dirpath.split('/')[-2] + '.txt', 'w')
     
     frame_data_file.write('#This file contains informations about all frames of '+(dirpath.split('/')[-2]+'\n'))
     frame_data_file.write('#Created: ' + time.strftime('%Y/%m/%d %H:%M') + '\n')
