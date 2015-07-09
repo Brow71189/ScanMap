@@ -10,11 +10,6 @@ import os
 import threading
 import time
 
-from nion.swift import Panel
-from nion.swift import Workspace
-from nion.swift.model import DataItem
-from nion.ui import Binding
-
 import maptools.autotune as autotune
 
 _ = gettext.gettext
@@ -29,15 +24,17 @@ dirt_threshold = 0.015
 save_images=False
 savepath=None
 
-class SuperScanTuner(Panel.Panel):
-    def __init__(self, document_controller, panel_id, properties):
-        super(SuperScanTuner, self).__init__(document_controller, panel_id, "SSTuner")
-
-        ui = document_controller.ui
-
-        # user interface
-
-        column = ui.create_column_widget()
+class SuperScanTunerPanelDelegate(object):
+    def __init__(self, api):
+        self.__api = api
+        self.panel_id = 'SuperScanTuner-Panel'
+        self.panel_name = _('SuperScanTuner')
+        self.panel_positions = ['left', 'right']
+        self.panel_position = 'right'
+        
+    def create_panel_widget(self, ui, document_controller):
+        
+        column = ui.create_column_widget()        
         
         def Focus_finished(text):
             global focus_step
@@ -122,6 +119,11 @@ class SuperScanTuner(Panel.Panel):
         def start_button_clicked():
             global focus_step, astig2f_step, astig3f_step, coma_step, average_frames, integration_radius, dirt_threshold, save_images, savepath
             
+            
+            superscan = self.__api.get_hardware_source_by_id('scan_controller', '1')
+            as2 = self.__api.get_hardware_source_by_id('as2', '1')
+            
+            
             keys = []
             
             reload(autotune)
@@ -157,7 +159,8 @@ class SuperScanTuner(Panel.Panel):
             #self.thread = threading.Thread(target=do_something, args=(self.event, document_controller))
             self.thread = threading.Thread(target=autotune.kill_aberrations, kwargs={'focus_step': focus_step, 'astig2f_step': astig2f_step, 'astig3f_step': astig3f_step,\
                                 'coma_step': coma_step, 'average_frames': average_frames, 'integration_radius': integration_radius, 'save_images': save_images, \
-                                'savepath': savepath, 'document_controller': document_controller, 'event': self.event, 'keys': keys, 'dirt_threshold': dirt_threshold})
+                                'savepath': savepath, 'document_controller': document_controller, 'event': self.event, 'keys': keys, 'dirt_threshold': dirt_threshold, \
+                                'superscan': superscan, 'as2': as2})
                                 
             self.thread.start()
             
@@ -166,7 +169,6 @@ class SuperScanTuner(Panel.Panel):
         
         def abort_button_clicked():
             logging.info('Aborting tuning after current aberration. (May take a short while until actual abort)')
-            time.sleep(5)
             self.event.set()
             self.thread.join()
             logging.info('Finished')
@@ -302,7 +304,18 @@ class SuperScanTuner(Panel.Panel):
         column.add_spacing(25)
         column.add(button_row)
         
-        self.widget = column
+        return column
+        
+class SuperScanTunerExtension(object):
+    extension_id = 'univie.superscantuner'
+    
+    def __init__(self, api_broker):
+        api = api_broker.get_api(version='1', ui_version='1')
+        self.__panel_ref = api.create_panel(SuperScanTunerPanelDelegate(api))
+    
+    def close(self):
+        self.__panel_ref.close()
+        self.__panel_ref = None
     
 def do_something(event, document_controller):
     counter = 0
@@ -319,6 +332,3 @@ def do_something(event, document_controller):
         counter +=1
     
     return 'Finished'
-  
-workspace_manager = Workspace.WorkspaceManager()
-workspace_manager.register_panel(SuperScanTuner, "tuner-panel", _("SuperScan Tuning"), ["left", "right"], "right" )

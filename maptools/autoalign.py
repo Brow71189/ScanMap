@@ -42,45 +42,6 @@ except:
 #except:
 #    pass
 #    #logging.warn('Could not import SuperScanPy. Maybe you are running in offline mode.')
-
-import autotune    
-    
-def find_offset_and_rotation():
-    """
-    This function finds the current rotation of the scan with respect to the stage coordinate system and the offset that has to be set between two neighboured images when no overlap should occur.
-    It takes no input arguments, so the current frame parameters are used for image acquisition.
-    
-    It returns a tuple of the form (rotation(degrees), offset(fraction of images)).
-    
-    """
-    
-    try:
-        FrameParams = ss.SS_Functions_SS_GetFrameParams()
-    except:
-        logging.error('Could not get Frame Parameters. Make sure SuperScan funtctions are available.')
-    
-    imsize = FrameParams[5]
-    
-    leftX = vt.as2_get_control()
-    vt.as2_set_control('StageOutX', leftX-2.0*imsize)
-    time.sleep(3)
-    #Goto point for first image and aquire it
-    vt.as2_set_control('StageOutX', leftX)
-    time.sleep(3)
-    im1 = autotune.image_grabber()
-    #Go to the right by one half image size
-    vt.as2_set_control('StageOutX', leftX+imsize/2.0)
-    time.sleep(3)
-    im2 = autotune.image_grabber()
-    #go back to inital position
-    vt.as2_set_control('StageOutX', leftX)
-    #find offset between the two images
-    try:
-        frame_rotation, frame_distance = shift_fft(im1, im2)
-    except:
-        raise
-    
-    return (frame_rotation, frame_distance)
     
 def shift_fft(im1, im2, return_cps=False):
     shape = np.shape(im1)
@@ -88,9 +49,9 @@ def shift_fft(im1, im2, return_cps=False):
         raise ValueError('Input images must have the same shape')
     fft1 = np.fft.fft2(im1)
     fft2 = np.fft.fft2(im2)
-    translation = np.real(np.fft.ifft2((fft1*np.conjugate(fft2))/np.abs(fft1*fft2)))
+    translation = np.abs(np.fft.ifft2(((fft1*np.conjugate(fft2))/np.abs(fft1*fft2))))
     if return_cps:
-        return translation
+        return np.fft.fftshift(translation)
     #translation = cv2.GaussianBlur(translation, (0,0), 3)
     if np.amax(translation) <= 0.03: #3.0*np.std(translation)+np.abs(np.amin(translation)):
         #return np.zeros(2)
@@ -178,17 +139,20 @@ def translated_correlation(translation, im1, im2):
 def find_shift(im1, im2, ratio=0.1):
     """Finds the shift between two images im1 and im2."""
     shape = np.shape(im1)
-    im1 = cv2.GaussianBlur(im1, (5,5), 3)
-    im2 = cv2.GaussianBlur(im2, (5,5), 3)
-    start_values = []
-    for j in (-1,0,1):
-        for i in (-1,0,1):
-            start_values.append( np.array((j*shape[0]*ratio, i*shape[1]*ratio))+1 )
-    #start_values = np.array( ( (1,1), (shape[0]*ratio, shape[1]*ratio),  (-shape[0]*ratio, -shape[1]*ratio), (shape[0]*ratio, -shape[1]*ratio), (-shape[0]*ratio, shape[1]*ratio) ) )
-    function_values = np.zeros(len(start_values))
-    for i in range(len(start_values)):
-        function_values[i] = translated_correlation(start_values[i], im1, im2)
-    start_value = start_values[np.argmin(function_values)]
+    #im1 = cv2.GaussianBlur(im1, (5,5), 3)
+    #im2 = cv2.GaussianBlur(im2, (5,5), 3)
+    if ratio > 0:
+        start_values = []
+        for j in (-1,0,1):
+            for i in (-1,0,1):
+                start_values.append( np.array((j*shape[0]*ratio, i*shape[1]*ratio))+1 )
+        #start_values = np.array( ( (1,1), (shape[0]*ratio, shape[1]*ratio),  (-shape[0]*ratio, -shape[1]*ratio), (shape[0]*ratio, -shape[1]*ratio), (-shape[0]*ratio, shape[1]*ratio) ) )
+        function_values = np.zeros(len(start_values))
+        for i in range(len(start_values)):
+            function_values[i] = translated_correlation(start_values[i], im1, im2)
+        start_value = start_values[np.argmin(function_values)]
+    else:
+        start_value = (0,0)
     res = scipy.optimize.minimize(translated_correlation, start_value, method='Nelder-Mead', args=(im1,im2))
     return (res.x, -res.fun)
 
@@ -198,11 +162,11 @@ def rot_dist(im1, im2, ratio=None):
     else:
         res = find_shift(im1, im2, ratio=0.0)
         counter = 1
-        while res[1] < 0.85 and counter < 10:
+        while res[1] < 0.8 and counter < 10:
             res = find_shift(im1, im2, ratio=counter*0.1)
             counter += 1
     
-    if res[1] < 0.85:
+    if res[1] < 0.8:
         return (None, None)
         
     rotation = np.arctan2(-res[0][0], res[0][1])*180.0/np.pi

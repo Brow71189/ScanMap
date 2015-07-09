@@ -37,11 +37,11 @@ import os
 
 if __name__=='__main__':
     
-    dirpath = '/3tb/maps_data/map_2015_05_29_12_01/'
+    dirpath = '/3tb/maps_data/map_2015_06_30_14_44/only_0/'
     
-    overview = '/3tb/maps_data/map_2015_05_29_12_01/Overview_898.156649193_nm.tif'
+    overview = '/3tb/maps_data/map_2015_06_30_14_44/Overview_1567.82931683_nm.tif'
     
-    size_overview = 898.156649193 #nm
+    size_overview = 1567.82931683 #nm
     size_frames = 64 #nm
     
     

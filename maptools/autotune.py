@@ -25,6 +25,8 @@ except:
     except:
         logging.warn('Could not import Vienna tools!')
 
+import autoalign
+
 
 #global variable to store aberrations when simulating them (see function image_grabber() for details)
 global_aberrations = {'EHTFocus': 1.5, 'C12_a': -3.0, 'C12_b': 2.5, 'C21_a': 1138.0, 'C21_b': 200, 'C23_a': 90, 'C23_b': 60.0}
@@ -33,6 +35,25 @@ class DirtError(Exception):
     """
     Custom Exception to specify that too much dirt was found in an image to perform a certain operation.
     """
+
+def measure_symmetry(image):
+    point_mirrored = np.flipud(np.fliplr(image)) 
+    return autoalign.find_shift(image, point_mirrored, ratio=0.05)
+    
+def fourier_filter(image, imsize):
+    peaks = find_peaks(image, imsize, second_order=True, half_line_thickness=3)
+    xdata = np.mgrid[-7:8, -7:8]
+    mask = gaussian2D(xdata, 0, 0, 4, 4, 1, 0)
+    maskradius = np.shape(mask)[0]/2
+    fft = np.fft.fftshift(np.fft.fft2(image))
+    fft_masked = np.zeros(np.shape(fft), dtype=fft.dtype)
+    for order in peaks:
+        for peak in order:
+            if np.count_nonzero(peak) > 0:
+                fft_masked[peak[0]-maskradius:peak[0]+maskradius+1, peak[1]-maskradius:peak[1]+maskradius+1] += \
+                fft[peak[0]-maskradius:peak[0]+maskradius+1, peak[1]-maskradius:peak[1]+maskradius+1]*mask    
+    
+    return np.real(np.fft.ifft2(np.fft.fftshift(fft_masked)))
     
 def set_frame_parameters(superscan, frame_parameters):
     """
@@ -738,6 +759,14 @@ def optimize_focus(imsize, im=None, start_stepsize=4, end_stepsize=1):
         stepsize /= 2.0
     
     return defocus
+    
+def gaussian2D(xdata, x0, y0, x_std, y_std, amplitude, offset):
+    x0, y0, x_std, y_std, amplitude, offset = float(x0), float(y0), float(x_std), float(y_std), float(amplitude), float(offset)
+    return (amplitude*np.exp( -0.5*( ((xdata[1]-x0)/x_std)**2 + ((xdata[0]-y0)/y_std)**2 ) ) + offset)#.ravel()
+
+def hyperbola1D(xdata, a, offset):
+    a, offset = float(a), float(offset)
+    return np.abs(1.0/(a*xdata))+offset
 
 def find_peaks(im, imsize, half_line_thickness=5, position_tolerance=5, integration_radius=0, second_order=False, debug_mode=False, mode='magnitude'):
     """
@@ -753,13 +782,6 @@ def find_peaks(im, imsize, half_line_thickness=5, position_tolerance=5, integrat
                 If no peaks were found the return value will be None.
                 Note that the returned intesities might be smaller than that of the raw fft because of the processing done in the function.
     """
-    def gaussian2D(xdata, x0, y0, x_std, y_std, amplitude, offset):
-        x0, y0, x_std, y_std, amplitude, offset = float(x0), float(y0), float(x_std), float(y_std), float(amplitude), float(offset)
-        return (amplitude*np.exp( -0.5*( ((xdata[1]-x0)/x_std)**2 + ((xdata[0]-y0)/y_std)**2 ) ) + offset)#.ravel()
-    
-    def hyperbola1D(xdata, a, offset):
-        a, offset = float(a), float(offset)
-        return np.abs(1.0/(a*xdata))+offset
 
     shape = np.shape(im)
     
@@ -781,11 +803,19 @@ def find_peaks(im, imsize, half_line_thickness=5, position_tolerance=5, integrat
     fft = np.abs(fft)
     
     first_order = imsize/0.213
-    #second_order = imsize/0.123
+    second_order_peaks = imsize/0.123
+    
+    #make sure that areas of first and second_order peaks don't overlap
+    if position_tolerance >= (second_order_peaks-first_order)/np.sqrt(2)-1:
+        position_tolerance = int(np.rint((second_order_peaks-first_order)/np.sqrt(2)-1))
     
     #print('center: '+str(center)+', first_order: '+str(first_order))
     #blank out bright spot in center of fft
-    cv2.circle(fft, tuple(center), int(first_order/2.0), -1, -1)
+    cv2.circle(fft, tuple(center), int(np.rint(first_order/2.0)), -1, -1)
+    
+    #prevent infinite values when cross would be calculated until central pixel because of too high half line thickness
+    if half_line_thickness >= int(np.rint(first_order/2.0))-1:
+        half_line_thickness = int(np.rint(first_order/2.0))-1
 
     #std_dev_fft = np.std(fft[fft>-1])
     mean_fft = np.mean(fft[fft>-1])    
@@ -861,6 +891,11 @@ def find_peaks(im, imsize, half_line_thickness=5, position_tolerance=5, integrat
                     #peaks = (peaks, [])
                     org_pos_tol = position_tolerance
                     position_tolerance = int(np.rint(position_tolerance*np.sqrt(3)))
+                    
+                    #make sure that areas of first and second_order peaks don't overlap
+                    if position_tolerance >= (second_order_peaks-first_order)/np.sqrt(2)-1:
+                        position_tolerance = int(np.rint((second_order_peaks-first_order)/np.sqrt(2)-1))
+
                     for i in range(6):
                         rotation_matrix = np.array( ( (np.cos(i*np.pi/3+np.pi/6), -np.sin(i*np.pi/3+np.pi/6)), (np.sin(i*np.pi/3+np.pi/6), np.cos(i*np.pi/3+np.pi/6)) ) )
                         next_peak = np.rint(np.dot( rotation_matrix , (peaks[0,0,0:2]-center)*(0.213/0.123) ) + center).astype(int)

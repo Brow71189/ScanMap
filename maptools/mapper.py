@@ -23,7 +23,46 @@ except:
     
 import autotune
 from autotune import DirtError
+import autoalign
+
+
+def find_offset_and_rotation():
+    """
+    This function finds the current rotation of the scan with respect to the stage coordinate system and the offset that has to be set between two neighboured images when no overlap should occur.
+    It takes no input arguments, so the current frame parameters are used for image acquisition.
     
+    It returns a tuple of the form (rotation(degrees), offset(fraction of images)).
+    
+    """
+    
+    try:
+        FrameParams = ss.SS_Functions_SS_GetFrameParams()
+    except:
+        logging.error('Could not get Frame Parameters. Make sure SuperScan funtctions are available.')
+    
+    imsize = FrameParams[5]
+    
+    leftX = vt.as2_get_control()
+    vt.as2_set_control('StageOutX', leftX-2.0*imsize)
+    time.sleep(3)
+    #Goto point for first image and aquire it
+    vt.as2_set_control('StageOutX', leftX)
+    time.sleep(3)
+    im1 = autotune.image_grabber()
+    #Go to the right by one half image size
+    vt.as2_set_control('StageOutX', leftX+imsize/2.0)
+    time.sleep(3)
+    im2 = autotune.image_grabber()
+    #go back to inital position
+    vt.as2_set_control('StageOutX', leftX)
+    #find offset between the two images
+    try:
+        frame_rotation, frame_distance = autoalign.shift_fft(im1, im2)
+    except:
+        raise
+    
+    return (frame_rotation, frame_distance)
+
 def interpolation(target, points):
     """
     Bilinear Interpolation between 4 points that do not have to lie on a regular grid.
@@ -534,7 +573,7 @@ def SuperScan_mapping(coord_dict, filepath='Z:\\ScanMap\\', do_autofocus=False, 
                             'fov': over_size, 'rotation': rotation}
         image = autotune.image_grabber(superscan=superscan, **overview_parameters)
 
-        tifffile.imsave(store+'Overview_'+str(over_size)+'_nm.tif', image)
+        tifffile.imsave(store+'Overview_'+str(np.rint(over_size))+'_nm.tif', image)
     
     if event is None or not event.is_set():    
         x_map = np.zeros((num_subframes[1],num_subframes[0]))

@@ -39,7 +39,6 @@ class ScanMap(Panel.Panel):
         super(ScanMap, self).__init__(document_controller, panel_id, "Example")
 
         ui = document_controller.ui
-
         # user interface
 
         column = ui.create_column_widget()
