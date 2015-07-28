@@ -29,16 +29,17 @@ import autoalign
 
 
 #global variable to store aberrations when simulating them (see function image_grabber() for details)
-global_aberrations = {'EHTFocus': 1.5, 'C12_a': -3.0, 'C12_b': 2.5, 'C21_a': 1138.0, 'C21_b': 200, 'C23_a': 90, 'C23_b': 60.0}
+global_aberrations = {'EHTFocus': 0, 'C12_a': 0, 'C12_b': 0, 'C21_a': 1138.0, 'C21_b': 0, 'C23_a': 0, 'C23_b': -500}
+#global_aberrations = {'EHTFocus': 3.0, 'C12_a': 2.0, 'C12_b': -2.0, 'C21_a': 369.0, 'C21_b': 0.0, 'C23_a': 50.0, 'C23_b': -63.0}
     
 class DirtError(Exception):
     """
     Custom Exception to specify that too much dirt was found in an image to perform a certain operation.
     """
 
-def measure_symmetry(image):
+def measure_symmetry(image, imsize):
     point_mirrored = np.flipud(np.fliplr(image)) 
-    return autoalign.find_shift(image, point_mirrored, ratio=0.05)
+    return autoalign.find_shift(image, point_mirrored, ratio=0.142/imsize/2)
     
 def fourier_filter(image, imsize):
     peaks = find_peaks(image, imsize, second_order=True, half_line_thickness=3)
@@ -54,6 +55,19 @@ def fourier_filter(image, imsize):
                 fft[peak[0]-maskradius:peak[0]+maskradius+1, peak[1]-maskradius:peak[1]+maskradius+1]*mask    
     
     return np.real(np.fft.ifft2(np.fft.fftshift(fft_masked)))
+    
+def symmetry_merit(image, imsize, mask=None):
+    if mask is None:
+        mean = np.mean(image)
+    else:
+        mean = np.mean(image[mask==0])
+        
+    ffil = fourier_filter(image, imsize)
+    
+    if mask is None:
+        return (measure_symmetry(ffil, imsize)[1], np.var(ffil)/mean**2*100)
+    else:
+        return (measure_symmetry(ffil, imsize)[1]*(1.0-np.sum(mask)/np.size(mask)), np.var(ffil[mask==0]/mean**2*50))
     
 def set_frame_parameters(superscan, frame_parameters):
     """
@@ -193,6 +207,17 @@ def dirt_detector(image, threshold=0.02, median_blur_diam=39, gaussian_blur_radi
     if median_blur_diam%2==0:
         median_blur_diam+=1
     return cv2.medianBlur(mask, median_blur_diam)
+    
+def tuning_merit(imsize, average_frames, integration_radius, save_images, savepath, dirt_threshold, kwargs):
+    intensities, image, mask = check_tuning(imsize, average_frames=average_frames, integration_radius=integration_radius, \
+                        save_images=save_images, savepath=savepath, return_image = True, dirt_threshold=dirt_threshold, **kwargs)
+    
+    symmetry = symmetry_merit(image, imsize, mask=mask)
+    
+    print('sum intensities: ' + str(np.sum(intensities)) + '\tvar intensities: ' + str(np.std(intensities)) + '\tsymmetry: ' + str(symmetry))
+    #return 1.0/(np.sum(intensities/1e6) + np.sum(symmetry) + np.count_nonzero(intensities)/10.0)
+    return 1.0/(np.sum(symmetry))
+    
 
 def kill_aberrations(superscan=None, as2=None, focus_step=2, astig2f_step=2, astig3f_step=75, coma_step=300, average_frames=3, integration_radius=1, image=None, \
                     imsize=None, only_focus=False, save_images=False, savepath=None, document_controller=None, event=None, mode='magnitude', dirt_threshold=0.015, \
@@ -237,7 +262,7 @@ def kill_aberrations(superscan=None, as2=None, focus_step=2, astig2f_step=2, ast
         global_aberrations = {'EHTFocus': 0.0, 'C12_a': 0.0, 'C12_b': 0.0, 'C21_a': 0.0, 'C21_b': 0.0, 'C23_a': 0.0, 'C23_b': 0.0}
     
     total_tunings = []
-    total_lens = []
+#    total_lens = []
     counter = 0
 
     kwargs = {'EHTFocus': 0.0, 'C12_a': 0.0, 'C12_b': 0.0, 'C21_a': 0.0, 'C21_b': 0.0, 'C23_a': 0.0, 'C23_b': 0.0, 'relative_aberrations': True,\
@@ -264,10 +289,12 @@ def kill_aberrations(superscan=None, as2=None, focus_step=2, astig2f_step=2, ast
         steps.append(astig3f_step)
     
     try:
-        current = check_tuning(frame_parameters['fov'], average_frames=average_frames, integration_radius=integration_radius, \
-                                save_images=save_images, savepath=savepath, **kwargs)
+        #current = check_tuning(frame_parameters['fov'], average_frames=average_frames, integration_radius=integration_radius, \
+        #                       save_images=save_images, savepath=savepath, dirt_threshold=dirt_threshold, **kwargs)
+        current = tuning_merit(frame_parameters['fov'], average_frames, integration_radius, save_images, savepath, dirt_threshold, kwargs)
     except RuntimeError:
-        current = np.ones(12)
+        #current = np.ones(12)
+        current = 1e5
     except DirtError:
         logwrite('Tuning ended because of too high dirt coverage.', level='warn')
         raise
@@ -277,7 +304,7 @@ def kill_aberrations(superscan=None, as2=None, focus_step=2, astig2f_step=2, ast
             break
         start_time = time.time()
         aberrations_last_run = global_aberrations.copy()
-        if counter > 1 and len(total_tunings) < counter+1:
+        if counter > 0 and len(total_tunings) < counter+1:
             logwrite('Finished tuning because no improvements could be found anymore.')
             break
 
@@ -292,7 +319,7 @@ def kill_aberrations(superscan=None, as2=None, focus_step=2, astig2f_step=2, ast
         
         logwrite('Starting run number '+str(counter+1))
         part_tunings = []
-        part_lens = []
+#        part_lens = []
         
         for i in range(len(keys)):
             
@@ -300,9 +327,11 @@ def kill_aberrations(superscan=None, as2=None, focus_step=2, astig2f_step=2, ast
                 break
             
             if counter == 0 and i==0:
-                total_tunings.append(merit(current))
-                logwrite('Appending start value: ' + str(merit(current)))
-                total_lens.append(np.count_nonzero(current))
+                #total_tunings.append(merit(current))
+                total_tunings.append(current)
+                #logwrite('Appending start value: ' + str(merit(current)))
+                logwrite('Appending start value: ' + str(current))
+                #total_lens.append(np.count_nonzero(current))
 
             logwrite('Working on: '+keys[i])
             #vt.as2_set_control(controls[i], start+steps[i]*1e-9)
@@ -313,10 +342,12 @@ def kill_aberrations(superscan=None, as2=None, focus_step=2, astig2f_step=2, ast
                 kwargs[keys[i]] = steps[i]*step_multiplicator
                 changes += steps[i]*step_multiplicator
                 try:            
-                    plus = check_tuning(frame_parameters['fov'], average_frames=average_frames, integration_radius=integration_radius, \
-                                        save_images=save_images, savepath=savepath, mode=mode, dirt_threshold=dirt_threshold, **kwargs)
+#                    plus = check_tuning(frame_parameters['fov'], average_frames=average_frames, integration_radius=integration_radius, \
+#                                        save_images=save_images, savepath=savepath, mode=mode, dirt_threshold=dirt_threshold, **kwargs)
+                    plus = tuning_merit(frame_parameters['fov'], average_frames, integration_radius, save_images, savepath, dirt_threshold, kwargs)
                 except RuntimeError:
-                    plus = np.ones(12)
+                    #plus = np.ones(12)
+                    plus = 1e5
                 except DirtError:
                     if online:
                         for key, value in global_aberrations.items():
@@ -330,10 +361,12 @@ def kill_aberrations(superscan=None, as2=None, focus_step=2, astig2f_step=2, ast
                 kwargs[keys[i]] = -2.0*steps[i]*step_multiplicator
                 changes += -2.0*steps[i]*step_multiplicator
                 try:
-                    minus = check_tuning(frame_parameters['fov'], average_frames=average_frames, integration_radius=integration_radius, \
-                                        save_images=save_images, savepath=savepath, mode=mode, dirt_threshold=dirt_threshold, **kwargs)
+#                    minus = check_tuning(frame_parameters['fov'], average_frames=average_frames, integration_radius=integration_radius, \
+#                                        save_images=save_images, savepath=savepath, mode=mode, dirt_threshold=dirt_threshold, **kwargs)
+                    minus = tuning_merit(frame_parameters['fov'], average_frames, integration_radius, save_images, savepath, dirt_threshold, kwargs)
                 except RuntimeError:
-                    minus = np.ones(12)
+                    #minus = np.ones(12)
+                    minus = 1e5
                 except DirtError:
                     if online:
                         for key, value in global_aberrations.items():
@@ -343,15 +376,17 @@ def kill_aberrations(superscan=None, as2=None, focus_step=2, astig2f_step=2, ast
                     logwrite('Tuning ended because of too high dirt coverage.', level='warn')
                     raise
                 
-                if merit(minus) < merit(plus) and merit(minus) < merit(current) \
-                    and np.count_nonzero(minus) >= np.count_nonzero(plus) and np.count_nonzero(minus) >= np.count_nonzero(current):
+#                if merit(minus) < merit(plus) and merit(minus) < merit(current) \
+#                    and np.count_nonzero(minus) >= np.count_nonzero(plus) and np.count_nonzero(minus) >= np.count_nonzero(current):
+                if minus < plus and minus < current:
                     direction = -1
                     current = minus
                     #setting the stepsize to new value
                     steps[i] *= step_multiplicator
                     break
-                elif merit(plus) < merit(minus) and merit(plus) < merit(current) \
-                    and np.count_nonzero(plus) >= np.count_nonzero(minus) and np.count_nonzero(plus) >= np.count_nonzero(current):
+#                elif merit(plus) < merit(minus) and merit(plus) < merit(current) \
+#                    and np.count_nonzero(plus) >= np.count_nonzero(minus) and np.count_nonzero(plus) >= np.count_nonzero(current):
+                elif plus < minus and plus < current:
                     direction = 1
                     current = plus
                     #setting the stepsize to new value
@@ -388,8 +423,9 @@ def kill_aberrations(superscan=None, as2=None, focus_step=2, astig2f_step=2, ast
                 kwargs[keys[i]] = direction*steps[i]
                 changes += direction*steps[i]
                 try:
-                    next_frame = check_tuning(frame_parameters['fov'], average_frames=average_frames, integration_radius=integration_radius, \
-                                            save_images=save_images, savepath=savepath, mode=mode, dirt_threshold=dirt_threshold, **kwargs)
+#                    next_frame = check_tuning(frame_parameters['fov'], average_frames=average_frames, integration_radius=integration_radius, \
+#                                            save_images=save_images, savepath=savepath, mode=mode, dirt_threshold=dirt_threshold, **kwargs)
+                    next_frame = tuning_merit(frame_parameters['fov'], average_frames, integration_radius, save_images, savepath, dirt_threshold, kwargs)
                 except RuntimeError:
                     #vt.as2_set_control(controls[i], start+direction*(small_counter-1)*steps[i]*1e-9)
                     kwargs[keys[i]] = -direction*steps[i]
@@ -405,25 +441,30 @@ def kill_aberrations(superscan=None, as2=None, focus_step=2, astig2f_step=2, ast
                     logwrite('Tuning ended because of too high dirt coverage.', level='warn')
                     raise
                 
-                if merit(next_frame) >= merit(current) or np.count_nonzero(next_frame) < np.count_nonzero(current):
+                #if merit(next_frame) >= merit(current) or np.count_nonzero(next_frame) < np.count_nonzero(current):
+                if next_frame >= current:
                     #vt.as2_set_control(controls[i], start+direction*(small_counter-1)*steps[i]*1e-9)
                     kwargs[keys[i]] = -direction*steps[i]
                     changes -= direction*steps[i]
                     #update hardware
                     image_grabber(acquire_image=False, **kwargs)
-                    part_tunings.append(merit(current))
-                    part_lens.append(np.count_nonzero(current))
+                    #part_tunings.append(merit(current))
+                    part_tunings.append(current)
+                    #part_lens.append(np.count_nonzero(current))
                     break
                 current = next_frame
             #only keep changes if they improve the overall tuning
             if len(total_tunings) > 0:
-                if merit(current) > np.amin(total_tunings) or np.count_nonzero(current) < np.amax(total_lens):
+                #if merit(current) > np.amin(total_tunings) or np.count_nonzero(current) < np.amax(total_lens):
+                if current > np.amin(total_tunings):
                     #vt.as2_set_control(controls[i], start)
                     kwargs[keys[i]] = -changes
                     #update hardware
                     try:
-                        current = check_tuning(frame_parameters['fov'], average_frames=average_frames, integration_radius=integration_radius, \
-                                                save_images=save_images, savepath=savepath, mode=mode, dirt_threshold=dirt_threshold, **kwargs)
+#                        current = check_tuning(frame_parameters['fov'], average_frames=average_frames, integration_radius=integration_radius, \
+#                                                save_images=save_images, savepath=savepath, mode=mode, dirt_threshold=dirt_threshold, **kwargs)
+                        current  = tuning_merit(frame_parameters['fov'], average_frames, integration_radius, save_images, savepath, dirt_threshold, kwargs)
+                        
                     except DirtError:
                         if online:
                             for key, value in global_aberrations.items():
@@ -442,14 +483,15 @@ def kill_aberrations(superscan=None, as2=None, focus_step=2, astig2f_step=2, ast
         if len(part_tunings) > 0:
             logwrite('Appending best value of this run to total_tunings: '+str(np.amin(part_tunings)))
             total_tunings.append(np.amin(part_tunings))
-            total_lens.append(np.amax(part_lens))
+            #total_lens.append(np.amax(part_lens))
         logwrite('Finished run number '+str(counter+1)+' in '+str(time.time()-start_time)+' s.')
         counter += 1
     
     if save_images:    
         try:
-            check_tuning(frame_parameters['fov'], average_frames=0, integration_radius=integration_radius, \
-                        save_images=save_images, savepath=savepath, mode=mode, dirt_threshold=dirt_threshold, **kwargs)
+#            check_tuning(frame_parameters['fov'], average_frames=0, integration_radius=integration_radius, \
+#                        save_images=save_images, savepath=savepath, mode=mode, dirt_threshold=dirt_threshold, **kwargs)
+            tuning_merit(frame_parameters['fov'], average_frames, integration_radius, save_images, savepath, dirt_threshold, kwargs)
         except DirtError:
             if online:
                 for key, value in global_aberrations.items():
@@ -595,7 +637,10 @@ def positive_angle(angle):
         return angle
 
 def check_tuning(imagesize, im=None, check_astig=False, average_frames=0, integration_radius=0, save_images=False, savepath=None, \
-                process_image=True, mode='magnitude', dirt_threshold = 0.015, **kwargs):
+                process_image=True, return_image = False, dirt_threshold = 0.015, **kwargs):
+
+    global global_aberrations                    
+                    
     if not kwargs.has_key('imsize'):
         kwargs['imsize'] = imagesize
     else:
@@ -605,20 +650,14 @@ def check_tuning(imagesize, im=None, check_astig=False, average_frames=0, integr
         if im is not None and not kwargs.has_key('image'):
             kwargs['image'] = im
         im = image_grabber(**kwargs)
-        mask = dirt_detector(im, threshold=dirt_threshold)
-        if np.sum(mask) > 0.5*np.prod(np.array(np.shape(im))):
-            raise DirtError('Cannot check tuning of images with more than 50% dirt coverage.')
             
     if average_frames > 1:
         im = []
+        #Acquire only one image in the first place to avoid "stacking" of aberations
         single_image = image_grabber(**kwargs)
-
-        mask = dirt_detector(single_image, threshold=dirt_threshold)
-        if np.sum(mask) > 0.5*np.prod(np.array(np.shape(single_image))):
-            raise DirtError('Cannot check tuning of images with more than 50% dirt coverage.')
-            
         im.append(single_image)
         
+        #remove aberrations from kwargs fore next frames
         kwargs2 = kwargs.copy()
         if kwargs.has_key('relative_aberrations') and kwargs['relative_aberrations']:
                 if not kwargs.has_key('reset_aberrations') or (kwargs.has_key('reset_aberrations') and not kwargs['reset_aberrations']):
@@ -629,11 +668,15 @@ def check_tuning(imagesize, im=None, check_astig=False, average_frames=0, integr
         for i in range(average_frames-1):
             im.append(image_grabber(**kwargs2))
             
+#Apply dirt detection, but only when real images are used
+    #Averaging is only done with real images
+    mask = None
     if average_frames > 1:
         for image in im:
             mask = dirt_detector(image, threshold=0.015)
             if np.sum(mask) > 0.5*np.prod(np.array(np.shape(image))):
                 raise DirtError('Cannot check tuning of images with more than 50% dirt coverage.')
+    #If no image is provided or just a tuning check without real or simulated acquisition should be done it is real data
     elif not kwargs.has_key('image') or not process_image:
         mask = dirt_detector(im, threshold=0.015)
         if np.sum(mask) > 0.5*np.prod(np.array(np.shape(im))):
@@ -644,9 +687,10 @@ def check_tuning(imagesize, im=None, check_astig=False, average_frames=0, integr
             os.makedirs(savepath)
         name = str(int(time.time()*100))+'.tif'
         logfile = open(savepath+'log.txt', 'a')
-        kwargs2 = kwargs.copy()
-        kwargs2.pop('image', 0)
-        logfile.write(name+': '+str(kwargs2)+'\n')
+#        kwargs2 = kwargs.copy()
+#        kwargs2.pop('image', 0)
+#        logfile.write(name+': '+str(kwargs2)+'\n')
+        logfile.write(name+': '+str(global_aberrations)+'\n')
         logfile.close()
         if average_frames < 2:
             tifffile.imsave(savepath+name, im.astype('float32'))
@@ -665,7 +709,10 @@ def check_tuning(imagesize, im=None, check_astig=False, average_frames=0, integr
         intensities.append(peak[3])
     intensities=np.array(intensities)
     
-    return intensities        
+    if return_image:
+        return (intensities, (im if average_frames < 2 else im[0]) , mask)
+    else:        
+        return intensities        
 
 def optimize_tuning(imsize, im=None, astig_stepsize=0.1, focus_stepsize=1.0, tune_astig=False, save_iterations=False):
     #Take a focus series to find correct astigmatism 
