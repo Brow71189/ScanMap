@@ -29,7 +29,7 @@ import autoalign
 
 
 #global variable to store aberrations when simulating them (see function image_grabber() for details)
-global_aberrations = {'EHTFocus': 0, 'C12_a': 0, 'C12_b': 0, 'C21_a': 1138.0, 'C21_b': 0, 'C23_a': 0, 'C23_b': -500}
+global_aberrations = {'EHTFocus': 0, 'C12_a': 5, 'C12_b': 0, 'C21_a': 801.0, 'C21_b': 0, 'C23_a': -500, 'C23_b': 0}
 #global_aberrations = {'EHTFocus': 3.0, 'C12_a': 2.0, 'C12_b': -2.0, 'C21_a': 369.0, 'C21_b': 0.0, 'C23_a': 50.0, 'C23_b': -63.0}
     
 class DirtError(Exception):
@@ -190,9 +190,88 @@ def create_record_parameters(superscan, frame_parameters, detectors={'HAADF': Fa
         channels_enabled = None
 
     return {'frame_parameters': parameters, 'channels_enabled': channels_enabled}
-        
-        
+
+def graphene_generator(imsize, impix, rotation):
+    rotation = rotation*np.pi/180
+    image = np.zeros((impix, impix))
+    rotation_matrix = np.array( ( (np.cos(2.0/3.0*np.pi), np.sin(2.0/3.0*np.pi)), (-np.sin(2.0/3.0*np.pi), np.cos(2.0/3.0*np.pi)) ) )
+    #define basis vectors of unit cell, a1 and a2
+    basis_length = 0.142 * np.sqrt(3) * impix/float(imsize)
+    a1 = np.array((np.cos(rotation), np.sin(rotation))) * basis_length
+    a2 = np.dot(a1, rotation_matrix)
+    #print(a1)
+    #print(a2)
+    a1position = np.array((0.0,0.0))
+    a2position = np.array((0.0,0.0))
+    a2direction = 1.0
     
+    
+    while (a1position < impix*2).all():
+        success = True
+        
+        while success:
+            firsta2 = a2position.copy()
+            cellposition = a1position + a2position
+            #print(str(a1position) + ', '  + str(a2position))
+            #print(cellposition)
+            
+            #place atoms
+            if (cellposition+a1/3.0+a2*(2.0/3.0) < impix).all() and (cellposition+a1/3.0+a2*(2.0/3.0) >= 0).all():
+                success = True
+                y,x = cellposition+a1/3.0+a2*(2.0/3.0)
+                pixelvalues = distribute_intensity(x,y)
+                pixelpositions = [(0,0), (0,1), (1,1), (1,0)]
+                
+                for i in range(len(pixelvalues)):
+                    try:
+                        image[np.floor(y)+pixelpositions[i][0],np.floor(x)+pixelpositions[i][1]] = pixelvalues[i]
+                    except IndexError:
+                        print('Could not put pixel at: ' + str((np.floor(y)+pixelpositions[i][0],np.floor(x)+pixelpositions[i][1])))
+            else:
+                success = False
+                
+            if (cellposition+a2/3.0+a1*(2.0/3.0) < impix).all() and (cellposition+a2/3.0+a1*(2.0/3.0) >= 0).all():
+                success = True
+                y,x = cellposition+a2/3.0+a1*(2.0/3.0)
+                pixelvalues = distribute_intensity(x,y)
+                pixelpositions = [(0,0), (0,1), (1,1), (1,0)]
+                
+                for i in range(len(pixelvalues)):
+                    try:
+                        image[np.floor(y)+pixelpositions[i][0],np.floor(x)+pixelpositions[i][1]] = pixelvalues[i]
+                    except IndexError:
+                        print('Could not put pixel at: ' + str((np.floor(y)+pixelpositions[i][0],np.floor(x)+pixelpositions[i][1])))
+            else:
+                success = False
+        
+            if not success and a2direction == 1:
+                a2position = firsta2-a2
+                a2direction = -1.0
+                success = True
+            elif not success and a2direction == -1:
+                a2position += 3.0*a2
+                a2direction = 1.0
+            else:
+                a2position += a2direction*a2
+        
+        a1position += a1
+    
+    return image
+
+def distribute_intensity(x,y):
+    """
+    Distributes the intensity of a pixel at a non-integer-position (x,y) over four pixels.
+    Returns a list of four values. The first element belongs to the pixel (floor(x), floor(y)),
+    the following are ordered clockwise.
+    """
+    result = []
+    result.append( ( 1.0-(x-np.floor(x)) ) * ( 1.0-(y-np.floor(y)) ) )
+    result.append( ( x-np.floor(x) ) * ( 1.0-(y-np.floor(y)) ) )
+    result.append( ( x-np.floor(x) ) * ( y-np.floor(y) ) )
+    result.append( ( 1.0-(x-np.floor(x)) ) * ( y-np.floor(y) ) )
+    
+    return result
+            
 def dirt_detector(image, threshold=0.02, median_blur_diam=39, gaussian_blur_radius=3):
     """
     Returns a mask with the same shape as "image" that is 1 where there is dirt and 0 otherwise
@@ -214,9 +293,9 @@ def tuning_merit(imsize, average_frames, integration_radius, save_images, savepa
     
     symmetry = symmetry_merit(image, imsize, mask=mask)
     
-    print('sum intensities: ' + str(np.sum(intensities)) + '\tvar intensities: ' + str(np.std(intensities)) + '\tsymmetry: ' + str(symmetry))
+    print('sum intensities: ' + str(np.sum(intensities)) + '\tvar intensities: ' + str(np.std(intensities)/np.sum(intensities)) + '\tsymmetry: ' + str(symmetry))
     #return 1.0/(np.sum(intensities/1e6) + np.sum(symmetry) + np.count_nonzero(intensities)/10.0)
-    return 1.0/(np.sum(symmetry))
+    return 1.0/(np.sum(intensities)/1e6 + np.sum(symmetry))
     
 
 def kill_aberrations(superscan=None, as2=None, focus_step=2, astig2f_step=2, astig3f_step=75, coma_step=300, average_frames=3, integration_radius=1, image=None, \
@@ -309,11 +388,11 @@ def kill_aberrations(superscan=None, as2=None, focus_step=2, astig2f_step=2, ast
             break
 
         if len(total_tunings) > 1:        
-            logwrite('Improved tuning by '+str((total_tunings[-2]-total_tunings[-1])/((total_tunings[-2]+total_tunings[-1])*0.5)*100)+'%.')
+            logwrite('Improved tuning by '+str(np.abs((total_tunings[-2]-total_tunings[-1])/((total_tunings[-2]+total_tunings[-1])*0.5)*100))+'%.')
 
         if len(total_tunings) > 2:
             #if total_tunings[-2]-total_tunings[-1] < 0.1*(total_tunings[-3]-total_tunings[-2]):
-            if (total_tunings[-2]-total_tunings[-1])/((total_tunings[-2]+total_tunings[-1])*0.5) < 0.02:
+            if np.abs((total_tunings[-2]-total_tunings[-1])/((total_tunings[-2]+total_tunings[-1])*0.5)) < 0.02:
                 logwrite('Finished tuning successfully after %d runs.' %(counter))
                 break
         
