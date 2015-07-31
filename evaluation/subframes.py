@@ -54,7 +54,7 @@ def rotation_radius(image, imsize, find_distortions=True):
         Angle (in rad) between x-axis and the first reflection in counter-clockwise direction
     """
     try:
-        peaks_first, peaks_second = at.find_peaks(image, imsize, half_line_thickness=2, position_tolerance = 10, second_order=True)
+        peaks_first, peaks_second = at.find_peaks(image, imsize, half_line_thickness=2, position_tolerance = 10, integration_radius = 1, second_order=True)
     except:
         raise
     else:
@@ -75,9 +75,11 @@ def rotation_radius(image, imsize, find_distortions=True):
             sum_rotation += angle%(np.pi/3)
         
         if find_distortions:
-            return (sum_rotation/float(len(angles)), np.mean(radii), np.count_nonzero(peaks_first[:,-1])+np.count_nonzero(peaks_second[:,-1])) + fit_ellipse(angles, radii)
+            return (sum_rotation/float(len(angles)), np.mean(radii), np.count_nonzero(peaks_first[:,-1])+np.count_nonzero(peaks_second[:,-1]), \
+                    np.sum(peaks_first[:,-1])+np.sum(peaks_second[:,-1])) + fit_ellipse(angles, radii)
         else:
-            return (sum_rotation/float(len(angles)), np.mean(radii), np.count_nonzero(peaks_first[:,-1])+np.count_nonzero(peaks_second[:,-1]))
+            return (sum_rotation/float(len(angles)), np.mean(radii), np.count_nonzero(peaks_first[:,-1])+np.count_nonzero(peaks_second[:,-1]), \
+                    np.sum(peaks_first[:,-1])+np.sum(peaks_second[:,-1]))
     
 def calculate_counts(image, threshold=1e-9):
     """
@@ -141,11 +143,11 @@ def subframes_preprocessing(filename, dirname, imsize, counts_threshold=1e-9, di
     
     #get angle of rotation and peak radius
     try:
-        rotation, radius, number_peaks, ellipse_a, ellipse_b, angle = rotation_radius(image, imsize)
+        rotation, radius, number_peaks, peak_intensities_sum, ellipse_a, ellipse_b, angle = rotation_radius(image, imsize)
     except Exception as detail:
         print('Error in '+ filename + ': ' + str(detail))
         rotation = ellipse_a = ellipse_b = angle = np.NaN
-        number_peaks = 0
+        number_peaks = peak_intensities_sum = 0
         #peaks = None
         success = False
     
@@ -182,17 +184,17 @@ def subframes_preprocessing(filename, dirname, imsize, counts_threshold=1e-9, di
         
     
     #return image parameters
-    return (filename, dirt_coverage, number_peaks, rotation, ellipse_a, ellipse_b, angle, success)
+    return (filename, dirt_coverage, number_peaks, peak_intensities_sum, rotation, ellipse_a, ellipse_b, angle, success)
 
 if __name__ == '__main__':
     
     overall_starttime = time.time()
 
-    dirpath = '/3tb/maps_data/map_2015_06_19_12_56/'
+    dirpath = '/3tb/maps_data/map_2015_06_02_12_37/'
     #dirpath = '/3tb/Dark_noise/'
     imsize = 20
-    dirt_threshold = 0.0037
-    dirt_border = 100
+    dirt_threshold = 0.0033
+    dirt_border = 50
 
     if not dirpath.endswith('/'):
         dirpath += '/'
@@ -229,11 +231,11 @@ if __name__ == '__main__':
     frame_data_file.write('#Created: ' + time.strftime('%Y/%m/%d %H:%M') + '\n')
     frame_data_file.write('#Imagesize in nm: %.1f\tDirt threshold: %f\tDirt border: %d\n' %(imsize, dirt_threshold, dirt_border))
     frame_data_file.write('#Meanings of the values are:\n')
-    frame_data_file.write('#filename\tdirt\tnumpeak\ttilt\tella\tellb\tellphi\n\n')
+    frame_data_file.write('#filename\tdirt\tnumpeak\ttuning\ttilt\tella\tellb\tellphi\n\n')
     
     for frame_data in res_list:
         if frame_data[-1]:
-                frame_data_file.write('%s\t%.3f\t%d\t%.6f\t%.6f\t%.6f\t%.6f\n' % frame_data[0:7])
+                frame_data_file.write('%s\t%.3f\t%d\t%.2f\t%.6f\t%.6f\t%.6f\t%.6f\n' % frame_data[0:8])
     
     frame_data_file.close()
     
