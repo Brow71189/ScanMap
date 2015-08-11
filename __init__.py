@@ -1,2 +1,2 @@
-import ScanMap
-import SuperScanTuner
+from . import ScanMap
+from . import SuperScanTuner

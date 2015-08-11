@@ -25,7 +25,7 @@ except:
     except:
         logging.warn('Could not import Vienna tools!')
 
-import autoalign
+from . import autoalign
 
 
 #global variable to store aberrations when simulating them (see function image_grabber() for details)
@@ -841,7 +841,7 @@ def optimize_tuning(imsize, im=None, astig_stepsize=0.1, focus_stepsize=1.0, tun
             elif np.abs(focus_tunings[i]-focus_tunings[i+1]) >= np.pi/2.4:
                 angle_difference = focus_tunings[i][2] - focus_tunings[i+1][2]
                 best_focus = np.mean((focus_values[i],focus_values[i+1]))
-                print best_focus
+                print(best_focus)
                 overfocus = i+1
                 break
         

@@ -21,9 +21,9 @@ except:
     except:
         logging.warn('Could not import Vienna tools!')
     
-import autotune
-from autotune import DirtError
-import autoalign
+from . import autotune
+from .autotune import DirtError
+from . import autoalign
 
 
 def find_offset_and_rotation():

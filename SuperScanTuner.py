@@ -9,8 +9,9 @@ import logging
 import os
 import threading
 import time
+from importlib import reload
 
-import maptools.autotune as autotune
+from .maptools import autotune
 
 _ = gettext.gettext
 

@@ -3,6 +3,7 @@ import gettext
 import logging
 import numpy as np
 import threading
+from importlib import reload
 # third party libraries
 # None
 try:
@@ -20,7 +21,7 @@ from nion.swift.model import DataItem
 from nion.ui import Binding
 #document_controller.ui is object of nion.ui.UserInterface.QtUserInterface
 
-import maptools.mapper as mapper
+from .maptools import mapper
 
 _ = gettext.gettext
 
