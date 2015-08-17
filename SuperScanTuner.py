@@ -118,7 +118,8 @@ class SuperScanTunerPanelDelegate(object):
                 savepath = None
                 
         def start_button_clicked():
-            global focus_step, astig2f_step, astig3f_step, coma_step, average_frames, integration_radius, dirt_threshold, save_images, savepath
+            global focus_step, astig2f_step, astig3f_step, coma_step, average_frames, integration_radius
+            global dirt_threshold, save_images, savepath
             
             
             superscan = self.__api.get_hardware_source_by_id('scan_controller', '1')
@@ -136,9 +137,11 @@ class SuperScanTunerPanelDelegate(object):
                 keys.append('C12_b')
             if Coma.check_state == 'checked':
                 keys.append('C21_a')
-                keys.append('C21_b')
             if Threefold.check_state == 'checked':
                 keys.append('C23_a')
+            if Coma.check_state == 'checked':
+                keys.append('C21_b')
+            if Threefold.check_state == 'checked':
                 keys.append('C23_b')
             
             if len(keys) < 1:
@@ -149,19 +152,32 @@ class SuperScanTunerPanelDelegate(object):
                 if savepath is not None:
                     save_images = True
                 else:
-                    logging.warn('You have to enter a valid path in \"savepath\" if you want to save the images acquired during tuning.')
+                    logging.warn('You have to enter a valid path in \"savepath\" if you want to save ' +
+                                 'the images acquired during tuning.')
                     return
             else:
                 save_images = False
+                
+            
+            steps = {'EHTFocus': focus_step, 'C12_a': astig2f_step, 'C12_b': astig2f_step, 'C21_a': coma_step,
+                     'C21_b': coma_step, 'C23_a': astig3f_step, 'C23_b': astig3f_step}
 
             logging.info('Started tuning.')
             
             self.event = threading.Event()
             #self.thread = threading.Thread(target=do_something, args=(self.event, document_controller))
-            self.thread = threading.Thread(target=autotune.kill_aberrations, kwargs={'focus_step': focus_step, 'astig2f_step': astig2f_step, 'astig3f_step': astig3f_step,\
-                                'coma_step': coma_step, 'average_frames': average_frames, 'integration_radius': integration_radius, 'save_images': save_images, \
-                                'savepath': savepath, 'document_controller': document_controller, 'event': self.event, 'keys': keys, 'dirt_threshold': dirt_threshold, \
-                                'superscan': superscan, 'as2': as2})
+            self.thread = threading.Thread(target=autotune.kill_aberrations,
+                                           kwargs={'steps': steps,
+                                                   'average_frames': average_frames,
+                                                   'integration_radius': integration_radius,
+                                                   'save_images': save_images,
+                                                   'savepath': savepath, 
+                                                   'document_controller': document_controller,
+                                                   'event': self.event,
+                                                   'keys': keys,
+                                                   'dirt_threshold': dirt_threshold,
+                                                   'superscan': superscan,
+                                                   'as2': as2})
                                 
             self.thread.start()
             

@@ -25,12 +25,15 @@ except:
     except:
         logging.warn('Could not import Vienna tools!')
 
-from . import autoalign
+try:
+    from . import autoalign
+except:
+    import autoalign
 
 
 #global variable to store aberrations when simulating them (see function image_grabber() for details)
-global_aberrations = {'EHTFocus': 0, 'C12_a': 5, 'C12_b': 0, 'C21_a': 801.0, 'C21_b': 0, 'C23_a': -500, 'C23_b': 0}
-#global_aberrations = {'EHTFocus': 3.0, 'C12_a': 2.0, 'C12_b': -2.0, 'C21_a': 369.0, 'C21_b': 0.0, 'C23_a': 50.0, 'C23_b': -63.0}
+#global_aberrations = {'EHTFocus': 0, 'C12_a': 5, 'C12_b': 0, 'C21_a': 801.0, 'C21_b': 0, 'C23_a': -500, 'C23_b': 0}
+global_aberrations = {'EHTFocus': 3.0, 'C12_a': 2.0, 'C12_b': -2.0, 'C21_a': 30.0, 'C21_b': 0.0, 'C23_a': 50.0, 'C23_b': -63.0}
     
 class DirtError(Exception):
     """
@@ -69,47 +72,47 @@ def symmetry_merit(image, imsize, mask=None):
     else:
         return (measure_symmetry(ffil, imsize)[1]*(1.0-np.sum(mask)/np.size(mask)), np.var(ffil[mask==0]/mean**2*50))
     
-def set_frame_parameters(superscan, frame_parameters):
-    """
-    Sets the parameters for image acqusition in the microscope.
-    
-    Parameters
-    -----------
-    superscan : hardware source object
-        An instance of the superscan hardware source
-    
-    frame_parameters : dictionary
-        Frame parameters to set in the microscope. Possible keys are:
-        
-        - size_pixels: Number of pixels in x- and y-direction of the acquired frame as tuple (x,y)
-        - center: Offset for the center of the scanned area in x- and y-direction (nm) as tuple (x,y)
-        - pixeltime: Time per pixel (us)
-        - fov: Field-of-view of the acquired frame (nm)
-        - rotation: Scan rotation (deg)
-    
-    Returns
-    --------
-    None
-    """
-    
-    parameters = superscan.get_default_frame_parameters()
-    
-    if frame_parameters.has_key('size_pixels') and frame_parameters['size_pixels'] is not None:
-        parameters.size = frame_parameters['size_pixels']
-    
-    if frame_parameters.has_key('center') and frame_parameters['center'] is not None:
-        parameters.center_nm = frame_parameters['center']
-    
-    if frame_parameters.has_key('pixeltime') and frame_parameters['pixeltime'] is not None:
-        parameters.pixel_time_us = frame_parameters['pixeltime']
-    
-    if frame_parameters.has_key('fov') and frame_parameters['fov'] is not None:
-        parameters.fov_nm = frame_parameters['fov']
-    
-    if frame_parameters.has_key('rotation') and frame_parameters['rotation'] is not None:
-        parameters.rotation_deg = frame_parameters['rotation']
-        
-    superscan.set_default_frame_parameters(parameters)
+#def set_frame_parameters(superscan, frame_parameters):
+#    """
+#    Sets the parameters for image acqusition in the microscope.
+#    
+#    Parameters
+#    -----------
+#    superscan : hardware source object
+#        An instance of the superscan hardware source
+#    
+#    frame_parameters : dictionary
+#        Frame parameters to set in the microscope. Possible keys are:
+#        
+#        - size_pixels: Number of pixels in x- and y-direction of the acquired frame as tuple (x,y)
+#        - center: Offset for the center of the scanned area in x- and y-direction (nm) as tuple (x,y)
+#        - pixeltime: Time per pixel (us)
+#        - fov: Field-of-view of the acquired frame (nm)
+#        - rotation: Scan rotation (deg)
+#    
+#    Returns
+#    --------
+#    None
+#    """
+#    
+#    parameters = superscan.get_default_frame_parameters()
+#    
+#    if frame_parameters.has_key('size_pixels') and frame_parameters['size_pixels'] is not None:
+#        parameters.size = frame_parameters['size_pixels']
+#    
+#    if frame_parameters.has_key('center') and frame_parameters['center'] is not None:
+#        parameters.center_nm = frame_parameters['center']
+#    
+#    if frame_parameters.has_key('pixeltime') and frame_parameters['pixeltime'] is not None:
+#        parameters.pixel_time_us = frame_parameters['pixeltime']
+#    
+#    if frame_parameters.has_key('fov') and frame_parameters['fov'] is not None:
+#        parameters.fov_nm = frame_parameters['fov']
+#    
+#    if frame_parameters.has_key('rotation') and frame_parameters['rotation'] is not None:
+#        parameters.rotation_deg = frame_parameters['rotation']
+#        
+#    superscan.set_default_frame_parameters(parameters)
         
 def get_frame_parameters(superscan):
     """
@@ -298,8 +301,9 @@ def tuning_merit(imsize, average_frames, integration_radius, save_images, savepa
     return 1.0/(np.sum(intensities)/1e6 + np.sum(symmetry))
     
 
-def kill_aberrations(superscan=None, as2=None, focus_step=2, astig2f_step=2, astig3f_step=75, coma_step=300, average_frames=3, integration_radius=1, image=None, \
-                    imsize=None, only_focus=False, save_images=False, savepath=None, document_controller=None, event=None, mode='magnitude', dirt_threshold=0.015, \
+def kill_aberrations(superscan=None, as2=None, document_controller=None, average_frames=3, integration_radius=1, image=None, \
+                    imsize=None, only_focus=False, save_images=False, savepath=None, event=None, dirt_threshold=0.015, \
+                    steps = {'EHTFocus': 2, 'C12_a': 2, 'C12_b': 2, 'C21_a': 300, 'C21_b': 300, 'C23_a': 75, 'C23_b': 75}, \
                     keys = ['EHTFocus', 'C12_a', 'C12_b', 'C21_a', 'C21_b', 'C23_a', 'C23_b'], \
                     frame_parameters={'size_pixels': (512, 512), 'center': (0,0), 'pixeltime': 4, 'fov': 8, 'rotation': 0}):
     
@@ -355,17 +359,17 @@ def kill_aberrations(superscan=None, as2=None, focus_step=2, astig2f_step=2, ast
             raise RuntimeError('You have to provide an image and its size (in nm) to use the offline mode.')
     
     steps = []        
-    if 'EHTFocus' in keys:
-        steps.append(focus_step)
-    if 'C12_a' in keys:
-        steps.append(astig2f_step)
-        steps.append(astig2f_step)
-    if 'C21_a' in keys:
-        steps.append(coma_step)
-        steps.append(coma_step)
-    if 'C23_a' in keys:
-        steps.append(astig3f_step)
-        steps.append(astig3f_step)
+#    if 'EHTFocus' in keys:
+#        steps.append(focus_step)
+#    if 'C12_a' in keys:
+#        steps.append(astig2f_step)
+#        steps.append(astig2f_step)
+#    if 'C21_a' in keys:
+#        steps.append(coma_step)
+#        steps.append(coma_step)
+#    if 'C23_a' in keys:
+#        steps.append(astig3f_step)
+#        steps.append(astig3f_step)
     
     try:
         #current = check_tuning(frame_parameters['fov'], average_frames=average_frames, integration_radius=integration_radius, \
@@ -377,7 +381,10 @@ def kill_aberrations(superscan=None, as2=None, focus_step=2, astig2f_step=2, ast
     except DirtError:
         logwrite('Tuning ended because of too high dirt coverage.', level='warn')
         raise
-        
+    
+    total_tunings.append(current)
+    logwrite('Appending start value: ' + str(current))
+    
     while counter < 11:
         if event is not None and event.is_set():
             break
@@ -400,26 +407,26 @@ def kill_aberrations(superscan=None, as2=None, focus_step=2, astig2f_step=2, ast
         part_tunings = []
 #        part_lens = []
         
-        for i in range(len(keys)):
+        for key in keys:
             
             if event is not None and event.is_set():
                 break
             
-            if counter == 0 and i==0:
-                #total_tunings.append(merit(current))
-                total_tunings.append(current)
-                #logwrite('Appending start value: ' + str(merit(current)))
-                logwrite('Appending start value: ' + str(current))
-                #total_lens.append(np.count_nonzero(current))
+#            if counter == 0 and i==0:
+#                #total_tunings.append(merit(current))
+#                total_tunings.append(current)
+#                #logwrite('Appending start value: ' + str(merit(current)))
+#                logwrite('Appending start value: ' + str(current))
+#                #total_lens.append(np.count_nonzero(current))
 
-            logwrite('Working on: '+keys[i])
+            logwrite('Working on: '+ key)
             #vt.as2_set_control(controls[i], start+steps[i]*1e-9)
             #time.sleep(0.1)
             step_multiplicator=1
             while step_multiplicator < 8:
                 changes = 0.0
-                kwargs[keys[i]] = steps[i]*step_multiplicator
-                changes += steps[i]*step_multiplicator
+                kwargs[key] = steps[key]*step_multiplicator
+                changes += steps[key]*step_multiplicator
                 try:            
 #                    plus = check_tuning(frame_parameters['fov'], average_frames=average_frames, integration_radius=integration_radius, \
 #                                        save_images=save_images, savepath=savepath, mode=mode, dirt_threshold=dirt_threshold, **kwargs)
@@ -437,8 +444,8 @@ def kill_aberrations(superscan=None, as2=None, focus_step=2, astig2f_step=2, ast
                     raise
     
                 #passing 2xstepsize to image_grabber to get from +1 to -1
-                kwargs[keys[i]] = -2.0*steps[i]*step_multiplicator
-                changes += -2.0*steps[i]*step_multiplicator
+                kwargs[key] = -2.0*steps[key]*step_multiplicator
+                changes += -2.0*steps[key]*step_multiplicator
                 try:
 #                    minus = check_tuning(frame_parameters['fov'], average_frames=average_frames, integration_radius=integration_radius, \
 #                                        save_images=save_images, savepath=savepath, mode=mode, dirt_threshold=dirt_threshold, **kwargs)
@@ -461,7 +468,7 @@ def kill_aberrations(superscan=None, as2=None, focus_step=2, astig2f_step=2, ast
                     direction = -1
                     current = minus
                     #setting the stepsize to new value
-                    steps[i] *= step_multiplicator
+                    steps[key] *= step_multiplicator
                     break
 #                elif merit(plus) < merit(minus) and merit(plus) < merit(current) \
 #                    and np.count_nonzero(plus) >= np.count_nonzero(minus) and np.count_nonzero(plus) >= np.count_nonzero(current):
@@ -469,28 +476,28 @@ def kill_aberrations(superscan=None, as2=None, focus_step=2, astig2f_step=2, ast
                     direction = 1
                     current = plus
                     #setting the stepsize to new value
-                    steps[i] *= step_multiplicator
+                    steps[key] *= step_multiplicator
                     #Setting aberrations to values of 'plus' which where the best so far
-                    kwargs[keys[i]] = 2.0*steps[i]*step_multiplicator
-                    changes += 2.0*steps[i]*step_multiplicator
+                    kwargs[key] = 2.0*steps[key]*step_multiplicator
+                    changes += 2.0*steps[key]*step_multiplicator
                     #update hardware
                     image_grabber(acquire_image=False, **kwargs)
                     break
                 else:
-                    kwargs[keys[i]] = -changes
+                    kwargs[key] = -changes
                     #update hardware
                     image_grabber(acquire_image=False, **kwargs)
-                    logwrite('Doubling the stepsize of '+keys[i]+'.')
-                    kwargs[keys[i]] = 0
+                    logwrite('Doubling the stepsize of '+key+'.')
+                    kwargs[key] = 0
                     step_multiplicator *= 2
             #This 'else' belongs to the while loop. It is executed when the loop ends 'normally', e.g. not through break or continue
             else:
                 #kwargs[keys[i]] = -changes
                 #update hardware
                 #image_grabber(acquire_image=False, **kwargs)
-                logwrite('Could not find a direction to improve '+keys[i]+'. Going to next aberration.')
+                logwrite('Could not find a direction to improve '+key+'. Going to next aberration.')
                 #reduce stepsize for next iteration
-                steps[i] *= 0.5
+                steps[key] *= 0.5
                 #kwargs[keys[i]] = 0
                 continue
             
@@ -499,16 +506,16 @@ def kill_aberrations(superscan=None, as2=None, focus_step=2, astig2f_step=2, ast
                 small_counter+=1
                 #vt.as2_set_control(controls[i], start+direction*small_counter*steps[i]*1e-9)
                 #time.sleep(0.1)
-                kwargs[keys[i]] = direction*steps[i]
-                changes += direction*steps[i]
+                kwargs[key] = direction*steps[key]
+                changes += direction*steps[key]
                 try:
 #                    next_frame = check_tuning(frame_parameters['fov'], average_frames=average_frames, integration_radius=integration_radius, \
 #                                            save_images=save_images, savepath=savepath, mode=mode, dirt_threshold=dirt_threshold, **kwargs)
                     next_frame = tuning_merit(frame_parameters['fov'], average_frames, integration_radius, save_images, savepath, dirt_threshold, kwargs)
                 except RuntimeError:
                     #vt.as2_set_control(controls[i], start+direction*(small_counter-1)*steps[i]*1e-9)
-                    kwargs[keys[i]] = -direction*steps[i]
-                    changes -= direction*steps[i]
+                    kwargs[key] = -direction*steps[key]
+                    changes -= direction*steps[key]
                     #update hardware
                     image_grabber(acquire_image=False, **kwargs)
                     break
@@ -523,8 +530,8 @@ def kill_aberrations(superscan=None, as2=None, focus_step=2, astig2f_step=2, ast
                 #if merit(next_frame) >= merit(current) or np.count_nonzero(next_frame) < np.count_nonzero(current):
                 if next_frame >= current:
                     #vt.as2_set_control(controls[i], start+direction*(small_counter-1)*steps[i]*1e-9)
-                    kwargs[keys[i]] = -direction*steps[i]
-                    changes -= direction*steps[i]
+                    kwargs[keys] = -direction*steps[key]
+                    changes -= direction*steps[key]
                     #update hardware
                     image_grabber(acquire_image=False, **kwargs)
                     #part_tunings.append(merit(current))
@@ -537,7 +544,7 @@ def kill_aberrations(superscan=None, as2=None, focus_step=2, astig2f_step=2, ast
                 #if merit(current) > np.amin(total_tunings) or np.count_nonzero(current) < np.amax(total_lens):
                 if current > np.amin(total_tunings):
                     #vt.as2_set_control(controls[i], start)
-                    kwargs[keys[i]] = -changes
+                    kwargs[key] = -changes
                     #update hardware
                     try:
 #                        current = check_tuning(frame_parameters['fov'], average_frames=average_frames, integration_radius=integration_radius, \
@@ -553,11 +560,11 @@ def kill_aberrations(superscan=None, as2=None, focus_step=2, astig2f_step=2, ast
                         raise
                     except:
                         pass
-                    logwrite('Dismissed changes at '+ keys[i])
+                    logwrite('Dismissed changes at '+ key)
             #reduce stepsize for next iteration
-            steps[i] *= 0.5
+            steps[key] *= 0.5
             #set current working aberration to zero
-            kwargs[keys[i]] = 0
+            kwargs[key] = 0
         
         if len(part_tunings) > 0:
             logwrite('Appending best value of this run to total_tunings: '+str(np.amin(part_tunings)))
@@ -629,20 +636,18 @@ def image_grabber(superscan = None, as2 = None, acquire_image=True, **kwargs):
     originals = {}
     global global_aberrations
     #print(kwargs)
-    if not kwargs.has_key('image'):
+    if not 'image' in kwargs:
         for i in range(len(keys)):
-            if kwargs.has_key(keys[i]):
+            if keys[i] in kwargs:
                 if as2 is None:
                     raise RuntimeError('You have to provide an instance of as2 to perform as2-related operations.')
                 offset=0.0
                 offset2=0.0
-                if kwargs.has_key('reset_aberrations'):
-                    if kwargs['reset_aberrations']:
-                        originals[controls[i]] = vt.as2_get_control(as2, controls[i])
-                if kwargs.has_key('relative_aberrations'):
-                    if kwargs['relative_aberrations']:
-                        offset = vt.as2_get_control(as2, controls[i])
-                        offset2 = global_aberrations[keys[i]]
+                if kwargs.get('reset_aberrations'):
+                    originals[controls[i]] = vt.as2_get_control(as2, controls[i])
+                if kwargs.get('relative_aberrations'):
+                    offset = vt.as2_get_control(as2, controls[i])
+                    offset2 = global_aberrations[keys[i]]
                 vt.as2_set_control(as2, controls[i], offset+kwargs[keys[i]]*1e-9)
                 global_aberrations[keys[i]] = offset2+kwargs[keys[i]]
         if acquire_image:
@@ -656,8 +661,11 @@ def image_grabber(superscan = None, as2 = None, acquire_image=True, **kwargs):
             return im
     else:
         im = kwargs['image']
+        imsize = kwargs['imsize']
+        
         shape = np.shape(im)
-
+        
+        kernelpixel = int(shape[0]/4)
         kernelsize=[63.5,63.5]
         y,x = np.mgrid[-kernelsize[0]:kernelsize[0]+1.0, -kernelsize[1]:kernelsize[1]+1.0]/2.0
         
@@ -667,19 +675,15 @@ def image_grabber(superscan = None, as2 = None, acquire_image=True, **kwargs):
         aberrations = np.zeros(len(keys))
         
         for i in range(len(keys)):            
-            if kwargs.has_key(keys[i]):
+            if kwargs.get(keys[i]):
                 offset=0.0
-                if kwargs.has_key('relative_aberrations'):
-                    if kwargs['relative_aberrations']:
-                        offset = global_aberrations[keys[i]]
+                if kwargs.get('relative_aberrations'):
+                    offset = global_aberrations[keys[i]]
                 aberrations[i] = offset+kwargs[keys[i]]
-                if kwargs.has_key(start_keys[i]):
+                if kwargs.get(start_keys[i]):
                     aberrations[i] -= kwargs[start_keys[i]]
             #if aberrations should not be reset, change global_aberrations
-                if kwargs.has_key('reset_aberrations'):
-                    if not kwargs['reset_aberrations']:
-                        global_aberrations[keys[i]] = aberrations[i]
-                else:
+                if not kwargs.get('reset_aberrations'):
                     global_aberrations[keys[i]] = aberrations[i]
             else:
                 aberrations[i] = global_aberrations[keys[i]]
@@ -694,17 +698,17 @@ def image_grabber(superscan = None, as2 = None, acquire_image=True, **kwargs):
             raw_kernel = np.pi*4.87e-3*(-aberrations[0]*(x**2+y**2) + np.sqrt(aberrations[1]**2+aberrations[2]**2)*(x**2+y**2)*np.cos(2*(np.arctan2(y,x)-np.arctan2(aberrations[2], aberrations[1]))) \
                 + (2.0/3.0)*np.sqrt(aberrations[3]**2+aberrations[4]**2)*4.87e-3*np.sqrt(x**2+y**2)**3*np.cos(np.arctan2(y,x)-np.arctan2(aberrations[4], aberrations[3])) \
                 + (2.0/3.0)*np.sqrt(aberrations[5]**2+aberrations[6]**2)*4.87e-3*np.sqrt(x**2+y**2)**3*np.cos(3*(np.arctan2(y,x)-np.arctan2(aberrations[6], aberrations[5]))))
-            scale = 1.0/np.sqrt(shape[0]*shape[1])
+            scale = 1.0#/np.sqrt(shape[0]*shape[1])
             kernel = np.cos(raw_kernel)*scale+1j*np.sin(raw_kernel)*(-scale)
             aperture = np.zeros(kernel.shape)
-            cv2.circle(aperture, tuple(np.array(kernel.shape, dtype='int')/2), int(kernelsize[0]/4.86), 1.0, thickness=-1)
+            cv2.circle(aperture, tuple((np.array(kernel.shape)/2).astype('int')), int(kernelsize[0]/4.86), 1, thickness=-1)
             kernel *= aperture
             kernel = np.abs(np.fft.fftshift(np.fft.ifft2(kernel)))**2
             kernel /= np.sum(kernel)
             im = cv2.filter2D(im, -1, kernel)
             im = np.random.poisson(lam=im.flatten(), size=np.size(im)).astype(im.dtype)
-            return im.reshape(shape)
-            #return kernel
+            #return im.reshape(shape)
+            return kernel
 
 def positive_angle(angle):
     """
@@ -720,13 +724,13 @@ def check_tuning(imagesize, im=None, check_astig=False, average_frames=0, integr
 
     global global_aberrations                    
                     
-    if not kwargs.has_key('imsize'):
+    if kwargs.get('imsize') is not None:
         kwargs['imsize'] = imagesize
     else:
         imagesize=kwargs['imsize']
         
     if (process_image or im is None) and average_frames < 2:
-        if im is not None and not kwargs.has_key('image'):
+        if im is not None and kwargs.get('image') is not None:
             kwargs['image'] = im
         im = image_grabber(**kwargs)
             
@@ -738,8 +742,8 @@ def check_tuning(imagesize, im=None, check_astig=False, average_frames=0, integr
         
         #remove aberrations from kwargs fore next frames
         kwargs2 = kwargs.copy()
-        if kwargs.has_key('relative_aberrations') and kwargs['relative_aberrations']:
-                if not kwargs.has_key('reset_aberrations') or (kwargs.has_key('reset_aberrations') and not kwargs['reset_aberrations']):
+        if kwargs.get('relative_aberrations'):
+                if not kwargs.get('reset_aberrations'):
                     keys = ['EHTFocus', 'C12_a', 'C12_b', 'C21_a', 'C21_b', 'C23_a', 'C23_b']
                     for key in keys:
                         kwargs2.pop(key, 0)
@@ -756,7 +760,7 @@ def check_tuning(imagesize, im=None, check_astig=False, average_frames=0, integr
             if np.sum(mask) > 0.5*np.prod(np.array(np.shape(image))):
                 raise DirtError('Cannot check tuning of images with more than 50% dirt coverage.')
     #If no image is provided or just a tuning check without real or simulated acquisition should be done it is real data
-    elif not kwargs.has_key('image') or not process_image:
+    elif kwargs.get('image') is None  or not process_image:
         mask = dirt_detector(im, threshold=0.015)
         if np.sum(mask) > 0.5*np.prod(np.array(np.shape(im))):
             raise DirtError('Cannot check tuning of images with more than 50% dirt coverage.')
