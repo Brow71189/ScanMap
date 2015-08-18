@@ -9,7 +9,11 @@ import logging
 import os
 import threading
 import time
-from importlib import reload
+
+try:
+    from importlib import reload
+except:
+    pass
 
 from .maptools import autotune
 
@@ -123,7 +127,7 @@ class SuperScanTunerPanelDelegate(object):
             
             
             superscan = self.__api.get_hardware_source_by_id('scan_controller', '1')
-            as2 = self.__api.get_hardware_source_by_id('as2', '1')
+            as2 = self.__api.get_instrument_by_id('autostem_controller', '1')
             
             
             keys = []

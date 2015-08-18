@@ -3,7 +3,11 @@ import gettext
 import logging
 import numpy as np
 import threading
-from importlib import reload
+
+try:
+    from importlib import reload
+except:
+    pass
 # third party libraries
 # None
 try:
@@ -371,6 +375,10 @@ workspace_manager.register_panel(ScanMap, "scanmap-panel", _("SuperScan Mapping"
 
 def save_coords(position):
     global coord_dict
+    try:
+        reload(vt)
+    except:
+        logging.warn('Could not reload ViennaTools!')
     coord_dict[position] = (vt.as2_get_control('StageOutX'), vt.as2_get_control('StageOutY'), vt.as2_get_control('StageOutZ'), vt.as2_get_control('EHTFocus'))
     logging.info('Saved x: '+str(vt.as2_get_control('StageOutX'))+', y: '+str(vt.as2_get_control('StageOutY'))+', z: '+str(vt.as2_get_control('StageOutZ'))+', focus: '+str(vt.as2_get_control('EHTFocus'))+' as '+position+' corner.')
 

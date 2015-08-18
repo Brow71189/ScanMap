@@ -305,7 +305,7 @@ def kill_aberrations(superscan=None, as2=None, document_controller=None, average
                     imsize=None, only_focus=False, save_images=False, savepath=None, event=None, dirt_threshold=0.015, \
                     steps = {'EHTFocus': 2, 'C12_a': 2, 'C12_b': 2, 'C21_a': 300, 'C21_b': 300, 'C23_a': 75, 'C23_b': 75}, \
                     keys = ['EHTFocus', 'C12_a', 'C12_b', 'C21_a', 'C21_b', 'C23_a', 'C23_b'], \
-                    frame_parameters={'size_pixels': (512, 512), 'center': (0,0), 'pixeltime': 4, 'fov': 8, 'rotation': 0}):
+                    frame_parameters={'size_pixels': (512, 512), 'center': (0,0), 'pixeltime': 8, 'fov': 4, 'rotation': 0}):
     
     def logwrite(msg, level='info'):
         if document_controller is None:
@@ -724,13 +724,13 @@ def check_tuning(imagesize, im=None, check_astig=False, average_frames=0, integr
 
     global global_aberrations                    
                     
-    if kwargs.get('imsize') is not None:
+    if kwargs.get('imsize') is None:
         kwargs['imsize'] = imagesize
     else:
         imagesize=kwargs['imsize']
         
     if (process_image or im is None) and average_frames < 2:
-        if im is not None and kwargs.get('image') is not None:
+        if im is not None and kwargs.get('image') is None:
             kwargs['image'] = im
         im = image_grabber(**kwargs)
             
@@ -760,7 +760,7 @@ def check_tuning(imagesize, im=None, check_astig=False, average_frames=0, integr
             if np.sum(mask) > 0.5*np.prod(np.array(np.shape(image))):
                 raise DirtError('Cannot check tuning of images with more than 50% dirt coverage.')
     #If no image is provided or just a tuning check without real or simulated acquisition should be done it is real data
-    elif kwargs.get('image') is None  or not process_image:
+    elif kwargs.get('image') is None or not process_image:
         mask = dirt_detector(im, threshold=0.015)
         if np.sum(mask) > 0.5*np.prod(np.array(np.shape(im))):
             raise DirtError('Cannot check tuning of images with more than 50% dirt coverage.')
