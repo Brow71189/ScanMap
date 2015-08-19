@@ -231,7 +231,7 @@ class ScanMap(Panel.Panel):
         def drive_br_button_clicked():
             drive_coords('bottom-right')
         def done_button_clicked():
-            global FOV, Offset, SIze, Time, Rotation, do_autofocus, use_z_drive, auto_offset, auto_rotation, Number_of_images, acquire_overview
+            global FOV, Offset, Size, Time, Rotation, do_autofocus, use_z_drive, auto_offset, auto_rotation, Number_of_images, acquire_overview
             
             total_number_frames()
             

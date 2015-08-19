@@ -288,7 +288,7 @@ class SuperScanTunerPanelDelegate(object):
         checkbox_row2.add(saving)
         
         parameters_row5 = ui.create_row_widget()
-        
+
         parameters_row5.add(ui.create_label_widget(_("Savepath: ")))
         saving_path = ui.create_line_edit_widget()        
         saving_path.placeholder_text = "If save images is checked you have to enter a path here."

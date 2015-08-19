@@ -5,7 +5,6 @@ Created on Tue Mar 17 13:22:52 2015
 @author: mittelberger
 """
 import cv2
-import ScanMap.maptools.autotune as at
 import numpy as np
 import os
 import logging
@@ -14,6 +13,11 @@ from multiprocessing import Pool
 import time
 import tifffile
 import scipy.optimize
+
+try:
+   from maptools import autotune as at
+except:
+    from .maptools import autotune as at
 
 def ellipse(polar_angle, a, b, rotation):
     """
@@ -144,7 +148,7 @@ def subframes_preprocessing(filename, dirname, imsize, counts_threshold=1e-9, di
     #get angle of rotation and peak radius
     try:
         rotation, radius, number_peaks, peak_intensities_sum, ellipse_a, ellipse_b, angle = rotation_radius(image, imsize)
-    except Exception as detail:
+    except RuntimeError as detail:
         print('Error in '+ filename + ': ' + str(detail))
         rotation = ellipse_a = ellipse_b = angle = np.NaN
         number_peaks = peak_intensities_sum = 0
@@ -190,10 +194,10 @@ if __name__ == '__main__':
     
     overall_starttime = time.time()
 
-    dirpath = '/3tb/maps_data/map_2015_06_02_12_37/'
+    dirpath = '/3tb/maps_data/map_2015_08_18_17_07/'
     #dirpath = '/3tb/Dark_noise/'
     imsize = 20
-    dirt_threshold = 0.0033
+    dirt_threshold = 0.00377
     dirt_border = 50
 
     if not dirpath.endswith('/'):
@@ -211,7 +215,7 @@ if __name__ == '__main__':
     
     pool = Pool()
     res = [pool.apply_async(subframes_preprocessing, (filename, dirpath, imsize), {'dirt_threshold': dirt_threshold, 'dirt_border':dirt_border, \
-            'median_blur_diameter': 59, 'gaussian_blur_radius': 5,'save_fft': True}) for filename in matched_dirlist]
+            'median_blur_diameter': 59, 'gaussian_blur_radius': 5,'save_fft': True, 'maximum_dirt_coverage': 0.5}) for filename in matched_dirlist]
     res_list = [p.get() for p in res]
     pool.close()
     pool.terminate()

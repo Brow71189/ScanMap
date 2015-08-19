@@ -196,7 +196,10 @@ def create_record_parameters(superscan, frame_parameters, detectors={'HAADF': Fa
 
 def graphene_generator(imsize, impix, rotation):
     rotation = rotation*np.pi/180
-    image = np.zeros((impix, impix))
+    
+    #increase size of initially generated image by 20% to avoid missing atoms at the edges (image will be cropped
+    #to actual size before returning it)
+    image = np.zeros((int(impix*1.2), int(impix*1.2)))
     rotation_matrix = np.array( ( (np.cos(2.0/3.0*np.pi), np.sin(2.0/3.0*np.pi)), (-np.sin(2.0/3.0*np.pi), np.cos(2.0/3.0*np.pi)) ) )
     #define basis vectors of unit cell, a1 and a2
     basis_length = 0.142 * np.sqrt(3) * impix/float(imsize)
@@ -209,7 +212,7 @@ def graphene_generator(imsize, impix, rotation):
     a2direction = 1.0
     
     
-    while (a1position < impix*2).all():
+    while (a1position < impix*2.4).all():
         success = True
         
         while success:
@@ -219,7 +222,7 @@ def graphene_generator(imsize, impix, rotation):
             #print(cellposition)
             
             #place atoms
-            if (cellposition+a1/3.0+a2*(2.0/3.0) < impix).all() and (cellposition+a1/3.0+a2*(2.0/3.0) >= 0).all():
+            if (cellposition+a1/3.0+a2*(2.0/3.0) < impix*1.2).all() and (cellposition+a1/3.0+a2*(2.0/3.0) >= 0).all():
                 success = True
                 y,x = cellposition+a1/3.0+a2*(2.0/3.0)
                 pixelvalues = distribute_intensity(x,y)
@@ -233,7 +236,7 @@ def graphene_generator(imsize, impix, rotation):
             else:
                 success = False
                 
-            if (cellposition+a2/3.0+a1*(2.0/3.0) < impix).all() and (cellposition+a2/3.0+a1*(2.0/3.0) >= 0).all():
+            if (cellposition+a2/3.0+a1*(2.0/3.0) < impix*1.2).all() and (cellposition+a2/3.0+a1*(2.0/3.0) >= 0).all():
                 success = True
                 y,x = cellposition+a2/3.0+a1*(2.0/3.0)
                 pixelvalues = distribute_intensity(x,y)
@@ -259,7 +262,9 @@ def graphene_generator(imsize, impix, rotation):
         
         a1position += a1
     
-    return image
+    start = int(impix * 0.1)
+    return image[start:start+impix, start:start+impix]
+    #return image
 
 def distribute_intensity(x,y):
     """
@@ -665,11 +670,17 @@ def image_grabber(superscan = None, as2 = None, acquire_image=True, **kwargs):
         
         shape = np.shape(im)
         
+        #Create x and y coordinates such that resulting beam has the same scale as the image.
+        #The size of the kernel which is used for image convolution is chosen to be 1/4 of the image size (in pixels)
         kernelpixel = int(shape[0]/4)
-        kernelsize=[63.5,63.5]
-        y,x = np.mgrid[-kernelsize[0]:kernelsize[0]+1.0, -kernelsize[1]:kernelsize[1]+1.0]/2.0
+        frequencies = np.matrix(np.fft.fftshift(np.fft.fftfreq(kernelpixel, imsize/shape[0])))
+        x = np.array(np.tile(frequencies, np.size(frequencies)).reshape((kernelpixel,kernelpixel)))
+        y = np.array(np.tile(frequencies.T, np.size(frequencies)).reshape((kernelpixel,kernelpixel)))
         
-        raw_kernel = 0
+#        kernelsize=[63.5,63.5]
+#        y,x = np.mgrid[-kernelsize[0]:kernelsize[0]+1.0, -kernelsize[1]:kernelsize[1]+1.0]/2.0
+        
+        #raw_kernel = 0
         keys = ['EHTFocus', 'C12_a', 'C12_b', 'C21_a', 'C21_b', 'C23_a', 'C23_b']
         start_keys = ['start_EHTFocus', 'start_C12_a', 'start_C12_b', 'start_C21_a', 'start_C21_b', 'start_C23_a', 'start_C23_b']
         aberrations = np.zeros(len(keys))
@@ -698,17 +709,20 @@ def image_grabber(superscan = None, as2 = None, acquire_image=True, **kwargs):
             raw_kernel = np.pi*4.87e-3*(-aberrations[0]*(x**2+y**2) + np.sqrt(aberrations[1]**2+aberrations[2]**2)*(x**2+y**2)*np.cos(2*(np.arctan2(y,x)-np.arctan2(aberrations[2], aberrations[1]))) \
                 + (2.0/3.0)*np.sqrt(aberrations[3]**2+aberrations[4]**2)*4.87e-3*np.sqrt(x**2+y**2)**3*np.cos(np.arctan2(y,x)-np.arctan2(aberrations[4], aberrations[3])) \
                 + (2.0/3.0)*np.sqrt(aberrations[5]**2+aberrations[6]**2)*4.87e-3*np.sqrt(x**2+y**2)**3*np.cos(3*(np.arctan2(y,x)-np.arctan2(aberrations[6], aberrations[5]))))
-            scale = 1.0#/np.sqrt(shape[0]*shape[1])
-            kernel = np.cos(raw_kernel)*scale+1j*np.sin(raw_kernel)*(-scale)
+                
+            kernel = np.cos(raw_kernel)+1j*np.sin(raw_kernel)
             aperture = np.zeros(kernel.shape)
-            cv2.circle(aperture, tuple((np.array(kernel.shape)/2).astype('int')), int(kernelsize[0]/4.86), 1, thickness=-1)
+            #Calculate size of 25 mrad aperture in k-space for 60 keV electrons
+            aperturesize = (0.025/4)*imsize/4.87e-3
+            #cv2.circle(aperture, tuple((np.array(kernel.shape)/2).astype('int')), int(kernelsize[0]/4.86), 1, thickness=-1)
+            cv2.circle(aperture, tuple((np.array(kernel.shape)/2).astype('int')), int(np.rint(aperturesize)), 1, thickness=-1)
             kernel *= aperture
-            kernel = np.abs(np.fft.fftshift(np.fft.ifft2(kernel)))**2
+            kernel = np.abs(np.fft.fftshift(np.fft.ifft2(np.fft.fftshift(kernel))))**2
             kernel /= np.sum(kernel)
             im = cv2.filter2D(im, -1, kernel)
             im = np.random.poisson(lam=im.flatten(), size=np.size(im)).astype(im.dtype)
-            #return im.reshape(shape)
-            return kernel
+            return im.reshape(shape)
+            #return kernel
 
 def positive_angle(angle):
     """
@@ -914,14 +928,13 @@ def find_peaks(im, imsize, half_line_thickness=5, position_tolerance=5, integrat
     """
 
     shape = np.shape(im)
-    
     fft = np.fft.fftshift(np.fft.fft2(im))
     #If more than one image are passed to find_peaks, compute average of their fft's before going on
     if len(shape) > 2:
         fft  = np.mean(fft, axis=0)
         shape = shape[1:]
             
-    center = np.array(shape)/2
+    center = np.array(np.array(shape)/2, dtype='int')
     
     if mode.lower() == 'phase':
         fft_raw = np.abs(np.imag(fft))
@@ -980,6 +993,7 @@ def find_peaks(im, imsize, half_line_thickness=5, position_tolerance=5, integrat
         counter += 1
         if counter > np.sqrt(shape[0]):
             raise RuntimeError('No peaks could be found in the FFT of im.')
+            #break
         if second_order:
             peaks = np.zeros((2,6,4))
         else:
