@@ -558,9 +558,9 @@ def SuperScan_mapping(coord_dict, filepath='Z:\\ScanMap\\', do_autofocus=False, 
     if not offline and acquire_overview:
         #Use longest edge as image size
         if abs(rightX-leftX) < abs(topY-botY):
-            over_size = abs(topY-botY)*1.25e9
+            over_size = abs(topY-botY)*1.2e9
         else:
-            over_size = abs(rightX-leftX)*1.25e9
+            over_size = abs(rightX-leftX)*1.2e9
         
         #Find center of mapped area:
         map_center = ((leftX+rightX)/2, (topY+botY)/2)
