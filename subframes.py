@@ -194,10 +194,10 @@ if __name__ == '__main__':
     
     overall_starttime = time.time()
 
-    dirpath = '/3tb/maps_data/map_2015_08_18_17_07/'
+    dirpath = '/home/mittelberger/Documents/simulated_test_series'
     #dirpath = '/3tb/Dark_noise/'
     imsize = 20
-    dirt_threshold = 0.00377
+    dirt_threshold = 1000
     dirt_border = 50
 
     if not dirpath.endswith('/'):

@@ -33,7 +33,7 @@ except:
 
 #global variable to store aberrations when simulating them (see function image_grabber() for details)
 #global_aberrations = {'EHTFocus': 0, 'C12_a': 5, 'C12_b': 0, 'C21_a': 801.0, 'C21_b': 0, 'C23_a': -500, 'C23_b': 0}
-global_aberrations = {'EHTFocus': 3.0, 'C12_a': 2.0, 'C12_b': -2.0, 'C21_a': 30.0, 'C21_b': 0.0, 'C23_a': 50.0, 'C23_b': -63.0}
+global_aberrations = {'EHTFocus': 1.0, 'C12_a': 0, 'C12_b': -1.5, 'C21_a': 100.0, 'C21_b': 0.0, 'C23_a': 20.0, 'C23_b': 0.0}
     
 class DirtError(Exception):
     """
@@ -232,7 +232,8 @@ def graphene_generator(imsize, impix, rotation):
                     try:
                         image[np.floor(y)+pixelpositions[i][0],np.floor(x)+pixelpositions[i][1]] = pixelvalues[i]
                     except IndexError:
-                        print('Could not put pixel at: ' + str((np.floor(y)+pixelpositions[i][0],np.floor(x)+pixelpositions[i][1])))
+                        pass
+                        #print('Could not put pixel at: ' + str((np.floor(y)+pixelpositions[i][0],np.floor(x)+pixelpositions[i][1])))
             else:
                 success = False
                 
@@ -246,7 +247,8 @@ def graphene_generator(imsize, impix, rotation):
                     try:
                         image[np.floor(y)+pixelpositions[i][0],np.floor(x)+pixelpositions[i][1]] = pixelvalues[i]
                     except IndexError:
-                        print('Could not put pixel at: ' + str((np.floor(y)+pixelpositions[i][0],np.floor(x)+pixelpositions[i][1])))
+                        pass
+                        #print('Could not put pixel at: ' + str((np.floor(y)+pixelpositions[i][0],np.floor(x)+pixelpositions[i][1])))
             else:
                 success = False
         

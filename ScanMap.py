@@ -24,8 +24,10 @@ from nion.swift import Workspace
 from nion.swift.model import DataItem
 from nion.ui import Binding
 #document_controller.ui is object of nion.ui.UserInterface.QtUserInterface
-
-from .maptools import mapper
+try:
+    import maptools.mapper as mapper
+except:
+    from .maptools import mapper
 
 _ = gettext.gettext
 

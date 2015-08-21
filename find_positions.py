@@ -38,21 +38,26 @@ import tifffile
 
 if __name__=='__main__':
     
-    dirpath = '/3tb/maps_data/map_2015_04_23_19_12_00/'
+    dirpath = '/3tb/maps_data/map_2015_06_02_12_37/'
     
-    overview = '/3tb/maps_data/map_2015_04_23_19_12/Overview.tif'
+    overview = '/3tb/maps_data/map_2015_06_02_12_37/Overview_2258.90076166_nm_8k.tif'
     
-    size_overview = 1024 #nm
-    size_frames = 12 #nm
+    size_overview = 2258.90076166 #nm
+    size_frames = 20 #nm
     #number of frames in x- and y-direction
-    number_frames = (15,13)
+    number_frames = (39,41)
     #borders of the area where the first frame is expected (in % of the overview image)
     #has to be a tuple of the form (lower-y, higher-y, lower-x, higher-x)
-    area_first_frame = (0,100,0,100) #%
+    area_first_frame = (5,15,5,15) #%
     #enter search area for the following images. Search is always performed around the position of the last image.
     #tuple hast to have the form (negtive-y, positive-y, negative-x, positive-x)
-    tolerance_within_rows = (0.25,1.2,0.05,4)
-    tolerance_within_columns = (0.25,4,0.25,4)
+    tolerance_within_rows = (0.8,1.2,-0.5,4.8)
+    tolerance_within_columns = (-0.8,4,0.1,4.8)
+    #Enter the number of frames that should be included here. Type None to use all frames.
+    number_frames_included = 312
+    #
+    bad_correlation_threshold = 0.4
+    
     
     
     area_first_frame = np.array(area_first_frame)/100.0
@@ -87,6 +92,8 @@ if __name__=='__main__':
     color = float(np.mean(over))
     position_list = []
     correlation_list = []
+    in_row_distance_list = []
+    in_column_distance_list = []
     
     #find position of first frame
     name = matched_frames[0]
@@ -106,7 +113,7 @@ if __name__=='__main__':
     cv2.putText(added[0], str(int(name[0:4])), (maxi[1]-4,maxi[0]-2), cv2.FONT_HERSHEY_PLAIN, 2, color, thickness=2)
     
     counter = 0
-    for name in matched_frames[1:]:
+    for name in matched_frames[1:number_frames_included]:
         im = np.array(cv2.imread(dirpath+name, -1))#*3
         shape_im = np.shape(im)
         scale = (size_frames/float(shape_im[0])/(size_overview/float(shape_over[0])))
@@ -124,8 +131,17 @@ if __name__=='__main__':
         subarray[subarray>= shape_over[0]] = shape_over[0]-1
         subarray[subarray< 0] = 0
         result = cv2.matchTemplate(over[subarray[0]:subarray[1],subarray[2]:subarray[3]], im, method=cv2.TM_CCOEFF_NORMED)
+        corr_max = np.amax(result)
         maxi = tuple(np.array(np.unravel_index(np.argmax(result), result.shape), dtype='int') + np.array((subarray[0], subarray[2]), dtype='int'))
-        correlation_list.append(np.amax(result))
+        if int(name[0:4])%number_frames[0] == 0 and int(name[0:4]) != 0:
+            in_column_distance_list.append(np.array(maxi) - np.array(position_list[counter-number_frames[0]+1][1:]))
+        else:
+            if corr_max < bad_correlation_threshold:
+                maxi = (position_list[counter][1] + int(np.median(np.array(in_row_distance_list)[:,0])),
+                        position_list[counter][2] + int(np.median(np.array(in_row_distance_list)[:,1])))
+            in_row_distance_list.append(np.array(maxi) - np.array(position_list[counter][1:]))
+            
+        correlation_list.append(corr_max)
         position_list.append((int(name[0:4]), ) + maxi)
         added[1,maxi[0]:maxi[0]+im.shape[0], maxi[1]:maxi[1]+im.shape[1]] += im
         #cv2.rectangle(added, (maxi[1],maxi[0]), (maxi[1]+im.shape[1], maxi[0]+im.shape[0]), color, thickness=2)
@@ -139,15 +155,22 @@ if __name__=='__main__':
     added2[added2>percentile95] = percentile95
     added2 *= 255/percentile95
     added2 = added2.astype('uint8')
-    correlation_list=np.array(correlation_list, dtype='float32').reshape((number_frames[1], number_frames[0]))
+    correlation_array = np.ones(np.prod(np.array(number_frames)), dtype='float32')
+    correlation_array[0:len(correlation_list)] = np.array(correlation_list, dtype='float32')
+    correlation_array = correlation_array.reshape((number_frames[1], number_frames[0]))
+    in_row_distance_array = np.array(in_row_distance_list, dtype='float32')
+    in_column_distance_array = np.array(in_column_distance_list, dtype='float32')
+    
+    tifffile.imsave(dirpath+'positions.tif', added2)
     
     np.savez( dirpath+'positions.npz',
               position_list=np.array(position_list, dtype='uint16'),
               overview_with_frames_raw=added.astype('float32'),
               overview_with_frames_rgb=added2, 
-              correlation_list=correlation_list )
+              correlation_list=correlation_array,
+              in_row_distance_list = in_column_distance_array,
+              in_column_distance_list = in_column_distance_array )
     
-    tifffile.imsave(dirpath+'positions.tif', added2)
     #cv2.imwrite(dirpath+'positions.tif', added2)
 #    p = Pool(initializer=init, initargs=(l,))
 #    
