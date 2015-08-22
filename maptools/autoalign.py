@@ -12,7 +12,10 @@ import os
 
 import numpy as np
 import scipy.optimize
-import cv2
+try:
+    import cv2
+except:
+    pass
 
 try:
     import ViennaTools.ViennaTools as vt

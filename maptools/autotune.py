@@ -12,23 +12,30 @@ import os
 
 import numpy as np
 import scipy.optimize
-import cv2
-#import matplotlib as plt
 
 try:
-    import ViennaTools.ViennaTools as vt
-    from ViennaTools.ViennaTools import tifffile
+    import cv2
 except:
-    try:
-        import ViennaTools as vt
-        from ViennaTools import tifffile
-    except:
-        logging.warn('Could not import Vienna tools!')
+    logging.warn('Could not import opencv')
+#import matplotlib as plt
+
+#try:
+from ViennaTools import ViennaTools as vt
+from ViennaTools import tifffile
+#except:
+#    try:
+#        import ViennaTools as vt
+#        from ViennaTools import tifffile
+#    except:
+#        logging.warn('Could not import Vienna tools!')
 
 try:
     from . import autoalign
 except:
-    import autoalign
+    try:
+        import autoalign
+    except:
+        pass
 
 
 #global variable to store aberrations when simulating them (see function image_grabber() for details)
