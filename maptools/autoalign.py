@@ -7,15 +7,15 @@ Created on Thu Mar 12 17:19:43 2015
 """
 
 import logging
-import time
+#import time
 import os
 
 import numpy as np
-import scipy.optimize
-try:
-    import cv2
-except:
-    pass
+from scipy import optimize, ndimage
+#try:
+#    import cv2
+#except:
+#    pass
 
 try:
     import ViennaTools.ViennaTools as vt
@@ -102,7 +102,7 @@ def align_series_fft(dirname):
     """
     dirlist = os.listdir(dirname)
     dirlist.sort()
-    im1 = cv2.imread(dirname+dirlist[0], -1)
+    im1 = ndimage.imread(dirname+dirlist[0])
     savepath = dirname+'aligned/'
     if not os.path.exists(savepath):
         os.makedirs(savepath)
@@ -111,7 +111,7 @@ def align_series_fft(dirname):
     
     for i in range(1, len(dirlist)):
         if os.path.isfile(dirname+dirlist[i]):
-            im2 = cv2.imread(dirname+dirlist[i], -1)
+            im2 = ndimage.imread(dirname+dirlist[i])
             tifffile.imsave(savepath+dirlist[i], np.asarray(align_fft(im1, im2), dtype=im1.dtype))
     
 
@@ -156,7 +156,7 @@ def find_shift(im1, im2, ratio=0.1):
         start_value = start_values[np.argmin(function_values)]
     else:
         start_value = (0,0)
-    res = scipy.optimize.minimize(translated_correlation, start_value, method='Nelder-Mead', args=(im1,im2))
+    res = optimize.minimize(translated_correlation, start_value, method='Nelder-Mead', args=(im1,im2))
     return (res.x, -res.fun)
 
 def rot_dist(im1, im2, ratio=None):

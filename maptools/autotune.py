@@ -13,10 +13,10 @@ import os
 import numpy as np
 import scipy.optimize
 
-try:
-    import cv2
-except:
-    logging.warn('Could not import opencv')
+#try:
+#    import cv2
+#except:
+#    logging.warn('Could not import opencv')
 #import matplotlib as plt
 
 #try:
@@ -963,14 +963,15 @@ def find_peaks(im, imsize, half_line_thickness=5, position_tolerance=5, integrat
     
     #print('center: '+str(center)+', first_order: '+str(first_order))
     #blank out bright spot in center of fft
-    cv2.circle(fft, tuple(center), int(np.rint(first_order/2.0)), -1, -1)
+    #cv2.circle(fft, tuple(center), int(np.rint(first_order/2.0)), -1, -1)
+    draw_circle(fft, tuple(center), int(np.rint(first_order/2.0)))
     
     #prevent infinite values when cross would be calculated until central pixel because of too high half line thickness
     if half_line_thickness >= int(np.rint(first_order/2.0))-1:
         half_line_thickness = int(np.rint(first_order/2.0))-1
 
     #std_dev_fft = np.std(fft[fft>-1])
-    mean_fft = np.mean(fft[fft>-1])    
+    mean_fft = np.mean(fft[fft>-1])
     #Fit horizontal and vertical lines with hyperbola
     cross = np.zeros(shape)
     for i in range(-half_line_thickness, half_line_thickness+1):
@@ -1078,3 +1079,16 @@ def find_peaks(im, imsize, half_line_thickness=5, position_tolerance=5, integrat
         return (peaks, fft)
     else:
         return peaks
+        
+def draw_circle(image, center, radius, color=-1, thickness=-1):
+    
+    subarray = image[center[0]-radius:center[0]+radius+1, center[1]-radius:center[1]+radius+1]
+    y, x = np.mgrid[-radius:radius+1, -radius:radius+1]
+    distances = np.sqrt(x**2+y**2)
+    
+    if thickness < 0:
+        subarray[distances <= radius] = color
+    elif thickness == 0:
+        subarray[(distances < radius+0.5) * (distances > radius-0.5)] = color
+    else:
+        subarray[(distances < radius+thickness+1) * (distances > radius-thickness)] = color
