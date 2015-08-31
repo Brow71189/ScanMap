@@ -12,6 +12,9 @@ import os
 
 import numpy as np
 import scipy.optimize
+from scipy.ndimage import convolve, gaussian_filter, median_filter
+from scipy.signal import fftconvolve, convolve2d
+#import cv2
 
 #try:
 #    import cv2
@@ -40,7 +43,7 @@ except:
 
 #global variable to store aberrations when simulating them (see function image_grabber() for details)
 #global_aberrations = {'EHTFocus': 0, 'C12_a': 5, 'C12_b': 0, 'C21_a': 801.0, 'C21_b': 0, 'C23_a': -500, 'C23_b': 0}
-global_aberrations = {'EHTFocus': 1.0, 'C12_a': 0, 'C12_b': -1.5, 'C21_a': 100.0, 'C21_b': 0.0, 'C23_a': 20.0, 'C23_b': 0.0}
+global_aberrations = {'EHTFocus': 2, 'C12_a': 3, 'C12_b': -1, 'C21_a': 894, 'C21_b': 211.0, 'C23_a': -174, 'C23_b': 142.0}
     
 class DirtError(Exception):
     """
@@ -55,7 +58,7 @@ def fourier_filter(image, imsize):
     peaks = find_peaks(image, imsize, second_order=True, half_line_thickness=3)
     xdata = np.mgrid[-7:8, -7:8]
     mask = gaussian2D(xdata, 0, 0, 4, 4, 1, 0)
-    maskradius = np.shape(mask)[0]/2
+    maskradius = int(np.shape(mask)[0]/2)
     fft = np.fft.fftshift(np.fft.fft2(image))
     fft_masked = np.zeros(np.shape(fft), dtype=fft.dtype)
     for order in peaks:
@@ -295,14 +298,16 @@ def dirt_detector(image, threshold=0.02, median_blur_diam=39, gaussian_blur_radi
     """
     #apply Gaussian Blur to improve dirt detection
     if gaussian_blur_radius > 0:
-        image = cv2.GaussianBlur(image, (0,0), gaussian_blur_radius)
+        #image = cv2.GaussianBlur(image, (0,0), gaussian_blur_radius)
+        image = gaussian_filter(image, gaussian_blur_radius)
     #create mask
     mask = np.zeros(np.shape(image), dtype='uint8')
     mask[image>threshold] = 1
     #apply median blur to mask to remove noise influence
     if median_blur_diam%2==0:
         median_blur_diam+=1
-    return cv2.medianBlur(mask, median_blur_diam)
+    #return cv2.medianBlur(mask, median_blur_diam)
+    return median_filter(mask, median_blur_diam)
     
 def tuning_merit(imsize, average_frames, integration_radius, save_images, savepath, dirt_threshold, kwargs):
     intensities, image, mask = check_tuning(imsize, average_frames=average_frames, integration_radius=integration_radius, \
@@ -372,7 +377,7 @@ def kill_aberrations(superscan=None, as2=None, document_controller=None, average
         else:
             raise RuntimeError('You have to provide an image and its size (in nm) to use the offline mode.')
     
-    steps = []        
+#    steps = []        
 #    if 'EHTFocus' in keys:
 #        steps.append(focus_step)
 #    if 'C12_a' in keys:
@@ -544,7 +549,7 @@ def kill_aberrations(superscan=None, as2=None, document_controller=None, average
                 #if merit(next_frame) >= merit(current) or np.count_nonzero(next_frame) < np.count_nonzero(current):
                 if next_frame >= current:
                     #vt.as2_set_control(controls[i], start+direction*(small_counter-1)*steps[i]*1e-9)
-                    kwargs[keys] = -direction*steps[key]
+                    kwargs[key] = -direction*steps[key]
                     changes -= direction*steps[key]
                     #update hardware
                     image_grabber(acquire_image=False, **kwargs)
@@ -679,13 +684,6 @@ def image_grabber(superscan = None, as2 = None, acquire_image=True, **kwargs):
         
         shape = np.shape(im)
         
-        #Create x and y coordinates such that resulting beam has the same scale as the image.
-        #The size of the kernel which is used for image convolution is chosen to be 1/4 of the image size (in pixels)
-        kernelpixel = int(shape[0]/4)
-        frequencies = np.matrix(np.fft.fftshift(np.fft.fftfreq(kernelpixel, imsize/shape[0])))
-        x = np.array(np.tile(frequencies, np.size(frequencies)).reshape((kernelpixel,kernelpixel)))
-        y = np.array(np.tile(frequencies.T, np.size(frequencies)).reshape((kernelpixel,kernelpixel)))
-        
 #        kernelsize=[63.5,63.5]
 #        y,x = np.mgrid[-kernelsize[0]:kernelsize[0]+1.0, -kernelsize[1]:kernelsize[1]+1.0]/2.0
         
@@ -709,6 +707,14 @@ def image_grabber(superscan = None, as2 = None, acquire_image=True, **kwargs):
                 aberrations[i] = global_aberrations[keys[i]]
 
         if acquire_image:
+            #Create x and y coordinates such that resulting beam has the same scale as the image.
+            #The size of the kernel which is used for image convolution is chosen to be "1/kernelsize" of the image size (in pixels)
+            kernelsize = 2
+            kernelpixel = int(shape[0]/kernelsize)
+            frequencies = np.matrix(np.fft.fftshift(np.fft.fftfreq(kernelpixel, imsize/shape[0])))
+            x = np.array(np.tile(frequencies, np.size(frequencies)).reshape((kernelpixel,kernelpixel)))
+            y = np.array(np.tile(frequencies.T, np.size(frequencies)).reshape((kernelpixel,kernelpixel)))
+            
             #compute aberration function up to threefold astigmatism
             #formula taken from "Advanced Computing in Electron Microscopy", Earl J. Kirkland, 2nd edition, 2010, p. 18
             #wavelength for 60 keV electrons: 4.87e-3 nm
@@ -722,15 +728,19 @@ def image_grabber(superscan = None, as2 = None, acquire_image=True, **kwargs):
             kernel = np.cos(raw_kernel)+1j*np.sin(raw_kernel)
             aperture = np.zeros(kernel.shape)
             #Calculate size of 25 mrad aperture in k-space for 60 keV electrons
-            aperturesize = (0.025/4)*imsize/4.87e-3
+            aperturesize = (0.025/kernelsize)*imsize/4.87e-3
             #cv2.circle(aperture, tuple((np.array(kernel.shape)/2).astype('int')), int(kernelsize[0]/4.86), 1, thickness=-1)
-            cv2.circle(aperture, tuple((np.array(kernel.shape)/2).astype('int')), int(np.rint(aperturesize)), 1, thickness=-1)
+            #cv2.circle(aperture, tuple((np.array(kernel.shape)/2).astype('int')), int(np.rint(aperturesize)), 1, thickness=-1)
+            draw_circle(aperture, tuple((np.array(kernel.shape)/2).astype('int')), int(np.rint(aperturesize)), color=1)
+            
             kernel *= aperture
             kernel = np.abs(np.fft.fftshift(np.fft.ifft2(np.fft.fftshift(kernel))))**2
             kernel /= np.sum(kernel)
-            im = cv2.filter2D(im, -1, kernel)
+            #im = cv2.filter2D(im, -1, kernel)
+            im = fftconvolve(im, kernel, mode='same')
+            shape=im.shape
             im = np.random.poisson(lam=im.flatten(), size=np.size(im)).astype(im.dtype)
-            return im.reshape(shape)
+            return im.reshape(shape).astype('float32')
             #return kernel
 
 def positive_angle(angle):

@@ -180,6 +180,9 @@ def find_nearest_neighbors(number, target, points):
     
     return nearest.sort()
     
+def create_map_coordinates(leftX, rightX, topY, botY, imsize, distance, compensate_stage_error=False, mark_edges=False):
+    pass
+    
     
 def SuperScan_mapping(coord_dict, filepath='Z:\\ScanMap\\', do_autofocus=False, offset = 0.0, rotation = 0.0, imsize=200, impix=512, \
                       pixeltime=4, detectors=('MAADF'), use_z_drive=False, auto_offset=False, auto_rotation=False, autofocus_pattern='edges', \
@@ -600,5 +603,5 @@ def SuperScan_mapping(coord_dict, filepath='Z:\\ScanMap\\', do_autofocus=False, 
         tifffile.imsave(store+str('z_map.tif'),np.asarray(z_map, dtype='float32'))
         tifffile.imsave(store+str('focus_map.tif'),np.asarray(focus_map, dtype='float32'))
     
-    logwrite('\nDone')
+    logwrite('\nDone.\n')
 

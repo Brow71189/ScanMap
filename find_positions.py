@@ -38,25 +38,25 @@ import tifffile
 
 if __name__=='__main__':
     
-    dirpath = '/3tb/maps_data/map_2015_06_02_12_37/'
+    dirpath = '/3tb/maps_data/map_2015_04_15_13_13/'
     
-    overview = '/3tb/maps_data/map_2015_06_02_12_37/Overview_2258.90076166_nm_8k.tif'
+    overview = '//3tb/maps_data/map_2015_04_15_13_13/overview.tif'
     
-    size_overview = 2258.90076166 #nm
-    size_frames = 20 #nm
+    size_overview = 1024 #nm
+    size_frames = 12 #nm
     #number of frames in x- and y-direction
-    number_frames = (39,41)
+    number_frames = (22,22)
     #borders of the area where the first frame is expected (in % of the overview image)
     #has to be a tuple of the form (lower-y, higher-y, lower-x, higher-x)
-    area_first_frame = (5,15,5,15) #%
+    area_first_frame = (2,50,10,80) #%
     #enter search area for the following images. Search is always performed around the position of the last image.
     #tuple hast to have the form (negtive-y, positive-y, negative-x, positive-x)
     tolerance_within_rows = (0.8,1.2,-0.5,4.8)
-    tolerance_within_columns = (-0.8,4,0.1,4.8)
+    tolerance_within_columns = (-0.8,4,0.1,1)
     #Enter the number of frames that should be included here. Type None to use all frames.
-    number_frames_included = 312
+    number_frames_included = 22
     #
-    bad_correlation_threshold = 0.4
+    bad_correlation_threshold = 0.5
     
     
     
