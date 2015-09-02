@@ -194,6 +194,12 @@ def create_map_coordinates(leftX, topY, imsize, distance, num_subframes, coords,
     # add additional lines and frames to number of subframes
     if compensate_stage_error:
         num_subframes += np.array((2*extra_frames, extra_lines))
+        leftX -= extra_frames*(imsize+distance)
+        for i in range(extra_lines):        
+            if i % 2 == 0:  # Odd lines (have even indices because numbering starts with 0), e.g. map from left to right
+                topY += imsize+oldm*distance
+            else:
+                topY += imsize+eldm*distance
     
     # make a list of coordinates where images will be aquired.
     # Starting point is the upper-left corner and mapping will proceed to the right. The next line will start
@@ -207,7 +213,7 @@ def create_map_coordinates(leftX, topY, imsize, distance, num_subframes, coords,
                                    tuple( interpolation((leftX+i*(imsize+distance),
                                                          topY-j*(imsize+oldm*distance)), coords) ) )
                 
-                # Apply correct (continuous) frame numbering for all case. If no extra positions are added, just append
+                # Apply correct (continuous) frame numbering for all cases. If no extra positions are added, just append
                 # the correct frame number. Elsewise append the correct frame number if a non-additional one, else None
                 if not compensate_stage_error:
                     frame_number.append(j*num_subframes[0]+i)
@@ -221,7 +227,7 @@ def create_map_coordinates(leftX, topY, imsize, distance, num_subframes, coords,
                                    tuple( interpolation( (leftX+(num_subframes[0]-(i+1))*(imsize+distance),
                                                           topY-j*(imsize+eldm*distance)), coords) ) )
                 
-                # Apply correct (continuous) frame numbering for all case. If no extra positions are added, just append
+                # Apply correct (continuous) frame numbering for all cases. If no extra positions are added, just append
                 # the correct frame number. Elsewise append the correct frame number if a non-additional one, else None
                 if not compensate_stage_error:
                     frame_number.append(j*num_subframes[0]+(num_subframes[0]-(i+1)))
@@ -238,7 +244,8 @@ def create_map_coordinates(leftX, topY, imsize, distance, num_subframes, coords,
 def SuperScan_mapping(coord_dict, filepath='Z:\\ScanMap\\', do_autofocus=False, offset = 0.0, rotation = 0.0, imsize=200,
                       impix=512, pixeltime=4, detectors=('MAADF'), use_z_drive=False, auto_offset=False,
                       auto_rotation=False, autofocus_pattern='edges', number_of_images=1, acquire_overview=False,
-                      blank_beam=False, document_controller=None, event=None, superscan=None, as2=None):
+                      blank_beam=False, compensate_stage_error=False,
+                      document_controller=None, event=None, superscan=None, as2=None):
     """
         This function will take a series of STEM images (subframes) to map a large rectangular sample area.
         coord_dict is a dictionary that has to consist of at least 4 tuples that hold stage coordinates in x,y,z - direction
@@ -358,7 +365,7 @@ def SuperScan_mapping(coord_dict, filepath='Z:\\ScanMap\\', do_autofocus=False, 
 #            rotation = -frame_rotation/180*np.pi
 
     #Scan configuration
-    if superscan is None or as2 is None:
+    if superscan is not None and as2 is not None:
         if np.size(pixeltime) > 1:
             frame_parameters = {'size_pixels': (impix, impix), 'center': (0,0), 'pixeltime': pixeltime[0], \
                                 'fov': imsize*1e9, 'rotation': rotation}
@@ -377,7 +384,7 @@ def SuperScan_mapping(coord_dict, filepath='Z:\\ScanMap\\', do_autofocus=False, 
     num_subframes = ( int(np.abs(rightX-leftX)/(imsize+distance))+1, int(np.abs(topY-botY)/(imsize+distance))+1 )
     
     map_coords, frame_number = create_map_coordinates(leftX, topY, imsize, distance, num_subframes, coords,
-                                                      compensate_stage_error=False)
+                                                      compensate_stage_error=compensate_stage_error)
     
 #    map_coords = []
 #    frame_number = []
@@ -465,7 +472,7 @@ def SuperScan_mapping(coord_dict, filepath='Z:\\ScanMap\\', do_autofocus=False, 
             if blank_beam:
                 superscan.set_property_as_str('static_probe_state', 'blanked')
 
-            if superscan.is_plaing():
+            if superscan.is_playing():
                 superscan.stop_playing()
 
             vt.as2_set_control(as2, 'StageOutX', stagex)
@@ -672,5 +679,5 @@ def SuperScan_mapping(coord_dict, filepath='Z:\\ScanMap\\', do_autofocus=False, 
         tifffile.imsave(store+str('z_map.tif'),np.asarray(z_map, dtype='float32'))
         tifffile.imsave(store+str('focus_map.tif'),np.asarray(focus_map, dtype='float32'))
 
-    logwrite('\nDone.\n')
+    logwrite('Done.\n')
 

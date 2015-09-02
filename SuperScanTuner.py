@@ -324,6 +324,7 @@ class SuperScanTunerPanelDelegate(object):
         column.add(parameters_row5)
         column.add_spacing(25)
         column.add(button_row)
+        column.add_stretch()
         
         return column
         
