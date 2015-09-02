@@ -124,31 +124,31 @@ def symmetry_merit(image, imsize, mask=None):
 #        
 #    superscan.set_default_frame_parameters(parameters)
         
-def get_frame_parameters(superscan):
-    """
-    Gets the current frame parameters of the microscope.
-    
-    Parameters
-    -----------
-    superscan : hardware source object
-        An instance of the superscan hardware source
-    
-    Returns
-    --------
-    frame_parameters : dictionary
-        Contains the following keys:
-        
-        - size_pixels: Number of pixels in x- and y-direction of the acquired frame as tuple (x,y)
-        - center: Offset for the center of the scanned area in x- and y-direction (nm) as tuple (x,y)
-        - pixeltime: Time per pixel (us)
-        - fov: Field-of-view of the acquired frame (nm)
-        - rotation: Scan rotation (deg)
-    """
-    
-    parameters = superscan.get_default_frame_parameters()
-    
-    return {'size_pixels': parameters.size, 'center': parameters.center_nm, 'pixeltime': parameters.pixel_time_us, \
-            'fov': parameters.fov_nm, 'rotation': parameters.rotation_deg}
+#def get_frame_parameters(superscan):
+#    """
+#    Gets the current frame parameters of the microscope.
+#    
+#    Parameters
+#    -----------
+#    superscan : hardware source object
+#        An instance of the superscan hardware source
+#    
+#    Returns
+#    --------
+#    frame_parameters : dictionary
+#        Contains the following keys:
+#        
+#        - size_pixels: Number of pixels in x- and y-direction of the acquired frame as tuple (x,y)
+#        - center: Offset for the center of the scanned area in x- and y-direction (nm) as tuple (x,y)
+#        - pixeltime: Time per pixel (us)
+#        - fov: Field-of-view of the acquired frame (nm)
+#        - rotation: Scan rotation (deg)
+#    """
+#    
+#    parameters = superscan.get_default_frame_parameters()
+#    
+#    return {'size_pixels': parameters.size, 'center': parameters.center_nm, 'pixeltime': parameters.pixel_time_us, \
+#            'fov': parameters.fov_nm, 'rotation': parameters.rotation_deg}
 
 def create_record_parameters(superscan, frame_parameters, detectors={'HAADF': False, 'MAADF': True}):
     """
@@ -181,19 +181,19 @@ def create_record_parameters(superscan, frame_parameters, detectors={'HAADF': Fa
         parameters = superscan.get_default_frame_parameters()
         
         if frame_parameters.get('size_pixels') is not None:
-            parameters.size = frame_parameters['size_pixels']
+            parameters['size'] = list(frame_parameters['size_pixels'])
         
         if frame_parameters.get('center') is not None:
-            parameters.center_nm = frame_parameters['center']
+            parameters['center_nm'] = list(frame_parameters['center'])
         
         if frame_parameters.get('pixeltime') is not None:
-            parameters.pixel_time_us = frame_parameters['pixeltime']
+            parameters['pixel_time_us'] = frame_parameters['pixeltime']
         
         if frame_parameters.get('fov') is not None:
-            parameters.fov_nm = frame_parameters['fov']
+            parameters['fov_nm'] = frame_parameters['fov']
         
         if frame_parameters.get('rotation') is not None:
-            parameters.rotation_deg = frame_parameters['rotation']
+            parameters['rotation_rad'] = frame_parameters['rotation']*np.pi/180.0
     else:
         parameters = None
         
@@ -203,6 +203,7 @@ def create_record_parameters(superscan, frame_parameters, detectors={'HAADF': Fa
         channels_enabled = None
 
     return {'frame_parameters': parameters, 'channels_enabled': channels_enabled}
+    
 
 def graphene_generator(imsize, impix, rotation):
     rotation = rotation*np.pi/180
