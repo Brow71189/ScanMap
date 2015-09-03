@@ -8,12 +8,13 @@ Created on Thu Mar 12 16:54:54 2015
 import logging
 import time
 import os
+import warnings
 #from threading import Event
 
 import numpy as np
 import scipy.optimize
-from scipy.ndimage import convolve, gaussian_filter, median_filter
-from scipy.signal import fftconvolve, convolve2d
+from scipy.ndimage import convolve, gaussian_filter, median_filter, uniform_filter, fourier_gaussian
+from scipy.signal import fftconvolve, convolve2d, medfilt2d
 #import cv2
 
 #try:
@@ -23,8 +24,10 @@ from scipy.signal import fftconvolve, convolve2d
 #import matplotlib as plt
 
 #try:
-from ViennaTools import ViennaTools as vt
-from ViennaTools import tifffile
+with warnings.catch_warnings():
+    warnings.simplefilter('ignore')
+    from ViennaTools import ViennaTools as vt
+    from ViennaTools import tifffile
 #except:
 #    try:
 #        import ViennaTools as vt
@@ -82,47 +85,6 @@ def symmetry_merit(image, imsize, mask=None):
     else:
         return (measure_symmetry(ffil, imsize)[1]*(1.0-np.sum(mask)/np.size(mask)), np.var(ffil[mask==0]/mean**2*50))
     
-#def set_frame_parameters(superscan, frame_parameters):
-#    """
-#    Sets the parameters for image acqusition in the microscope.
-#    
-#    Parameters
-#    -----------
-#    superscan : hardware source object
-#        An instance of the superscan hardware source
-#    
-#    frame_parameters : dictionary
-#        Frame parameters to set in the microscope. Possible keys are:
-#        
-#        - size_pixels: Number of pixels in x- and y-direction of the acquired frame as tuple (x,y)
-#        - center: Offset for the center of the scanned area in x- and y-direction (nm) as tuple (x,y)
-#        - pixeltime: Time per pixel (us)
-#        - fov: Field-of-view of the acquired frame (nm)
-#        - rotation: Scan rotation (deg)
-#    
-#    Returns
-#    --------
-#    None
-#    """
-#    
-#    parameters = superscan.get_default_frame_parameters()
-#    
-#    if frame_parameters.has_key('size_pixels') and frame_parameters['size_pixels'] is not None:
-#        parameters.size = frame_parameters['size_pixels']
-#    
-#    if frame_parameters.has_key('center') and frame_parameters['center'] is not None:
-#        parameters.center_nm = frame_parameters['center']
-#    
-#    if frame_parameters.has_key('pixeltime') and frame_parameters['pixeltime'] is not None:
-#        parameters.pixel_time_us = frame_parameters['pixeltime']
-#    
-#    if frame_parameters.has_key('fov') and frame_parameters['fov'] is not None:
-#        parameters.fov_nm = frame_parameters['fov']
-#    
-#    if frame_parameters.has_key('rotation') and frame_parameters['rotation'] is not None:
-#        parameters.rotation_deg = frame_parameters['rotation']
-#        
-#    superscan.set_default_frame_parameters(parameters)
         
 #def get_frame_parameters(superscan):
 #    """
@@ -302,13 +264,17 @@ def dirt_detector(image, threshold=0.02, median_blur_diam=39, gaussian_blur_radi
         #image = cv2.GaussianBlur(image, (0,0), gaussian_blur_radius)
         image = gaussian_filter(image, gaussian_blur_radius)
     #create mask
-    mask = np.zeros(np.shape(image), dtype='uint8')
+    mask = np.zeros(np.shape(image))
     mask[image>threshold] = 1
     #apply median blur to mask to remove noise influence
-    if median_blur_diam%2==0:
+    if median_blur_diam % 2==0:
         median_blur_diam+=1
     #return cv2.medianBlur(mask, median_blur_diam)
-    return median_filter(mask, median_blur_diam)
+    #return median_filter(mask, median_blur_diam)
+    return np.rint(uniform_filter(mask, median_blur_diam)).astype('uint8')
+    
+def find_biggest_clean_spot(image):
+    pass
     
 def tuning_merit(imsize, average_frames, integration_radius, save_images, savepath, dirt_threshold, kwargs):
     intensities, image, mask = check_tuning(imsize, average_frames=average_frames, integration_radius=integration_radius, \

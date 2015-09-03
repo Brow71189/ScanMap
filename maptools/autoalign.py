@@ -6,8 +6,7 @@ Created on Thu Mar 12 17:19:43 2015
 
 """
 
-import logging
-#import time
+import warnings
 import os
 
 import numpy as np
@@ -17,15 +16,9 @@ from scipy import optimize, ndimage
 #except:
 #    pass
 
-try:
-    import ViennaTools.ViennaTools as vt
-    from ViennaTools.ViennaTools import tifffile
-except:
-    try:
-        import ViennaTools as vt
-        from ViennaTools import tifffile
-    except:
-        logging.warn('Could not import Vienna tools!')
+with warnings.catch_warnings():
+    warnings.simplefilter('ignore')
+    from ViennaTools import tifffile
 
 #from nion.swift import Application
 #from nion.swift.model import Image

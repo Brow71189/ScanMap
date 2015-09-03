@@ -3,6 +3,7 @@ import gettext
 import logging
 import numpy as np
 import threading
+import warnings
 
 try:
     from importlib import reload
@@ -10,13 +11,16 @@ except:
     pass
 # third party libraries
 # None
-try:
-    import ViennaTools.ViennaTools as vt
-except:
-    try:
-        import ViennaTools as vt
-    except:
-        logging.warn('Could not import Vienna tools!')
+#try:
+#    import ViennaTools.ViennaTools as vt
+#except:
+#    try:
+#        import ViennaTools as vt
+#    except:
+#        logging.warn('Could not import Vienna tools!')
+with warnings.catch_warnings():
+    warnings.simplefilter('ignore')
+    from ViennaTools import ViennaTools as vt
 
 # local libraries
 #from nion.swift import Panel
@@ -50,6 +54,8 @@ class ScanMapPanelDelegate(object):
         self.panel_name = _('ScanMap')
         self.panel_positions = ['left', 'right']
         self.panel_position = 'right'
+        self.superscan = self.__api.get_hardware_source_by_id('scan_controller', '1')
+        self.as2 = self.__api.get_instrument_by_id('autostem_controller', '1')
     
     def create_panel_widget(self, ui, document_controller):
         
@@ -65,7 +71,7 @@ class ScanMapPanelDelegate(object):
                     logging.warn(text + ' is not a valid FOV. Please input a floating point number.')
                     FOV_line_edit.select_all()
                     
-                total_number_frames()
+                self.total_number_frames()
             
         def Size_finished(text):
             global Size
@@ -77,7 +83,7 @@ class ScanMapPanelDelegate(object):
                     logging.warn(text + ' is not a valid size. Please input an integer number.')
                     Size_line_edit.select_all()
                     
-                total_number_frames()
+                self.total_number_frames()
             
         def Offset_finished(text):
             global Offset
@@ -89,7 +95,7 @@ class ScanMapPanelDelegate(object):
                     logging.warn(text + ' is not a valid Offset. Please input a floating point number.')
                     Offset_line_edit.select_all()
                     
-                total_number_frames()
+                self.total_number_frames()
         
         def Time_finished(text):
             global Time
@@ -105,7 +111,7 @@ class ScanMapPanelDelegate(object):
                         logging.warn(text + ' is not a valid Time. Please input a floating point number or a comma-seperated list of floats')
                         Time_line_edit.select_all()
                 
-                total_number_frames()                
+                self.total_number_frames()                
             
         def Rotation_finished(text):
             global Rotation
@@ -130,33 +136,33 @@ class ScanMapPanelDelegate(object):
                     logging.warn(text + ' is not a valid number. Please input an integer number.')
                     Number_line_edit.select_all()
                     
-                total_number_frames()
+                self.total_number_frames()
         
         def tl_button_clicked():
-            save_coords('top-left')
-            total_number_frames()
+            self.save_coords('top-left')
+            self.total_number_frames()
         def tr_button_clicked():
-            save_coords('top-right')
-            total_number_frames()
+            self.save_coords('top-right')
+            self.total_number_frames()
         def bl_button_clicked():
-            save_coords('bottom-left')
-            total_number_frames()
+            self.save_coords('bottom-left')
+            self.total_number_frames()
         def br_button_clicked():
-            save_coords('bottom-right')
-            total_number_frames()
+            self.save_coords('bottom-right')
+            self.total_number_frames()
         def drive_tl_button_clicked():
-            drive_coords('top-left')
+            self.drive_coords('top-left')
         def drive_tr_button_clicked():
-            drive_coords('top-right')
+            self.drive_coords('top-right')
         def drive_bl_button_clicked():
-            drive_coords('bottom-left')
+            self.drive_coords('bottom-left')
         def drive_br_button_clicked():
-            drive_coords('bottom-right')
+            self.drive_coords('bottom-right')
         def done_button_clicked():
             global FOV, Offset, Size, Time, Rotation, do_autofocus, use_z_drive, auto_offset, auto_rotation 
             global Number_of_images, acquire_overview, compensate_stage_error
             
-            total_number_frames()
+            self.total_number_frames()
             
             if z_drive_checkbox.check_state == 'checked':
                 logging.info('Using z drive in addition to Fine Focus for focus adjustment.')
@@ -250,6 +256,7 @@ class ScanMapPanelDelegate(object):
         right_buttons_row2 = ui.create_row_widget()
         checkbox_row1 = ui.create_row_widget()
         checkbox_row2 = ui.create_row_widget()
+        checkbox_row3 = ui.create_row_widget()
         done_button_row = ui.create_row_widget()
 
         column.add_spacing(20)        
@@ -281,6 +288,8 @@ class ScanMapPanelDelegate(object):
         column.add(checkbox_row1)
         column.add_spacing(5)
         column.add(checkbox_row2)
+        column.add_spacing(5)
+        column.add(checkbox_row3)
         column.add_spacing(20)
         column.add(done_button_row)
         column.add_stretch()
@@ -302,6 +311,7 @@ class ScanMapPanelDelegate(object):
         #####################################################
         #                   checkbox_row1                   #
         #                   checkbox_row2                   #
+        #                   checkbox_row3                   #
         #                   done_button_row                 #
         #####################################################
         
@@ -337,14 +347,14 @@ class ScanMapPanelDelegate(object):
         Number_line_edit.on_editing_finished = Number_of_images
         right_edit_row3.add(Number_line_edit)
 
-        tl_button = ui.create_push_button_widget(_("Top Left"))
-        tr_button = ui.create_push_button_widget(_("Top Right"))
-        bl_button = ui.create_push_button_widget(_("Bottom Left"))
-        br_button = ui.create_push_button_widget(_("Bottom Right"))
-        drive_tl = ui.create_push_button_widget(_("Top Left"))
-        drive_tr = ui.create_push_button_widget(_("Top Right"))
-        drive_bl = ui.create_push_button_widget(_("Bottom Left"))
-        drive_br = ui.create_push_button_widget(_("Bottom Right"))
+        tl_button = ui.create_push_button_widget(_("Top\nLeft"))
+        tr_button = ui.create_push_button_widget(_("Top\nRight"))
+        bl_button = ui.create_push_button_widget(_("Bottom\nLeft"))
+        br_button = ui.create_push_button_widget(_("Bottom\nRight"))
+        drive_tl = ui.create_push_button_widget(_("Top\nLeft"))
+        drive_tr = ui.create_push_button_widget(_("Top\nRight"))
+        drive_bl = ui.create_push_button_widget(_("Bottom\nLeft"))
+        drive_br = ui.create_push_button_widget(_("Bottom\nRight"))
         done_button = ui.create_push_button_widget(_("Done"))
         abort_button = ui.create_push_button_widget(_("Abort"))
    
@@ -354,7 +364,7 @@ class ScanMapPanelDelegate(object):
         auto_rotation_checkbox = ui.create_check_box_widget(_("Auto Rotation"))
         overview_checkbox = ui.create_check_box_widget(_("Acquire Overview"))
         overview_checkbox.check_state = 'checked'
-        correct_stage_errors_checkbox = ui.create_check_box_widget(_("Correct Stage Errors"))
+        correct_stage_errors_checkbox = ui.create_check_box_widget(_("Compensate Stage Movement Errors"))
             
         tl_button.on_clicked = tl_button_clicked
         tr_button.on_clicked = tr_button_clicked
@@ -368,19 +378,19 @@ class ScanMapPanelDelegate(object):
         abort_button.on_clicked = abort_button_clicked
         
         left_buttons_row1.add(tl_button)
-        left_buttons_row1.add_spacing(5)
+        left_buttons_row1.add_spacing(3)
         left_buttons_row1.add(tr_button)
         
         left_buttons_row2.add(bl_button)
-        left_buttons_row2.add_spacing(5)
+        left_buttons_row2.add_spacing(3)
         left_buttons_row2.add(br_button)
         
         right_buttons_row1.add(drive_tl)
-        right_buttons_row1.add_spacing(5)
+        right_buttons_row1.add_spacing(3)
         right_buttons_row1.add(drive_tr)
         
         right_buttons_row2.add(drive_bl)
-        right_buttons_row2.add_spacing(5)
+        right_buttons_row2.add_spacing(3)
         right_buttons_row2.add(drive_br)
         
         checkbox_row1.add(autofocus_checkbox)
@@ -393,15 +403,66 @@ class ScanMapPanelDelegate(object):
         checkbox_row2.add(z_drive_checkbox)
         checkbox_row2.add_spacing(4)
         checkbox_row2.add(overview_checkbox)
-        checkbox_row2.add_spacing(4)        
-        checkbox_row2.add(correct_stage_errors_checkbox)
         checkbox_row2.add_stretch()
-        
+
+        checkbox_row3.add(correct_stage_errors_checkbox)
+        checkbox_row3.add_stretch()
+                
         done_button_row.add(done_button)
         done_button_row.add_spacing(15)
         done_button_row.add(abort_button)
         
         return column
+        
+    def save_coords(self, position):
+        global coord_dict
+        try:
+            reload(vt)
+        except:
+            logging.warn('Could not reload ViennaTools!')
+        coord_dict[position] = (vt.as2_get_control(self.as2, 'StageOutX'), vt.as2_get_control(self.as2, 'StageOutY'), 
+                                vt.as2_get_control(self.as2, 'StageOutZ'), vt.as2_get_control(self.as2, 'EHTFocus'))
+        logging.info('Saved x: ' +
+                     str(vt.as2_get_control(self.as2, 'StageOutX')) + ', y: ' +
+                     str(vt.as2_get_control(self.as2, 'StageOutY')) + ', z: ' +
+                     str(vt.as2_get_control(self.as2, 'StageOutZ')) + ', focus: ' +
+                     str(vt.as2_get_control(self.as2, 'EHTFocus')) + ' as ' + position + ' corner.')
+
+    def drive_coords(self, position):
+        global coord_dict
+        if coord_dict[position] is None:
+            logging.warn('You haven\'t set the '+position+' corner yet.')
+        else:
+            logging.info('Going to '+str(position)+' corner: x: '+str(coord_dict[position][0])+', y: '+str(coord_dict[position][1])+', z: '+str(coord_dict[position][2])+', focus: '+str(coord_dict[position][3]))
+            vt.as2_set_control(self.as2, 'StageOutX', coord_dict[position][0])
+            vt.as2_set_control(self.as2, 'StageOutY', coord_dict[position][1])
+            vt.as2_set_control(self.as2, 'StageOutZ', coord_dict[position][2])
+            vt.as2_set_control(self.as2, 'EHTFocus', coord_dict[position][3])
+            
+    def total_number_frames(self):
+        global Offset, FOV, Size, Time, coord_dict, Number_of_images
+        
+        if not None in coord_dict.values() and not None in (Offset, FOV, Size, Time):
+            corners = ('top-left', 'top-right', 'bottom-right', 'bottom-left')
+            coords = []
+            for corner in corners:
+                coords.append(coord_dict[corner])
+            coord_dict_sorted = mapper.sort_quadrangle(coords)
+            coords = []
+            for corner in corners:
+                coords.append(coord_dict_sorted[corner])
+            imsize = FOV*1e-9
+            distance = Offset*imsize    
+            leftX = np.min((coords[0][0],coords[3][0]))
+            rightX = np.max((coords[1][0],coords[2][0]))
+            topY = np.max((coords[0][1],coords[1][1]))
+            botY = np.min((coords[2][1],coords[3][1]))
+            num_subframes = ( int(np.abs(rightX-leftX)/(imsize+distance))+1, int(np.abs(topY-botY)/(imsize+distance))+1 )
+            
+            logging.info('With the current settings, %dx%d frames (%d in total) will be taken.' % (num_subframes[0], num_subframes[1], num_subframes[0]*num_subframes[1]))
+            logging.info('A total area of %.4f um2 will be scanned.' % (num_subframes[0]*num_subframes[1]*(FOV*1e-3)**2))
+            logging.info('Approximate mapping time: %.0f s' %(num_subframes[0]*num_subframes[1]*(Size**2*np.sum(Time)*1e-6 + 3.5)))
+    
 
 class ScanMapExtension(object):
     extension_id = 'univie.scanmap'
@@ -413,48 +474,3 @@ class ScanMapExtension(object):
     def close(self):
         self.__panel_ref.close()
         self.__panel_ref = None
-
-def save_coords(position):
-    global coord_dict
-    try:
-        reload(vt)
-    except:
-        logging.warn('Could not reload ViennaTools!')
-    coord_dict[position] = (vt.as2_get_control('StageOutX'), vt.as2_get_control('StageOutY'), vt.as2_get_control('StageOutZ'), vt.as2_get_control('EHTFocus'))
-    logging.info('Saved x: '+str(vt.as2_get_control('StageOutX'))+', y: '+str(vt.as2_get_control('StageOutY'))+', z: '+str(vt.as2_get_control('StageOutZ'))+', focus: '+str(vt.as2_get_control('EHTFocus'))+' as '+position+' corner.')
-
-def drive_coords(position):
-    global coord_dict
-    if coord_dict[position] is None:
-        logging.warn('You haven\'t set the '+position+' corner yet.')
-    else:
-        logging.info('Going to '+str(position)+' corner: x: '+str(coord_dict[position][0])+', y: '+str(coord_dict[position][1])+', z: '+str(coord_dict[position][2])+', focus: '+str(coord_dict[position][3]))
-        vt.as2_set_control('StageOutX', coord_dict[position][0])
-        vt.as2_set_control('StageOutY', coord_dict[position][1])
-        vt.as2_set_control('StageOutZ', coord_dict[position][2])
-        vt.as2_set_control('EHTFocus', coord_dict[position][3])
-        
-def total_number_frames():
-    global Offset, FOV, Size, Time, coord_dict, Number_of_images
-    
-    if not None in coord_dict.values() and not None in (Offset, FOV, Size, Time):
-        corners = ('top-left', 'top-right', 'bottom-right', 'bottom-left')
-        coords = []
-        for corner in corners:
-            coords.append(coord_dict[corner])
-        coord_dict_sorted = mapper.sort_quadrangle(coords)
-        coords = []
-        for corner in corners:
-            coords.append(coord_dict_sorted[corner])
-        imsize = FOV*1e-9
-        distance = Offset*imsize    
-        leftX = np.min((coords[0][0],coords[3][0]))
-        rightX = np.max((coords[1][0],coords[2][0]))
-        topY = np.max((coords[0][1],coords[1][1]))
-        botY = np.min((coords[2][1],coords[3][1]))
-        num_subframes = ( int(np.abs(rightX-leftX)/(imsize+distance))+1, int(np.abs(topY-botY)/(imsize+distance))+1 )
-        
-        logging.info('With the current settings, %dx%d frames (%d in total) will be taken.' % (num_subframes[0], num_subframes[1], num_subframes[0]*num_subframes[1]))
-        logging.info('A total area of %.4f um2 will be scanned.' % (num_subframes[0]*num_subframes[1]*(FOV*1e-3)**2))
-        logging.info('Approximate mapping time: %.0f s' %(num_subframes[0]*num_subframes[1]*(Size**2*np.sum(Time)*1e-6 + 3.5)))
-    

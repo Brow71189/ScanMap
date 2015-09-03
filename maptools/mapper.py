@@ -8,25 +8,20 @@ Created on Thu Mar 12 17:03:46 2015
 import logging
 import time
 import os
-
+import warnings
 import numpy as np
 
-try:
-    import ViennaTools.ViennaTools as vt
-    from ViennaTools.ViennaTools import tifffile
-except:
-    try:
-        import ViennaTools as vt
-        from ViennaTools import tifffile
-    except:
-        logging.warn('Could not import Vienna tools!')
+with warnings.catch_warnings():
+    warnings.simplefilter('ignore')
+    from ViennaTools import ViennaTools as vt
+    from ViennaTools import tifffile
 
 from . import autotune
 from .autotune import DirtError
 from . import autoalign
 
 
-def find_offset_and_rotation():
+def find_offset_and_rotation(as2, superscan):
     """
     This function finds the current rotation of the scan with respect to the stage coordinate system and the offset that has to be set between two neighboured images when no overlap should occur.
     It takes no input arguments, so the current frame parameters are used for image acquisition.
@@ -34,30 +29,26 @@ def find_offset_and_rotation():
     It returns a tuple of the form (rotation(degrees), offset(fraction of images)).
 
     """
+    
+    frame_parameters = superscan.get_frame_parameters()
+    
+    imsize = frame_parameters['fov_nm']
+    
+    image_grabber_parameters = {'size_pixels': frame_parameters['size'], 'rotation': 0,
+                                'pixeltime': frame_parameters['pixel_time_us'], 'fov': frame_parameters['fov_nm']}
 
-    try:
-        FrameParams = ss.SS_Functions_SS_GetFrameParams()
-    except:
-        logging.error('Could not get Frame Parameters. Make sure SuperScan funtctions are available.')
-
-    imsize = FrameParams[5]
-
-    leftX = vt.as2_get_control()
-    vt.as2_set_control('StageOutX', leftX-2.0*imsize)
-    time.sleep(3)
-    #Goto point for first image and aquire it
-    vt.as2_set_control('StageOutX', leftX)
-    time.sleep(3)
-    im1 = autotune.image_grabber()
+    leftX = vt.as2_get_control(as2, 'StageOutX')
+    vt.as2_set_control(as2, 'StageOutX', leftX + 6.0*imsize)
+    time.sleep(5)
+    
+    image1 = autotune.image_grabber(frame_parameters=image_grabber_parameters, detectors={'MAADF': True, 'HAADF': False})
     #Go to the right by one half image size
-    vt.as2_set_control('StageOutX', leftX+imsize/2.0)
+    vt.as2_set_control('StageOutX', leftX + 6.5*imsize)
     time.sleep(3)
-    im2 = autotune.image_grabber()
-    #go back to inital position
-    vt.as2_set_control('StageOutX', leftX)
+    image2 = autotune.image_grabber(frame_parameters=image_grabber_parameters, detectors={'MAADF': True, 'HAADF': False})
     #find offset between the two images
     try:
-        frame_rotation, frame_distance = autoalign.shift_fft(im1, im2)
+        frame_rotation, frame_distance = autoalign.rot_dist_fft(image1, image2)
     except:
         raise
 
