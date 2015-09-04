@@ -20,7 +20,7 @@ except:
 #        logging.warn('Could not import Vienna tools!')
 with warnings.catch_warnings():
     warnings.simplefilter('ignore')
-    from ViennaTools import ViennaTools as vt
+    import ViennaTools.ViennaTools as vt
 
 # local libraries
 #from nion.swift import Panel
@@ -43,6 +43,7 @@ auto_offset=False
 auto_rotation=False
 acquire_overview = True
 compensate_stage_error = False
+blank_beam = False
 FOV = Size = Offset = Time = Rotation = None
 Number_of_images = 1
 
@@ -54,10 +55,13 @@ class ScanMapPanelDelegate(object):
         self.panel_name = _('ScanMap')
         self.panel_positions = ['left', 'right']
         self.panel_position = 'right'
-        self.superscan = self.__api.get_hardware_source_by_id('scan_controller', '1')
-        self.as2 = self.__api.get_instrument_by_id('autostem_controller', '1')
+        self.superscan = None
+        self.as2 = None
     
     def create_panel_widget(self, ui, document_controller):
+        
+        self.superscan = self.__api.get_hardware_source_by_id('scan_controller', '1')
+        self.as2 = self.__api.get_instrument_by_id('autostem_controller', '1')        
         
         column = ui.create_column_widget()        
         
@@ -160,7 +164,7 @@ class ScanMapPanelDelegate(object):
             self.drive_coords('bottom-right')
         def done_button_clicked():
             global FOV, Offset, Size, Time, Rotation, do_autofocus, use_z_drive, auto_offset, auto_rotation 
-            global Number_of_images, acquire_overview, compensate_stage_error
+            global Number_of_images, acquire_overview, compensate_stage_error, blank_beam
             
             self.total_number_frames()
             
@@ -203,6 +207,12 @@ class ScanMapPanelDelegate(object):
                 compensate_stage_error = True
             else:
                 compensate_stage_error = False
+            
+            if blank_checkbox.check_state == 'checked':
+                logging.info('Beam blanker: ON')
+                blank_beam = True
+            else:
+                blank_beam = False
                 
             logging.info('FOV: ' + str(FOV)+' nm')
             logging.info('Offset: ' + str(Offset)+' x image size')
@@ -226,7 +236,8 @@ class ScanMapPanelDelegate(object):
                 self.thread = threading.Thread(target=mapper.SuperScan_mapping, args=(coord_dict,), kwargs={'do_autofocus': do_autofocus, 'imsize': FOV, 'offset': Offset,\
                             'rotation': Rotation, 'number_of_images': Number_of_images, 'impix': Size, 'pixeltime': Time, 'use_z_drive': use_z_drive, \
                             'auto_offset': auto_offset, 'auto_rotation': auto_rotation, 'autofocus_pattern': 'testing', 'document_controller': document_controller, \
-                            'event': self.event, 'acquire_overview': acquire_overview, 'compensate_stage_error': compensate_stage_error})
+                            'event': self.event, 'acquire_overview': acquire_overview, 'blank_beam': blank_beam, 'compensate_stage_error': compensate_stage_error, \
+                            'superscan': self.superscan, 'as2': self.as2})
                 self.thread.start()
 #                mapper.SuperScan_mapping(coord_dict, do_autofocus=do_autofocus, imsize = FOV, offset = Offset, rotation = Rotation, number_of_images = Number_of_images,\
 #                        impix = Size, pixeltime = Time, use_z_drive=use_z_drive, auto_offset=auto_offset, auto_rotation=auto_rotation, autofocus_pattern='testing', \
@@ -364,6 +375,7 @@ class ScanMapPanelDelegate(object):
         auto_rotation_checkbox = ui.create_check_box_widget(_("Auto Rotation"))
         overview_checkbox = ui.create_check_box_widget(_("Acquire Overview"))
         overview_checkbox.check_state = 'checked'
+        blank_checkbox = ui.create_check_box_widget(_("Blank beam between acquisitions"))
         correct_stage_errors_checkbox = ui.create_check_box_widget(_("Compensate Stage Movement Errors"))
             
         tl_button.on_clicked = tl_button_clicked
@@ -398,11 +410,13 @@ class ScanMapPanelDelegate(object):
         checkbox_row1.add(auto_rotation_checkbox)        
         checkbox_row1.add_spacing(4)
         checkbox_row1.add(auto_offset_checkbox)
+        checkbox_row1.add_spacing(4)
+        checkbox_row1.add(z_drive_checkbox)
         checkbox_row1.add_stretch()
         
-        checkbox_row2.add(z_drive_checkbox)
-        checkbox_row2.add_spacing(4)
         checkbox_row2.add(overview_checkbox)
+        checkbox_row2.add_spacing(4)
+        checkbox_row2.add(blank_checkbox)
         checkbox_row2.add_stretch()
 
         checkbox_row3.add(correct_stage_errors_checkbox)

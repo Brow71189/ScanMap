@@ -26,7 +26,7 @@ from scipy.signal import fftconvolve, convolve2d, medfilt2d
 #try:
 with warnings.catch_warnings():
     warnings.simplefilter('ignore')
-    from ViennaTools import ViennaTools as vt
+    import ViennaTools.ViennaTools as vt
     from ViennaTools import tifffile
 #except:
 #    try:
@@ -162,7 +162,7 @@ def create_record_parameters(superscan, frame_parameters, detectors={'HAADF': Fa
     if detectors is not None:
         channels_enabled = [detectors['HAADF'], detectors['MAADF'], False, False]
     else:
-        channels_enabled = None
+        channels_enabled = [False, True, False, False]
 
     return {'frame_parameters': parameters, 'channels_enabled': channels_enabled}
     
@@ -361,9 +361,10 @@ def kill_aberrations(superscan=None, as2=None, document_controller=None, average
         #current = check_tuning(frame_parameters['fov'], average_frames=average_frames, integration_radius=integration_radius, \
         #                       save_images=save_images, savepath=savepath, dirt_threshold=dirt_threshold, **kwargs)
         current = tuning_merit(frame_parameters['fov'], average_frames, integration_radius, save_images, savepath, dirt_threshold, kwargs)
-    except RuntimeError:
+    except RuntimeError as detail:
         #current = np.ones(12)
         current = 1e5
+        print(str(detail))
     except DirtError:
         logwrite('Tuning ended because of too high dirt coverage.', level='warn')
         raise
@@ -619,6 +620,7 @@ def image_grabber(superscan = None, as2 = None, acquire_image=True, **kwargs):
     """
     keys = ['EHTFocus', 'C12_a', 'C12_b', 'C21_a', 'C21_b', 'C23_a', 'C23_b']
     controls = ['EHTFocus', 'C12.a', 'C12.b', 'C21.a', 'C21.b', 'C23.a', 'C23.b']
+    print(kwargs.get('frame_parameters'))
     originals = {}
     global global_aberrations
     #print(kwargs)
@@ -641,10 +643,16 @@ def image_grabber(superscan = None, as2 = None, acquire_image=True, **kwargs):
                 raise RuntimeError('You have to provide an instance of superscan to perform superscan-related operations.')
             record_parameters = create_record_parameters(superscan, kwargs.get('frame_parameters'), detectors=kwargs.get('detectors'))
             im = superscan.record(**record_parameters)
+            if len(im) > 1:
+                im2 = []
+                for entry in im:
+                    im2.append(entry.data)
+            else:
+                im2 = im[0].data
             if len(originals) > 0:
                 for key in originals.keys():
                     vt.as2_set_control(key, originals[key])
-            return im
+            return im2
     else:
         im = kwargs['image']
         imsize = kwargs['imsize']

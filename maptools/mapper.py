@@ -463,8 +463,8 @@ def SuperScan_mapping(coord_dict, filepath='Z:\\ScanMap\\', do_autofocus=False, 
             if blank_beam:
                 superscan.set_property_as_str('static_probe_state', 'blanked')
 
-            if superscan.is_playing():
-                superscan.stop_playing()
+            if superscan.is_playing:
+                superscan.abort_playing()
 
             vt.as2_set_control(as2, 'StageOutX', stagex)
             vt.as2_set_control(as2, 'StageOutY', stagey)
@@ -473,8 +473,11 @@ def SuperScan_mapping(coord_dict, filepath='Z:\\ScanMap\\', do_autofocus=False, 
             vt.as2_set_control(as2, 'EHTFocus', fine_focus)
 
             #Wait until movement of stage is done (wait longer time before first frame)
+            
             if counter == 1:
                 time.sleep(10) #time in seconds
+            elif frame_number[counter-1] is None:
+                time.sleep(1)
             else:
                 time.sleep(3)
             
@@ -601,7 +604,7 @@ def SuperScan_mapping(coord_dict, filepath='Z:\\ScanMap\\', do_autofocus=False, 
                 else:
                     #Take frame and save it to disk
                     if number_of_images < 2:
-                        data = autotune.image_grabber(superscan=superscan, **frame_parameters)
+                        data = autotune.image_grabber(superscan=superscan, frame_parameters=frame_parameters)
     
                         tifffile.imsave(store+str('%.4d_%.3f_%.3f.tif' % (frame_number[counter-1],stagex*1e6,stagey*1e6)), data)
                         test_map.append(frame_coord)
@@ -609,7 +612,7 @@ def SuperScan_mapping(coord_dict, filepath='Z:\\ScanMap\\', do_autofocus=False, 
                         for i in range(number_of_images):
                             if np.size(pixeltime) > 1:
                                 frame_parameters['pixeltime'] = pixeltime[i]
-                            data = autotune.image_grabber(superscan=superscan, **frame_parameters)
+                            data = autotune.image_grabber(superscan=superscan, frame_parameters=frame_parameters)
                             tifffile.imsave(store+str('%.4d_%.3f_%.3f_%.2d.tif' % (frame_number[counter-1],stagex*1e6,stagey*1e6, i)), data)
     
                         test_map.append(frame_coord)
@@ -641,7 +644,7 @@ def SuperScan_mapping(coord_dict, filepath='Z:\\ScanMap\\', do_autofocus=False, 
         #acquire image and save it
         overview_parameters = {'size_pixels': (4096, 4096), 'center': (0,0), 'pixeltime': 2, \
                             'fov': over_size, 'rotation': rotation}
-        image = autotune.image_grabber(superscan=superscan, **overview_parameters)
+        image = autotune.image_grabber(superscan=superscan, frame_parameters=overview_parameters)
 
         tifffile.imsave(store+'Overview_'+str(np.rint(over_size))+'_nm.tif', image)
 
