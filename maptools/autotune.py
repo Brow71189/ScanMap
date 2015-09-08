@@ -255,7 +255,7 @@ def distribute_intensity(x,y):
     
     return result
             
-def dirt_detector(image, threshold=0.02, median_blur_diam=39, gaussian_blur_radius=3):
+def dirt_detector(image, threshold=0.02, median_blur_diam=59, gaussian_blur_radius=3):
     """
     Returns a mask with the same shape as "image" that is 1 where there is dirt and 0 otherwise
     """
@@ -275,6 +275,43 @@ def dirt_detector(image, threshold=0.02, median_blur_diam=39, gaussian_blur_radi
     
 def find_biggest_clean_spot(image):
     pass
+
+def find_dirt_threshold(image, median_blur_diam=59, gaussian_blur_radius=3, debug_mode=False):
+    # set up the search range
+    search_range = np.mgrid[0:2*np.mean(image):30j]
+    shape = np.array(np.shape(image))
+    mask_sizes = []
+    dirt_start = None
+    dirt_end = None
+    # go through list of thresholds and determine the amount of dirt with this threshold
+    for threshold in search_range:
+        mask_size = np.sum(dirt_detector(image, threshold=threshold, median_blur_diam=median_blur_diam,
+                                         gaussian_blur_radius=gaussian_blur_radius)) / np.prod(shape)
+        # remember value where the mask started to shrink
+        if mask_size < 0.99 and dirt_start is None:
+            dirt_start = threshold
+        # remember value where the mask is almost zero and end search
+        if mask_size < 0.01:
+            dirt_end = threshold
+            break
+        
+        mask_sizes.append(mask_size)
+    
+    # determine if there was really dirt present and return an appropriate threshold
+    if dirt_end-dirt_start < 3*(search_range[1] - search_range[0]):
+    # if distance between maximum and minimum mask size is very small, no dirt is present
+    # set threshold to a value 25% over dirt_end
+        threshold = dirt_end * 1.25
+        print('here')
+    else:
+    # if distance between dirt_start and dirt_end is longer, set threshold to a value 
+    # 10% smaller than mean to prevent missing dirt that is actually there in the image
+        threshold = (dirt_end + dirt_start) * 0.45
+    
+    if debug_mode:
+        return (threshold, search_range, np.array(mask_sizes))
+    else:
+        return threshold
     
 def tuning_merit(imsize, average_frames, integration_radius, save_images, savepath, dirt_threshold, kwargs):
     intensities, image, mask = check_tuning(imsize, average_frames=average_frames, integration_radius=integration_radius, \
@@ -943,7 +980,7 @@ def find_peaks(im, imsize, half_line_thickness=5, position_tolerance=5, integrat
     second_order_peaks = imsize/0.123
     
     #make sure that areas of first and second_order peaks don't overlap
-    if position_tolerance >= (second_order_peaks-first_order)/np.sqrt(2)-1:
+    if position_tolerance > (second_order_peaks-first_order)/np.sqrt(2)-1:
         position_tolerance = int(np.rint((second_order_peaks-first_order)/np.sqrt(2)-1))
     
     #print('center: '+str(center)+', first_order: '+str(first_order))
@@ -952,7 +989,7 @@ def find_peaks(im, imsize, half_line_thickness=5, position_tolerance=5, integrat
     draw_circle(fft, tuple(center), int(np.rint(first_order/2.0)))
     
     #prevent infinite values when cross would be calculated until central pixel because of too high half line thickness
-    if half_line_thickness >= int(np.rint(first_order/2.0))-1:
+    if half_line_thickness > int(np.rint(first_order/2.0))-1:
         half_line_thickness = int(np.rint(first_order/2.0))-1
 
     #std_dev_fft = np.std(fft[fft>-1])
@@ -987,8 +1024,8 @@ def find_peaks(im, imsize, half_line_thickness=5, position_tolerance=5, integrat
     while success is False:
         counter += 1
         if counter > np.sqrt(shape[0]):
-            raise RuntimeError('No peaks could be found in the FFT of im.')
-            #break
+            #raise RuntimeError('No peaks could be found in the FFT of im.')
+            break
         if second_order:
             peaks = np.zeros((2,6,4))
         else:
@@ -999,7 +1036,7 @@ def find_peaks(im, imsize, half_line_thickness=5, position_tolerance=5, integrat
 
         if first_peak[2] < np.mean(area_first_peak)+6*np.std(area_first_peak):
             fft[first_peak[0]-position_tolerance:first_peak[0]+position_tolerance+1, first_peak[1]-position_tolerance:first_peak[1]+position_tolerance+1] = 1
-        elif np.sqrt(np.sum((np.array(first_peak[0:2])-center)**2)) < first_order*0.6667 or np.sqrt(np.sum((np.array(first_peak[0:2])-center)**2)) > first_order*1.333:
+        elif np.sqrt(np.sum((np.array(first_peak[0:2])-center)**2)) < first_order*0.6667 or np.sqrt(np.sum((np.array(first_peak[0:2])-center)**2)) > first_order*1.5:
             fft[first_peak[0]-position_tolerance:first_peak[0]+position_tolerance+1, first_peak[1]-position_tolerance:first_peak[1]+position_tolerance+1] = 2
         else:
             try:            
