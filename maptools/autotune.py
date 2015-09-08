@@ -302,7 +302,6 @@ def find_dirt_threshold(image, median_blur_diam=59, gaussian_blur_radius=3, debu
     # if distance between maximum and minimum mask size is very small, no dirt is present
     # set threshold to a value 25% over dirt_end
         threshold = dirt_end * 1.25
-        print('here')
     else:
     # if distance between dirt_start and dirt_end is longer, set threshold to a value 
     # 10% smaller than mean to prevent missing dirt that is actually there in the image
@@ -325,7 +324,7 @@ def tuning_merit(imsize, average_frames, integration_radius, save_images, savepa
     
 
 def kill_aberrations(superscan=None, as2=None, document_controller=None, average_frames=3, integration_radius=1, image=None, \
-                    imsize=None, only_focus=False, save_images=False, savepath=None, event=None, dirt_threshold=0.015, \
+                    imsize=None, only_focus=False, save_images=False, savepath=None, event=None, dirt_threshold=None, \
                     steps = {'EHTFocus': 2, 'C12_a': 2, 'C12_b': 2, 'C21_a': 300, 'C21_b': 300, 'C23_a': 75, 'C23_b': 75}, \
                     keys = ['EHTFocus', 'C12_a', 'C12_b', 'C21_a', 'C21_b', 'C23_a', 'C23_b'], \
                     frame_parameters={'size_pixels': (512, 512), 'center': (0,0), 'pixeltime': 8, 'fov': 4, 'rotation': 0}):
@@ -393,6 +392,11 @@ def kill_aberrations(superscan=None, as2=None, document_controller=None, average
 #    if 'C23_a' in keys:
 #        steps.append(astig3f_step)
 #        steps.append(astig3f_step)
+    
+    # If no dirt threshold was provided and in online mode, find the correct dirt threshold
+    if online and dirt_threshold == None:
+        image = image_grabber(**kwargs)
+        dirt_threshold = find_dirt_threshold(image)
     
     try:
         #current = check_tuning(frame_parameters['fov'], average_frames=average_frames, integration_radius=integration_radius, \

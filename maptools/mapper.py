@@ -519,7 +519,7 @@ def SuperScan_mapping(coord_dict, filepath='Z:\\ScanMap\\', do_autofocus=False, 
                         #tests in each frame after aquisition if all 6 reflections in the fft are still there (only for frames where less than 50% of the area are
                         #covered with dirt). If not all reflections are visible, autofocus is applied and the result is added as offset to the interpolated focus values.
                         #The dirt coverage is calculated by considering all pixels intensities that are higher than 0.02 as dirt
-                        data=autotune.image_grabber()
+                        data=autotune.image_grabber(superscan=superscan, frame_parameters=frame_parameters)
     
                         name = str('%.4d_%.3f_%.3f.tif' % (frame_number[counter-1],stagex*1e6,stagey*1e6))
                         dirt_mask = autotune.dirt_detector(data, threshold=0.01, median_blur_diam=39, gaussian_blur_radius=3)
