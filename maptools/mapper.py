@@ -174,8 +174,8 @@ def find_nearest_neighbors(number, target, points):
 def create_map_coordinates(leftX, topY, imsize, distance, num_subframes, coords, compensate_stage_error=False):
     extra_lines = 2  # Number of lines to add at the beginning of the map
     extra_frames = 5  # Number of extra moves at each end of a line
-    oldm = 0.5  # odd line distance multiplicator (adjust odd lines offset)
-    eldm = 0  # even line distance multiplicator (adjust even lines offset)
+    oldm = 0.25  # odd line distance mover (additional offset of odd lines, in fractions of (imsize+distance))
+    eldm = 0  # even line distance mover (additional offset of even lines, in fractions of (imsize+distance))
 
     num_subframes = np.array(num_subframes)
 
