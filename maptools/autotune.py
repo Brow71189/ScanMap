@@ -13,8 +13,8 @@ import warnings
 
 import numpy as np
 import scipy.optimize
-from scipy.ndimage import convolve, gaussian_filter, median_filter, uniform_filter, fourier_gaussian
-from scipy.signal import fftconvolve, convolve2d, medfilt2d
+from scipy.ndimage import gaussian_filter, uniform_filter
+from scipy.signal import fftconvolve
 #import cv2
 
 #try:
@@ -47,20 +47,227 @@ except:
 #global variable to store aberrations when simulating them (see function image_grabber() for details)
 #global_aberrations = {'EHTFocus': 0, 'C12_a': 5, 'C12_b': 0, 'C21_a': 801.0, 'C21_b': 0, 'C23_a': -500, 'C23_b': 0}
 global_aberrations = {'EHTFocus': 2, 'C12_a': 3, 'C12_b': -1, 'C21_a': 894, 'C21_b': 211.0, 'C23_a': -174, 'C23_b': 142.0}
+
+
     
 class DirtError(Exception):
     """
     Custom Exception to specify that too much dirt was found in an image to perform a certain operation.
     """
 
+
+class Imaging(object):
+    
+    def __init__(self, **kwargs):
+        self._image = kwargs.get('image')
+        self._shape = kwargs.get('impix')
+        self.imsize = kwargs.get('imsize')
+        self.online = kwargs.get('online')
+        self.dirt_threshold = kwargs.get('dirt_threshold')
+        self.mask = kwargs.get('mask')
+        self.frame_parameters = kwargs.get('frame_parameters')
+        self.record_parameters = kwargs.get('record_parameters')
+        self.detectors = kwargs.get('detectors', {'HAADF': False, 'MAADF': True})
+        self.aberrations = kwargs.get('aberrations')
+        self.superscan = kwargs.get('superscan')
+        self.as2 = kwargs.get('as2')
+        
+    @property
+    def image(self):
+        return self._image
+    
+    @image.setter
+    def image(self, image):
+        self._image = image
+        self._shape = np.shape(image)
+        
+    @property
+    def shape(self):
+        if self._shape is None:
+            if self._image is None:
+                raise RuntimeError('There is no image for which the shape could be returned. Set Imaging.image first.')
+            self._shape = np._shape(self._image)
+        return self._shape
+    
+    @shape.setter
+    def shape(self, shape):
+        self._shape = shape        
+    
+        
+    def create_record_parameters(self, frame_parameters=None, detectors=None):
+        """
+        Returns the frame parameters in a form that they can be used in the record and view functions.
+        (e.g. superscan.record(**record_parameters), if record_parameters was created by this function.)
+        Parameters
+        -----------
+        superscan : hardware source object
+            An instance of the superscan hardware source
+        
+        frame_parameters : dictionary
+            Frame parameters to set in the microscope. Possible keys are:
+            
+            - size_pixels: Number of pixels in x- and y-direction of the acquired frame as tuple (x,y)
+            - center: Offset for the center of the scanned area in x- and y-direction (nm) as tuple (x,y)
+            - pixeltime: Time per pixel (us)
+            - fov: Field-of-view of the acquired frame (nm)
+            - rotation: Scan rotation (deg)
+            
+        detectors : optional, dictionary
+            By default, only MAADF is used. Dictionary has to be in the form:
+            {'HAADF': False, 'MAADF': True}
+        
+        Returns
+        --------
+        record_parameters : dictionary
+            It has the form: {'frame_parameters': frame_parameters, 'channels_enabled': [HAADF, MAADF, False, False]}
+        """
+        if frame_parameters is None:
+            frame_parameters = self.frame_parameters
+        if detectors is None:
+            detectors = self.detectors
+            
+        if frame_parameters is not None:
+            parameters = self.superscan.get_default_frame_parameters()
+            
+            if frame_parameters.get('size_pixels') is not None:
+                parameters['size'] = list(frame_parameters['size_pixels'])   
+            if frame_parameters.get('center') is not None:
+                parameters['center_nm'] = list(frame_parameters['center']) 
+            if frame_parameters.get('pixeltime') is not None:
+                parameters['pixel_time_us'] = frame_parameters['pixeltime']  
+            if frame_parameters.get('fov') is not None:
+                parameters['fov_nm'] = frame_parameters['fov']  
+            if frame_parameters.get('rotation') is not None:
+                parameters['rotation_rad'] = frame_parameters['rotation']
+        else:
+            parameters = None
+            
+        if detectors is not None:
+            channels_enabled = [detectors['HAADF'], detectors['MAADF'], False, False]
+        else:
+            channels_enabled = [False, True, False, False]
+            
+        self.record_parameters = {'frame_parameters': parameters, 'channels_enabled': channels_enabled}
+    
+        return self.record_parameters
+        
+    def dirt_detector(self, median_blur_diam=59, gaussian_blur_radius=3, **kwargs):
+        """
+        Returns a mask with the same shape as "image" that is 1 where there is dirt and 0 otherwise
+        """
+        # check for optional input arguments that can update instance variables
+        if kwargs.get('image') is not None:
+            self.image = kwargs.get('image')
+        if kwargs.get('dirt_threshold') is not None:
+            self.dirt_threshold = kwargs.get('dirt_threshold')
+        # if no dirt_threshold is available, find it automatically
+        if self.dirt_threshold is None:
+            pass
+        
+        #apply Gaussian Blur to improve dirt detection
+        if gaussian_blur_radius > 0:
+            self.image = gaussian_filter(self.image, gaussian_blur_radius)
+        #create mask
+        self.mask = np.zeros(self.shape)
+        self.mask[self.image>self.dirt_threshold] = 1
+        #apply median blur to mask to remove noise influence
+        if median_blur_diam % 2==0:
+            median_blur_diam+=1
+
+        self.mask = np.rint(uniform_filter(self.mask, median_blur_diam)).astype('uint8')
+        return self.mask
+        
+        
+        
+        
+    def find_dirt_threshold(self, **kwargs):
+        """
+        Returns the correct dirt threshold for an image to use with dirt_detector.
+        For possible keyword arguments check function dirt_detector.
+        """
+        # check for optional input arguments
+        if kwargs.pop('debug_mode', False):
+            debug_mode = True
+        else:
+            debug_mode = False
+        # check for optional input arguments that can update instance variables
+        if kwargs.get('image') is not None:
+            self.image = kwargs.pop('image')
+        
+        # set up the search range
+        search_range = np.mgrid[0:2*np.mean(self.image):30j]
+        mask_sizes = []
+        dirt_start = None
+        dirt_end = None
+        # go through list of thresholds and determine the amount of dirt with this threshold
+        for threshold in search_range:
+            mask_size = np.sum(self.dirt_detector(**kwargs)) / np.prod(self.shape)
+            # remember value where the mask started to shrink
+            if mask_size < 0.99 and dirt_start is None:
+                dirt_start = threshold
+            # remember value where the mask is almost zero and end search
+            if mask_size < 0.01:
+                dirt_end = threshold
+                break
+            
+            mask_sizes.append(mask_size)
+        
+        # determine if there was really dirt present and return an appropriate threshold
+        if dirt_end-dirt_start < 3*(search_range[1] - search_range[0]):
+        # if distance between maximum and minimum mask size is very small, no dirt is present
+        # set threshold to a value 25% over dirt_end
+            threshold = dirt_end * 1.25
+        else:
+        # if distance between dirt_start and dirt_end is longer, set threshold to a value 
+        # 10% smaller than mean to prevent missing dirt that is actually there in the image
+            threshold = (dirt_end + dirt_start) * 0.45
+        
+        self.dirt_threshold = threshold
+        
+        if debug_mode:
+            return (self.dirt_threshold, search_range, np.array(mask_sizes))
+        else:
+            return self.dirt_threshold
+    
+    
+
+class Peaking(Imaging):
+    
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+        self.fft = kwargs.get('fft')
+        self.peaks = kwargs.get('peaks')
+        self.center = kwargs.get('center')
+        self.integration_radius = kwargs.get('integration_radius')
+    
+    @Imaging.image.setter
+    def image(self, image):
+        self._image = image
+        self._shape = np.shape(image)
+        self.center = tuple((np.array(np.shape(image))/2).astype(np.int))
+        
+        
+class Tuning(Peaking):
+    
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+        self.steps = kwargs.get('steps')
+        self.keys = kwargs.get('keys')
+        self.event = kwargs.get('event')
+        self.document_controller = kwargs.get('document_controller')
+        self.save_images = kwargs.get('save_images', False)
+        self.savepath = kwargs.get('savepath')
+        self.average_frames = kwargs.get('average_frames')
+        
+
 def measure_symmetry(image, imsize):
     point_mirrored = np.flipud(np.fliplr(image)) 
     return autoalign.find_shift(image, point_mirrored, ratio=0.142/imsize/2)
     
-def fourier_filter(image, imsize):
+def fourier_filter(image, imsize, filter_radius=7):
     peaks = find_peaks(image, imsize, second_order=True, half_line_thickness=3)
-    xdata = np.mgrid[-7:8, -7:8]
-    mask = gaussian2D(xdata, 0, 0, 4, 4, 1, 0)
+    xdata = np.mgrid[-filter_radius:filter_radius+1, -filter_radius:filter_radius+1]
+    mask = gaussian2D(xdata, 0, 0, filter_radius/2, filter_radius/2, 1, 0)
     maskradius = int(np.shape(mask)[0]/2)
     fft = np.fft.fftshift(np.fft.fft2(image))
     fft_masked = np.zeros(np.shape(fft), dtype=fft.dtype)
@@ -110,62 +317,7 @@ def symmetry_merit(image, imsize, mask=None):
 #    parameters = superscan.get_default_frame_parameters()
 #    
 #    return {'size_pixels': parameters.size, 'center': parameters.center_nm, 'pixeltime': parameters.pixel_time_us, \
-#            'fov': parameters.fov_nm, 'rotation': parameters.rotation_deg}
-
-def create_record_parameters(superscan, frame_parameters, detectors={'HAADF': False, 'MAADF': True}):
-    """
-    Returns the frame parameters in a form that they can be used in the record and view functions.
-    
-    Parameters
-    -----------
-    superscan : hardware source object
-        An instance of the superscan hardware source
-    
-    frame_parameters : dictionary
-        Frame parameters to set in the microscope. Possible keys are:
-        
-        - size_pixels: Number of pixels in x- and y-direction of the acquired frame as tuple (x,y)
-        - center: Offset for the center of the scanned area in x- and y-direction (nm) as tuple (x,y)
-        - pixeltime: Time per pixel (us)
-        - fov: Field-of-view of the acquired frame (nm)
-        - rotation: Scan rotation (deg)
-        
-    detectors : optional, dictionary
-        By default, only MAADF is used. Dictionary has to be in the form:
-        {'HAADF': False, 'MAADF': True}
-    
-    Returns
-    --------
-    record_parameters : dictionary
-        It has the form: {'frame_parameters': frame_parameters, 'channels_enabled': [HAADF, MAADF, False, False]}
-    """
-    if frame_parameters is not None:
-        parameters = superscan.get_default_frame_parameters()
-        
-        if frame_parameters.get('size_pixels') is not None:
-            parameters['size'] = list(frame_parameters['size_pixels'])
-        
-        if frame_parameters.get('center') is not None:
-            parameters['center_nm'] = list(frame_parameters['center'])
-        
-        if frame_parameters.get('pixeltime') is not None:
-            parameters['pixel_time_us'] = frame_parameters['pixeltime']
-        
-        if frame_parameters.get('fov') is not None:
-            parameters['fov_nm'] = frame_parameters['fov']
-        
-        if frame_parameters.get('rotation') is not None:
-            parameters['rotation_rad'] = frame_parameters['rotation']
-    else:
-        parameters = None
-        
-    if detectors is not None:
-        channels_enabled = [detectors['HAADF'], detectors['MAADF'], False, False]
-    else:
-        channels_enabled = [False, True, False, False]
-
-    return {'frame_parameters': parameters, 'channels_enabled': channels_enabled}
-    
+#            'fov': parameters.fov_nm, 'rotation': parameters.rotation_deg}    
 
 def graphene_generator(imsize, impix, rotation):
     rotation = rotation*np.pi/180
@@ -254,63 +406,9 @@ def distribute_intensity(x,y):
     result.append( ( 1.0-(x-np.floor(x)) ) * ( y-np.floor(y) ) )
     
     return result
-            
-def dirt_detector(image, threshold=0.02, median_blur_diam=59, gaussian_blur_radius=3):
-    """
-    Returns a mask with the same shape as "image" that is 1 where there is dirt and 0 otherwise
-    """
-    #apply Gaussian Blur to improve dirt detection
-    if gaussian_blur_radius > 0:
-        #image = cv2.GaussianBlur(image, (0,0), gaussian_blur_radius)
-        image = gaussian_filter(image, gaussian_blur_radius)
-    #create mask
-    mask = np.zeros(np.shape(image))
-    mask[image>threshold] = 1
-    #apply median blur to mask to remove noise influence
-    if median_blur_diam % 2==0:
-        median_blur_diam+=1
-    #return cv2.medianBlur(mask, median_blur_diam)
-    #return median_filter(mask, median_blur_diam)
-    return np.rint(uniform_filter(mask, median_blur_diam)).astype('uint8')
     
 def find_biggest_clean_spot(image):
     pass
-
-def find_dirt_threshold(image, median_blur_diam=59, gaussian_blur_radius=3, debug_mode=False):
-    # set up the search range
-    search_range = np.mgrid[0:2*np.mean(image):30j]
-    shape = np.array(np.shape(image))
-    mask_sizes = []
-    dirt_start = None
-    dirt_end = None
-    # go through list of thresholds and determine the amount of dirt with this threshold
-    for threshold in search_range:
-        mask_size = np.sum(dirt_detector(image, threshold=threshold, median_blur_diam=median_blur_diam,
-                                         gaussian_blur_radius=gaussian_blur_radius)) / np.prod(shape)
-        # remember value where the mask started to shrink
-        if mask_size < 0.99 and dirt_start is None:
-            dirt_start = threshold
-        # remember value where the mask is almost zero and end search
-        if mask_size < 0.01:
-            dirt_end = threshold
-            break
-        
-        mask_sizes.append(mask_size)
-    
-    # determine if there was really dirt present and return an appropriate threshold
-    if dirt_end-dirt_start < 3*(search_range[1] - search_range[0]):
-    # if distance between maximum and minimum mask size is very small, no dirt is present
-    # set threshold to a value 25% over dirt_end
-        threshold = dirt_end * 1.25
-    else:
-    # if distance between dirt_start and dirt_end is longer, set threshold to a value 
-    # 10% smaller than mean to prevent missing dirt that is actually there in the image
-        threshold = (dirt_end + dirt_start) * 0.45
-    
-    if debug_mode:
-        return (threshold, search_range, np.array(mask_sizes))
-    else:
-        return threshold
     
 def tuning_merit(imsize, average_frames, integration_radius, save_images, savepath, dirt_threshold, kwargs):
     intensities, image, mask = check_tuning(imsize, average_frames=average_frames, integration_radius=integration_radius, \
