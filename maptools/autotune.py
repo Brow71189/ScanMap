@@ -155,7 +155,7 @@ def create_record_parameters(superscan, frame_parameters, detectors={'HAADF': Fa
             parameters['fov_nm'] = frame_parameters['fov']
         
         if frame_parameters.get('rotation') is not None:
-            parameters['rotation_rad'] = frame_parameters['rotation']*np.pi/180.0
+            parameters['rotation_rad'] = frame_parameters['rotation']
     else:
         parameters = None
         

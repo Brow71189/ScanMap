@@ -38,25 +38,25 @@ import tifffile
 
 if __name__=='__main__':
     
-    dirpath = '/3tb/maps_data/map_2015_04_15_13_13/'
+    dirpath = '/3tb/maps_data/map_2015_09_04_13_04/'
     
-    overview = '//3tb/maps_data/map_2015_04_15_13_13/overview.tif'
+    overview = '/3tb/maps_data/map_2015_09_04_13_04/Overview_464.0_nm.tif'
     
-    size_overview = 1024 #nm
-    size_frames = 12 #nm
+    size_overview = 464 #nm
+    size_frames = 20 #nm
     #number of frames in x- and y-direction
-    number_frames = (22,22)
+    number_frames = (10,10)
     #borders of the area where the first frame is expected (in % of the overview image)
     #has to be a tuple of the form (lower-y, higher-y, lower-x, higher-x)
-    area_first_frame = (2,50,10,80) #%
+    area_first_frame = (15,25,15,25) #%
     #enter search area for the following images. Search is always performed around the position of the last image.
     #tuple hast to have the form (negtive-y, positive-y, negative-x, positive-x)
-    tolerance_within_rows = (0.8,1.2,-0.5,4.8)
-    tolerance_within_columns = (-0.8,4,0.1,1)
+    tolerance_within_rows = (20,20,20,20)
+    tolerance_within_columns = (20,20,20,20)
     #Enter the number of frames that should be included here. Type None to use all frames.
-    number_frames_included = 22
+    number_frames_included = -1
     #
-    bad_correlation_threshold = 0.5
+    bad_correlation_threshold = 0
     
     
     
@@ -101,6 +101,7 @@ if __name__=='__main__':
     shape_im = np.shape(im)
     scale = (size_frames/float(shape_im[0])/(size_overview/float(shape_over[0])))
     im = cv2.resize(im, None, fx=scale, fy=scale, interpolation=cv2.INTER_AREA)
+    #im = cv2.GaussianBlur(im, None, 3)
     result = cv2.matchTemplate(over[int(area_first_frame[0]*shape_over[0]):int(area_first_frame[1]*shape_over[0]),
                                     int(area_first_frame[2]*shape_over[1]):int(area_first_frame[3]*shape_over[1])],
                                     im, method=cv2.TM_CCOEFF_NORMED)
@@ -112,6 +113,9 @@ if __name__=='__main__':
     added[1,maxi[0]:maxi[0]+im.shape[0], maxi[1]:maxi[1]+im.shape[1]] += im
     cv2.putText(added[0], str(int(name[0:4])), (maxi[1]-4,maxi[0]-2), cv2.FONT_HERSHEY_PLAIN, 2, color, thickness=2)
     
+    if number_frames_included < 1:
+        number_frames_included = None
+        
     counter = 0
     for name in matched_frames[1:number_frames_included]:
         im = np.array(cv2.imread(dirpath+name, -1))#*3
@@ -136,7 +140,7 @@ if __name__=='__main__':
         if int(name[0:4])%number_frames[0] == 0 and int(name[0:4]) != 0:
             in_column_distance_list.append(np.array(maxi) - np.array(position_list[counter-number_frames[0]+1][1:]))
         else:
-            if corr_max < bad_correlation_threshold:
+            if corr_max < bad_correlation_threshold and len(in_row_distance_list) > 1:
                 maxi = (position_list[counter][1] + int(np.median(np.array(in_row_distance_list)[:,0])),
                         position_list[counter][2] + int(np.median(np.array(in_row_distance_list)[:,1])))
             in_row_distance_list.append(np.array(maxi) - np.array(position_list[counter][1:]))

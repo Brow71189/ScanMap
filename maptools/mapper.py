@@ -174,8 +174,8 @@ def find_nearest_neighbors(number, target, points):
 def create_map_coordinates(leftX, topY, imsize, distance, num_subframes, coords, compensate_stage_error=False):
     extra_lines = 2  # Number of lines to add at the beginning of the map
     extra_frames = 5  # Number of extra moves at each end of a line
-    oldm = 1.5  # odd line distance multiplicator (adjust odd lines offset)
-    eldm = 1.0  # even line distance multiplicator (adjust even lines offset)
+    oldm = 0.5  # odd line distance multiplicator (adjust odd lines offset)
+    eldm = 0  # even line distance multiplicator (adjust even lines offset)
 
     num_subframes = np.array(num_subframes)
 
@@ -200,9 +200,10 @@ def create_map_coordinates(leftX, topY, imsize, distance, num_subframes, coords,
     for j in range(num_subframes[1]):
         for i in range(num_subframes[0]):
             if j % 2 == 0:  # Odd lines (have even indices because numbering starts with 0), e.g. map from left to right
-                map_coords.append( tuple( ( leftX+i*(imsize+distance),  topY-j*(imsize+oldm*distance) ) ) +
-                                   tuple( interpolation((leftX+i*(imsize+distance),
-                                                         topY-j*(imsize+oldm*distance)), coords) ) )
+                map_coords.append( tuple( ( leftX+i*(imsize+distance),  topY-j*(imsize+distance)-oldm*(imsize+distance) ) ) +
+                                   tuple( interpolation( (leftX+i*(imsize+distance),
+                                                          topY-j*(imsize+distance)-oldm*(imsize+distance) ),
+                                                          coords) ) )
                 
                 # Apply correct (continuous) frame numbering for all cases. If no extra positions are added, just append
                 # the correct frame number. Elsewise append the correct frame number if a non-additional one, else None
@@ -214,9 +215,10 @@ def create_map_coordinates(leftX, topY, imsize, distance, num_subframes, coords,
                     frame_number.append(None)
 
             else: # Even lines, e.g. scan from right to left
-                map_coords.append( tuple( (leftX+(num_subframes[0]-(i+1))*(imsize+distance), topY-j*(imsize+eldm*distance)) ) +
+                map_coords.append( tuple( (leftX+(num_subframes[0]-(i+1))*(imsize+distance), topY-j*(imsize+distance) - eldm*(imsize+distance) ) ) +
                                    tuple( interpolation( (leftX+(num_subframes[0]-(i+1))*(imsize+distance),
-                                                          topY-j*(imsize+eldm*distance)), coords) ) )
+                                                          topY-j*(imsize+eldm*distance) - eldm*(imsize+distance) ),
+                                                          coords) ) )
                 
                 # Apply correct (continuous) frame numbering for all cases. If no extra positions are added, just append
                 # the correct frame number. Elsewise append the correct frame number if a non-additional one, else None
@@ -618,7 +620,8 @@ def SuperScan_mapping(coord_dict, filepath='Z:\\ScanMap\\', do_autofocus=False, 
                         test_map.append(frame_coord)
 
         else:
-            test_map.append(frame_coord)
+            if frame_number[counter-1] is not None:
+                test_map.append(frame_coord)
 
     if do_autofocus and autofocus_pattern == 'testing':
         bad_frames_file = open(store+'bad_frames.txt', 'w')
@@ -642,7 +645,7 @@ def SuperScan_mapping(coord_dict, filepath='Z:\\ScanMap\\', do_autofocus=False, 
         vt.as2_set_control(as2, 'StageOutY', map_center[1])
         time.sleep(5)
         #acquire image and save it
-        overview_parameters = {'size_pixels': (4096, 4096), 'center': (0,0), 'pixeltime': 2, \
+        overview_parameters = {'size_pixels': (4096, 4096), 'center': (0,0), 'pixeltime': 4, \
                             'fov': over_size, 'rotation': rotation}
         image = autotune.image_grabber(superscan=superscan, frame_parameters=overview_parameters)
 
