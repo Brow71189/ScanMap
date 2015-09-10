@@ -62,7 +62,7 @@ class Imaging(object):
         self._image = kwargs.get('image')
         self._shape = kwargs.get('impix')
         self.imsize = kwargs.get('imsize')
-        self.online = kwargs.get('online')
+        self._online = kwargs.get('online')
         self.dirt_threshold = kwargs.get('dirt_threshold')
         self.mask = kwargs.get('mask')
         self.frame_parameters = kwargs.get('frame_parameters')
@@ -86,13 +86,26 @@ class Imaging(object):
         if self._shape is None:
             if self._image is None:
                 raise RuntimeError('There is no image for which the shape could be returned. Set Imaging.image first.')
-            self._shape = np._shape(self._image)
+            self._shape = np.shape(self._image)
         return self._shape
     
     @shape.setter
     def shape(self, shape):
-        self._shape = shape        
+        self._shape = shape
+        
+    @property
+    def online(self):
+        if self._online is None:
+            if self.as2 is not None or self.superscan is not None:
+                self._online = True
+            else:
+                print('Going to offline mode because no instance of as2 or superscan was provided.')
+                self._online = False
+        return self.online
     
+    @online.setter
+    def online(self, online):
+        self._online = online
         
     def create_record_parameters(self, frame_parameters=None, detectors=None):
         """
@@ -177,9 +190,6 @@ class Imaging(object):
         self.mask = np.rint(uniform_filter(self.mask, median_blur_diam)).astype('uint8')
         return self.mask
         
-        
-        
-        
     def find_dirt_threshold(self, **kwargs):
         """
         Returns the correct dirt threshold for an image to use with dirt_detector.
@@ -229,7 +239,163 @@ class Imaging(object):
         else:
             return self.dirt_threshold
     
+    def image_grabber(self, acquire_image=True, **kwargs):
+        """
+        acquire_image defines if an image is taken and returned or if just the correctors are updated.
+        
+        kwargs contains all possible values for the correctors : 
+            These are all lens aberrations up to threefold astigmatism. If an image is given, the function will simulate
+            aberrations to this image and add poisson noise to it. If not, an image with the current frame parameters
+            and the corrector parameters given in kwargs is taken.
+        
+        Possible Parameters
+        -------------------
+        
+        aberrations : dictionary
+            e.g. {'EHTFocus': 0, 'C12_a': 0, 'C12_b': 0, 'C21_a': 0, 'C21_b': 0, 'C23_a': 0,  'C23_b': 0} (all in nm)
+                    
+        image : 
+            (as numpy array)
+                
+        relative_aberrations : True/False
+                If 'relative_aberrations' is included and set to True, image_grabber will get the current value for
+                each control first and add the given value for the respective aberration to the current value.
+                Otherwise, each aberration in kwargs is just set to the value given there.    
+                
+        reset_aberrations : True/False    
+            If 'reset_aberrations' is included and set to True, image_grabber will set each aberration back to its
+            original value after acquiring an image. This is a good choice if you want to try new values for the
+            aberration correctors bur are not sure you want to keep them.
+        
+        frame_parameters : dictionary
+            Contains the frame parameters for acquisition. See function create_record_parameters() for details.
+            
+        detectors : dictionary
+            Contains the dectectors used for acquisition. See function create_record_parameters() for details.
+            
+        Example call of image_grabber:
+        ------------------------------
+        
+        result = image_grabber(EHTFocus=1, C12_a=0.5, image=graphene_lattice, imsize=10)
+        
+        Note that the Poisson noise is added modulatory, e.g. each pixel value is replaced by a random number from a
+        Poisson distribution that has the original pixel value as its mean. That means you can control the noise level
+        by changing the mean intensity in your image.
+        """
+        # Check input for additinal parameters that override instance variables
+        if kwargs.get('aberrations') is not None:
+            self.aberrations = kwargs.get('aberrations')
+        if kwargs.get('image') is not None:
+            self.image = kwargs.get('image')
+        if kwargs.get('frame_parameters') is not None:
+            self.frame_parameters = kwargs.get('frame_parameters')
+        if kwargs.get('detectors') is not None:
+            self.detectors = kwargs.get('detectors')
+        # Set parameters for dealing with aberrration settings and apply correct defaults
+        relative_aberrations = kwargs.get('relative_aberrations', True)
+        reset_aberrations = kwargs.get('reset_aberrations', False)
+        # Check if all required parameters are there
+        if self.online:
+            pass
+        
+        keys = ['EHTFocus', 'C12_a', 'C12_b', 'C21_a', 'C21_b', 'C23_a', 'C23_b']
+        controls = ['EHTFocus', 'C12.a', 'C12.b', 'C21.a', 'C21.b', 'C23.a', 'C23.b']
+        originals = {}
+        global global_aberrations
+        #print(kwargs)
+        if not 'image' in kwargs:
+            for i in range(len(keys)):
+                if keys[i] in kwargs:
+                    if self.as2 is None:
+                        raise RuntimeError('You have to provide an instance of as2 to perform as2-related operations.')
+                    offset=0.0
+                    offset2=0.0
+                    if kwargs.get('reset_aberrations'):
+                        originals[controls[i]] = vt.as2_get_control(self.as2, controls[i])
+                    if kwargs.get('relative_aberrations'):
+                        offset = vt.as2_get_control(self.as2, controls[i])
+                        offset2 = global_aberrations[keys[i]]
+                    vt.as2_set_control(self.as2, controls[i], offset+kwargs[keys[i]]*1e-9)
+                    global_aberrations[keys[i]] = offset2+kwargs[keys[i]]
+            if acquire_image:
+                if self.superscan is None:
+                    raise RuntimeError('You have to provide an instance of superscan to perform superscan-related operations.')
+                record_parameters = self.create_record_parameters(self.superscan, kwargs.get('frame_parameters'), detectors=kwargs.get('detectors'))
+                im = self.superscan.record(**record_parameters)
+                if len(im) > 1:
+                    im2 = []
+                    for entry in im:
+                        im2.append(entry.data)
+                else:
+                    im2 = im[0].data
+                if len(originals) > 0:
+                    for key in originals.keys():
+                        vt.as2_set_control(key, originals[key])
+                return im2
+        else:
+            im = kwargs['image']
+            imsize = kwargs['imsize']
+            
+            shape = np.shape(im)
+            
+    #        kernelsize=[63.5,63.5]
+    #        y,x = np.mgrid[-kernelsize[0]:kernelsize[0]+1.0, -kernelsize[1]:kernelsize[1]+1.0]/2.0
+            
+            #raw_kernel = 0
+            keys = ['EHTFocus', 'C12_a', 'C12_b', 'C21_a', 'C21_b', 'C23_a', 'C23_b']
+            start_keys = ['start_EHTFocus', 'start_C12_a', 'start_C12_b', 'start_C21_a', 'start_C21_b', 'start_C23_a', 'start_C23_b']
+            aberrations = np.zeros(len(keys))
+            
+            for i in range(len(keys)):            
+                if kwargs.get(keys[i]):
+                    offset=0.0
+                    if kwargs.get('relative_aberrations'):
+                        offset = global_aberrations[keys[i]]
+                    aberrations[i] = offset+kwargs[keys[i]]
+                    if kwargs.get(start_keys[i]):
+                        aberrations[i] -= kwargs[start_keys[i]]
+                #if aberrations should not be reset, change global_aberrations
+                    if not kwargs.get('reset_aberrations'):
+                        global_aberrations[keys[i]] = aberrations[i]
+                else:
+                    aberrations[i] = global_aberrations[keys[i]]
     
+            if acquire_image:
+                #Create x and y coordinates such that resulting beam has the same scale as the image.
+                #The size of the kernel which is used for image convolution is chosen to be "1/kernelsize" of the image size (in pixels)
+                kernelsize = 2
+                kernelpixel = int(shape[0]/kernelsize)
+                frequencies = np.matrix(np.fft.fftshift(np.fft.fftfreq(kernelpixel, imsize/shape[0])))
+                x = np.array(np.tile(frequencies, np.size(frequencies)).reshape((kernelpixel,kernelpixel)))
+                y = np.array(np.tile(frequencies.T, np.size(frequencies)).reshape((kernelpixel,kernelpixel)))
+                
+                #compute aberration function up to threefold astigmatism
+                #formula taken from "Advanced Computing in Electron Microscopy", Earl J. Kirkland, 2nd edition, 2010, p. 18
+                #wavelength for 60 keV electrons: 4.87e-3 nm
+                #first line: defocus and twofold astigmatism
+                #second line: coma
+                #third line: threefold astigmatism
+                raw_kernel = np.pi*4.87e-3*(-aberrations[0]*(x**2+y**2) + np.sqrt(aberrations[1]**2+aberrations[2]**2)*(x**2+y**2)*np.cos(2*(np.arctan2(y,x)-np.arctan2(aberrations[2], aberrations[1]))) \
+                    + (2.0/3.0)*np.sqrt(aberrations[3]**2+aberrations[4]**2)*4.87e-3*np.sqrt(x**2+y**2)**3*np.cos(np.arctan2(y,x)-np.arctan2(aberrations[4], aberrations[3])) \
+                    + (2.0/3.0)*np.sqrt(aberrations[5]**2+aberrations[6]**2)*4.87e-3*np.sqrt(x**2+y**2)**3*np.cos(3*(np.arctan2(y,x)-np.arctan2(aberrations[6], aberrations[5]))))
+                    
+                kernel = np.cos(raw_kernel)+1j*np.sin(raw_kernel)
+                aperture = np.zeros(kernel.shape)
+                #Calculate size of 25 mrad aperture in k-space for 60 keV electrons
+                aperturesize = (0.025/kernelsize)*imsize/4.87e-3
+                #cv2.circle(aperture, tuple((np.array(kernel.shape)/2).astype('int')), int(kernelsize[0]/4.86), 1, thickness=-1)
+                #cv2.circle(aperture, tuple((np.array(kernel.shape)/2).astype('int')), int(np.rint(aperturesize)), 1, thickness=-1)
+                draw_circle(aperture, tuple((np.array(kernel.shape)/2).astype('int')), int(np.rint(aperturesize)), color=1)
+                
+                kernel *= aperture
+                kernel = np.abs(np.fft.fftshift(np.fft.ifft2(np.fft.fftshift(kernel))))**2
+                kernel /= np.sum(kernel)
+                #im = cv2.filter2D(im, -1, kernel)
+                im = fftconvolve(im, kernel, mode='same')
+                shape=im.shape
+                im = np.random.poisson(lam=im.flatten(), size=np.size(im)).astype(im.dtype)
+                return im.reshape(shape).astype('float32')
+                #return kernel    
 
 class Peaking(Imaging):
     
@@ -237,14 +403,25 @@ class Peaking(Imaging):
         super().__init__(**kwargs)
         self.fft = kwargs.get('fft')
         self.peaks = kwargs.get('peaks')
-        self.center = kwargs.get('center')
+        self._center = kwargs.get('center')
         self.integration_radius = kwargs.get('integration_radius')
     
     @Imaging.image.setter
     def image(self, image):
         self._image = image
         self._shape = np.shape(image)
-        self.center = tuple((np.array(np.shape(image))/2).astype(np.int))
+        self._center = tuple((np.array(np.shape(image))/2).astype(np.int))
+        self.fft = None
+        
+    @property
+    def center(self):
+        if self._center is None:
+            self._center = tuple((np.array(self.shape)/2).astype(np.int))
+        return self._center
+    
+    @center.setter
+    def center(self, center):
+        self._center = center
         
         
 class Tuning(Peaking):
@@ -258,6 +435,7 @@ class Tuning(Peaking):
         self.save_images = kwargs.get('save_images', False)
         self.savepath = kwargs.get('savepath')
         self.average_frames = kwargs.get('average_frames')
+        self.aberrations_tracklist = []
         
 
 def measure_symmetry(image, imsize):
@@ -718,144 +896,7 @@ def kill_aberrations(superscan=None, as2=None, document_controller=None, average
     
     return global_aberrations
 
-def image_grabber(superscan = None, as2 = None, acquire_image=True, **kwargs):
-    """
-    acquire_image defines if an image is taken and returned or if just the correctors are updated.
-    
-    kwargs contains all possible values for the correctors : 
-        These are all lens aberrations up to threefold astigmatism. If an image is given, the function will simulate aberrations to this image and add poisson noise to it.
-        If not, an image with the current frame parameters and the corrector parameters given in kwargs is taken.
-    
-    Possible Parameters
-    -------------------
-    
-    lens aberrations : 
-        EHTFocus, C12_a, C12_b, C21_a, C21_b, C23_a,  C23_b (in nm)
-    
-    image : 
-        (as numpy array)
-            
-    relative_aberrations : True/False
-            If 'relative_aberrations' is included and set to True, image_grabber will get the current value for each control first and add the given value for the respective aberration
-            to the current value. Otherwise, each aberration in kwargs is just set to the value given there.    
-            
-    reset_aberrations : True/False    
-        If 'reset_aberrations' is included and set to True, image_grabber will set each aberration back to its original value after acquiring an image. This is a good choice if
-        you want to try new values for the aberration correctors bur are not sure you want to keep them.
-    
-    frame_parameters : dictionary
-        Contains the frame parameters for acquisition. See function create_record_parameters() for details.
-        
-    detectors : dictionary
-        Contains the dectectors used for acquisition. See function create_record_parameters() for details.
-        
-    Example call of image_grabber:
-    ------------------------------
-    
-    result = image_grabber(EHTFocus=1, C12_a=0.5, image=graphene_lattice, imsize=10)
-    
-    Note that the Poisson noise is added modulatory, e.g. each pixel value is replaced by a random number from a Poisson distribution that has the original pixel value as
-    its mean. That means you can control the noise level by changing the mean intensity in your image.
-    """
-    keys = ['EHTFocus', 'C12_a', 'C12_b', 'C21_a', 'C21_b', 'C23_a', 'C23_b']
-    controls = ['EHTFocus', 'C12.a', 'C12.b', 'C21.a', 'C21.b', 'C23.a', 'C23.b']
-    print(kwargs.get('frame_parameters'))
-    originals = {}
-    global global_aberrations
-    #print(kwargs)
-    if not 'image' in kwargs:
-        for i in range(len(keys)):
-            if keys[i] in kwargs:
-                if as2 is None:
-                    raise RuntimeError('You have to provide an instance of as2 to perform as2-related operations.')
-                offset=0.0
-                offset2=0.0
-                if kwargs.get('reset_aberrations'):
-                    originals[controls[i]] = vt.as2_get_control(as2, controls[i])
-                if kwargs.get('relative_aberrations'):
-                    offset = vt.as2_get_control(as2, controls[i])
-                    offset2 = global_aberrations[keys[i]]
-                vt.as2_set_control(as2, controls[i], offset+kwargs[keys[i]]*1e-9)
-                global_aberrations[keys[i]] = offset2+kwargs[keys[i]]
-        if acquire_image:
-            if superscan is None:
-                raise RuntimeError('You have to provide an instance of superscan to perform superscan-related operations.')
-            record_parameters = create_record_parameters(superscan, kwargs.get('frame_parameters'), detectors=kwargs.get('detectors'))
-            im = superscan.record(**record_parameters)
-            if len(im) > 1:
-                im2 = []
-                for entry in im:
-                    im2.append(entry.data)
-            else:
-                im2 = im[0].data
-            if len(originals) > 0:
-                for key in originals.keys():
-                    vt.as2_set_control(key, originals[key])
-            return im2
-    else:
-        im = kwargs['image']
-        imsize = kwargs['imsize']
-        
-        shape = np.shape(im)
-        
-#        kernelsize=[63.5,63.5]
-#        y,x = np.mgrid[-kernelsize[0]:kernelsize[0]+1.0, -kernelsize[1]:kernelsize[1]+1.0]/2.0
-        
-        #raw_kernel = 0
-        keys = ['EHTFocus', 'C12_a', 'C12_b', 'C21_a', 'C21_b', 'C23_a', 'C23_b']
-        start_keys = ['start_EHTFocus', 'start_C12_a', 'start_C12_b', 'start_C21_a', 'start_C21_b', 'start_C23_a', 'start_C23_b']
-        aberrations = np.zeros(len(keys))
-        
-        for i in range(len(keys)):            
-            if kwargs.get(keys[i]):
-                offset=0.0
-                if kwargs.get('relative_aberrations'):
-                    offset = global_aberrations[keys[i]]
-                aberrations[i] = offset+kwargs[keys[i]]
-                if kwargs.get(start_keys[i]):
-                    aberrations[i] -= kwargs[start_keys[i]]
-            #if aberrations should not be reset, change global_aberrations
-                if not kwargs.get('reset_aberrations'):
-                    global_aberrations[keys[i]] = aberrations[i]
-            else:
-                aberrations[i] = global_aberrations[keys[i]]
 
-        if acquire_image:
-            #Create x and y coordinates such that resulting beam has the same scale as the image.
-            #The size of the kernel which is used for image convolution is chosen to be "1/kernelsize" of the image size (in pixels)
-            kernelsize = 2
-            kernelpixel = int(shape[0]/kernelsize)
-            frequencies = np.matrix(np.fft.fftshift(np.fft.fftfreq(kernelpixel, imsize/shape[0])))
-            x = np.array(np.tile(frequencies, np.size(frequencies)).reshape((kernelpixel,kernelpixel)))
-            y = np.array(np.tile(frequencies.T, np.size(frequencies)).reshape((kernelpixel,kernelpixel)))
-            
-            #compute aberration function up to threefold astigmatism
-            #formula taken from "Advanced Computing in Electron Microscopy", Earl J. Kirkland, 2nd edition, 2010, p. 18
-            #wavelength for 60 keV electrons: 4.87e-3 nm
-            #first line: defocus and twofold astigmatism
-            #second line: coma
-            #third line: threefold astigmatism
-            raw_kernel = np.pi*4.87e-3*(-aberrations[0]*(x**2+y**2) + np.sqrt(aberrations[1]**2+aberrations[2]**2)*(x**2+y**2)*np.cos(2*(np.arctan2(y,x)-np.arctan2(aberrations[2], aberrations[1]))) \
-                + (2.0/3.0)*np.sqrt(aberrations[3]**2+aberrations[4]**2)*4.87e-3*np.sqrt(x**2+y**2)**3*np.cos(np.arctan2(y,x)-np.arctan2(aberrations[4], aberrations[3])) \
-                + (2.0/3.0)*np.sqrt(aberrations[5]**2+aberrations[6]**2)*4.87e-3*np.sqrt(x**2+y**2)**3*np.cos(3*(np.arctan2(y,x)-np.arctan2(aberrations[6], aberrations[5]))))
-                
-            kernel = np.cos(raw_kernel)+1j*np.sin(raw_kernel)
-            aperture = np.zeros(kernel.shape)
-            #Calculate size of 25 mrad aperture in k-space for 60 keV electrons
-            aperturesize = (0.025/kernelsize)*imsize/4.87e-3
-            #cv2.circle(aperture, tuple((np.array(kernel.shape)/2).astype('int')), int(kernelsize[0]/4.86), 1, thickness=-1)
-            #cv2.circle(aperture, tuple((np.array(kernel.shape)/2).astype('int')), int(np.rint(aperturesize)), 1, thickness=-1)
-            draw_circle(aperture, tuple((np.array(kernel.shape)/2).astype('int')), int(np.rint(aperturesize)), color=1)
-            
-            kernel *= aperture
-            kernel = np.abs(np.fft.fftshift(np.fft.ifft2(np.fft.fftshift(kernel))))**2
-            kernel /= np.sum(kernel)
-            #im = cv2.filter2D(im, -1, kernel)
-            im = fftconvolve(im, kernel, mode='same')
-            shape=im.shape
-            im = np.random.poisson(lam=im.flatten(), size=np.size(im)).astype(im.dtype)
-            return im.reshape(shape).astype('float32')
-            #return kernel
 
 def positive_angle(angle):
     """
