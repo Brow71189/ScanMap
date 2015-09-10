@@ -60,17 +60,18 @@ class Imaging(object):
     
     def __init__(self, **kwargs):
         self._image = kwargs.get('image')
-        self._shape = kwargs.get('impix')
+        self._shape = kwargs.get('shape')
         self.imsize = kwargs.get('imsize')
         self._online = kwargs.get('online')
         self.dirt_threshold = kwargs.get('dirt_threshold')
         self.mask = kwargs.get('mask')
-        self.frame_parameters = kwargs.get('frame_parameters')
+        self.frame_parameters = kwargs.get('frame_parameters', {})
         self.record_parameters = kwargs.get('record_parameters')
         self.detectors = kwargs.get('detectors', {'HAADF': False, 'MAADF': True})
-        self.aberrations = kwargs.get('aberrations')
+        self.aberrations = kwargs.get('aberrations', {})
         self.superscan = kwargs.get('superscan')
         self.as2 = kwargs.get('as2')
+        self.delta_graphene = None
         
     @property
     def image(self):
@@ -84,8 +85,7 @@ class Imaging(object):
     @property
     def shape(self):
         if self._shape is None:
-            if self._image is None:
-                raise RuntimeError('There is no image for which the shape could be returned. Set Imaging.image first.')
+            assert self.image is not None, 'No image was found for shape determination. Set Imaging.image first.'
             self._shape = np.shape(self._image)
         return self._shape
     
@@ -99,7 +99,7 @@ class Imaging(object):
             if self.as2 is not None or self.superscan is not None:
                 self._online = True
             else:
-                print('Going to offline mode because no instance of as2 or superscan was provided.')
+                logging.info('Going to offline mode because no instance of as2 or superscan was provided.')
                 self._online = False
         return self.online
     
@@ -160,9 +160,9 @@ class Imaging(object):
         else:
             channels_enabled = [False, True, False, False]
             
-        self.record_parameters = {'frame_parameters': parameters, 'channels_enabled': channels_enabled}
-    
-        return self.record_parameters
+        #self.record_parameters = {'frame_parameters': parameters, 'channels_enabled': channels_enabled}
+        #return self.record_parameters
+        return {'frame_parameters': parameters, 'channels_enabled': channels_enabled}
         
     def dirt_detector(self, median_blur_diam=59, gaussian_blur_radius=3, **kwargs):
         """
@@ -181,14 +181,14 @@ class Imaging(object):
         if gaussian_blur_radius > 0:
             self.image = gaussian_filter(self.image, gaussian_blur_radius)
         #create mask
-        self.mask = np.zeros(self.shape)
-        self.mask[self.image>self.dirt_threshold] = 1
+        mask = np.zeros(self.shape)
+        mask[self.image>self.dirt_threshold] = 1
         #apply median blur to mask to remove noise influence
         if median_blur_diam % 2==0:
             median_blur_diam+=1
 
-        self.mask = np.rint(uniform_filter(self.mask, median_blur_diam)).astype('uint8')
-        return self.mask
+        #self.mask = np.rint(uniform_filter(self.mask, median_blur_diam)).astype('uint8')
+        return np.rint(uniform_filter(self.mask, median_blur_diam)).astype('uint8')
         
     def find_dirt_threshold(self, **kwargs):
         """
@@ -232,12 +232,86 @@ class Imaging(object):
         # 10% smaller than mean to prevent missing dirt that is actually there in the image
             threshold = (dirt_end + dirt_start) * 0.45
         
-        self.dirt_threshold = threshold
+        #self.dirt_threshold = threshold
         
         if debug_mode:
             return (self.dirt_threshold, search_range, np.array(mask_sizes))
         else:
             return self.dirt_threshold
+            
+    def graphene_generator(self, imsize, impix, rotation):
+        rotation = rotation*np.pi/180
+        
+        #increase size of initially generated image by 20% to avoid missing atoms at the edges (image will be cropped
+        #to actual size before returning it)
+        image = np.zeros((int(impix*1.2), int(impix*1.2)))
+        rotation_matrix = np.array( ( (np.cos(2.0/3.0*np.pi), np.sin(2.0/3.0*np.pi)), (-np.sin(2.0/3.0*np.pi), np.cos(2.0/3.0*np.pi)) ) )
+        #define basis vectors of unit cell, a1 and a2
+        basis_length = 0.142 * np.sqrt(3) * impix/float(imsize)
+        a1 = np.array((np.cos(rotation), np.sin(rotation))) * basis_length
+        a2 = np.dot(a1, rotation_matrix)
+        #print(a1)
+        #print(a2)
+        a1position = np.array((0.0,0.0))
+        a2position = np.array((0.0,0.0))
+        a2direction = 1.0
+        
+        
+        while (a1position < impix*2.4).all():
+            success = True
+            
+            while success:
+                firsta2 = a2position.copy()
+                cellposition = a1position + a2position
+                #print(str(a1position) + ', '  + str(a2position))
+                #print(cellposition)
+                
+                #place atoms
+                if (cellposition+a1/3.0+a2*(2.0/3.0) < impix*1.2).all() and (cellposition+a1/3.0+a2*(2.0/3.0) >= 0).all():
+                    success = True
+                    y,x = cellposition+a1/3.0+a2*(2.0/3.0)
+                    pixelvalues = distribute_intensity(x,y)
+                    pixelpositions = [(0,0), (0,1), (1,1), (1,0)]
+                    
+                    for i in range(len(pixelvalues)):
+                        try:
+                            image[np.floor(y)+pixelpositions[i][0],np.floor(x)+pixelpositions[i][1]] = pixelvalues[i]
+                        except IndexError:
+                            pass
+                            #print('Could not put pixel at: ' + str((np.floor(y)+pixelpositions[i][0],np.floor(x)+pixelpositions[i][1])))
+                else:
+                    success = False
+                    
+                if (cellposition+a2/3.0+a1*(2.0/3.0) < impix*1.2).all() and (cellposition+a2/3.0+a1*(2.0/3.0) >= 0).all():
+                    success = True
+                    y,x = cellposition+a2/3.0+a1*(2.0/3.0)
+                    pixelvalues = distribute_intensity(x,y)
+                    pixelpositions = [(0,0), (0,1), (1,1), (1,0)]
+                    
+                    for i in range(len(pixelvalues)):
+                        try:
+                            image[np.floor(y)+pixelpositions[i][0],np.floor(x)+pixelpositions[i][1]] = pixelvalues[i]
+                        except IndexError:
+                            pass
+                            #print('Could not put pixel at: ' + str((np.floor(y)+pixelpositions[i][0],np.floor(x)+pixelpositions[i][1])))
+                else:
+                    success = False
+            
+                if not success and a2direction == 1:
+                    a2position = firsta2-a2
+                    a2direction = -1.0
+                    success = True
+                elif not success and a2direction == -1:
+                    a2position += 3.0*a2
+                    a2direction = 1.0
+                else:
+                    a2position += a2direction*a2
+            
+            a1position += a1
+        
+        start = int(impix * 0.1)
+        return image[start:start+impix, start:start+impix]
+        #return image
     
     def image_grabber(self, acquire_image=True, **kwargs):
         """
@@ -283,43 +357,59 @@ class Imaging(object):
         by changing the mean intensity in your image.
         """
         # Check input for additinal parameters that override instance variables
-        if kwargs.get('aberrations') is not None:
-            self.aberrations = kwargs.get('aberrations')
         if kwargs.get('image') is not None:
             self.image = kwargs.get('image')
         if kwargs.get('frame_parameters') is not None:
             self.frame_parameters = kwargs.get('frame_parameters')
         if kwargs.get('detectors') is not None:
             self.detectors = kwargs.get('detectors')
+        
+        if self.frame_parameters.get('imsize') is not None:
+                self.imsize = self.frame_parameters.get('imsize')
+        if self.frame_parameters.get('impix') is not None:
+                self.shape = self.frame_parameters.get('impix')
+            
         # Set parameters for dealing with aberrration settings and apply correct defaults
         relative_aberrations = kwargs.get('relative_aberrations', True)
         reset_aberrations = kwargs.get('reset_aberrations', False)
+        # Keys to check for aberrations in aberrations dictionary
+        keys = ['EHTFocus', 'C12_a', 'C12_b', 'C21_a', 'C21_b', 'C23_a', 'C23_b']
+           
+           
+#                #if aberrations should not be reset, change global_aberrations
+#                    if not kwargs.get('reset_aberrations'):
+#                        global_aberrations[key] = aberrations[i]
+#                else:
+#                    aberrations[i] = global_aberrations[keys[i]]
+        
+#        
+#        if relative_aberrations:
+#                        self.aberrations[key] += kwargs['aberrations'].get(key, 0)
+#                    else:
+#                        self.aberrations[key] = kwargs['aberrations'].get(key, 0)
         # Check if all required parameters are there
         if self.online:
-            pass
-        
-        keys = ['EHTFocus', 'C12_a', 'C12_b', 'C21_a', 'C21_b', 'C23_a', 'C23_b']
-        controls = ['EHTFocus', 'C12.a', 'C12.b', 'C21.a', 'C21.b', 'C23.a', 'C23.b']
-        originals = {}
-        global global_aberrations
-        #print(kwargs)
-        if not 'image' in kwargs:
-            for i in range(len(keys)):
-                if keys[i] in kwargs:
-                    if self.as2 is None:
-                        raise RuntimeError('You have to provide an instance of as2 to perform as2-related operations.')
-                    offset=0.0
-                    offset2=0.0
-                    if kwargs.get('reset_aberrations'):
-                        originals[controls[i]] = vt.as2_get_control(self.as2, controls[i])
-                    if kwargs.get('relative_aberrations'):
-                        offset = vt.as2_get_control(self.as2, controls[i])
-                        offset2 = global_aberrations[keys[i]]
-                    vt.as2_set_control(self.as2, controls[i], offset+kwargs[keys[i]]*1e-9)
-                    global_aberrations[keys[i]] = offset2+kwargs[keys[i]]
+            controls = {'EHTFocus': 'EHTFocus', 'C12_a': 'C12.a', 'C12_b': 'C12.b', 'C21_a': 'C21.a',
+                        'C21_b': 'C21.b', 'C23_a': 'C23.a', 'C23_b': 'C23.b'}
+            originals = {}
+            
+            if kwargs.get('aberrations') is not None or len(self.aberrations) > 0:
+                assert self.as2 is not None, 'You have to provide an instance of as2 to perform as2-related operations.'
+            if kwargs.get('aberrations') is not None:
+                for key in keys:
+                    if kwargs['aberrations'].get(key):
+                        if relative_aberrations:
+                            self.aberrations[key] = vt.as2_get_control(self.as2, controls[key]) + \
+                                                    kwargs['aberrations'].get(key)
+                        else:
+                            self.aberrations[key] = kwargs['aberrations'].get(key)
+                        
+                        if reset_aberrations:
+                            originals[controls[key]] = vt.as2_get_control(self.as2, controls[key])
+            
             if acquire_image:
-                if self.superscan is None:
-                    raise RuntimeError('You have to provide an instance of superscan to perform superscan-related operations.')
+                assert self.superscan is not None, \
+                       'You have to provide an instance of superscan to perform superscan-related operations.'
                 record_parameters = self.create_record_parameters(self.superscan, kwargs.get('frame_parameters'), detectors=kwargs.get('detectors'))
                 im = self.superscan.record(**record_parameters)
                 if len(im) > 1:
@@ -332,70 +422,87 @@ class Imaging(object):
                     for key in originals.keys():
                         vt.as2_set_control(key, originals[key])
                 return im2
+        
         else:
-            im = kwargs['image']
-            imsize = kwargs['imsize']
+            global global_aberrations
             
-            shape = np.shape(im)
+            assert self.imsize is not None, \
+                   'You have to input the size (in nm) for the generated image in order to use the offline mode.'
             
-    #        kernelsize=[63.5,63.5]
-    #        y,x = np.mgrid[-kernelsize[0]:kernelsize[0]+1.0, -kernelsize[1]:kernelsize[1]+1.0]/2.0
-            
-            #raw_kernel = 0
-            keys = ['EHTFocus', 'C12_a', 'C12_b', 'C21_a', 'C21_b', 'C23_a', 'C23_b']
-            start_keys = ['start_EHTFocus', 'start_C12_a', 'start_C12_b', 'start_C21_a', 'start_C21_b', 'start_C23_a', 'start_C23_b']
-            aberrations = np.zeros(len(keys))
-            
-            for i in range(len(keys)):            
-                if kwargs.get(keys[i]):
-                    offset=0.0
-                    if kwargs.get('relative_aberrations'):
-                        offset = global_aberrations[keys[i]]
-                    aberrations[i] = offset+kwargs[keys[i]]
-                    if kwargs.get(start_keys[i]):
-                        aberrations[i] -= kwargs[start_keys[i]]
-                #if aberrations should not be reset, change global_aberrations
-                    if not kwargs.get('reset_aberrations'):
-                        global_aberrations[keys[i]] = aberrations[i]
-                else:
-                    aberrations[i] = global_aberrations[keys[i]]
-    
+            if self.delta_graphene is None:
+                assert self.shape is not None, \
+                       'You have to input the shape for the generated image in order to use the offline mode.'
+                self.delta_graphene = self.graphene_generator()
+                
+            # Update aberrations dictionary with the values passed to this function
+            if kwargs.get('aberrations') is not None:
+                for key in keys:
+                    if kwargs['aberrations'].get(key):
+                        # Relative aberrations is here relative to global_aberrations, in online mode its relative to
+                        # the values already set in as2
+                        if relative_aberrations:
+                            self.aberrations[key] = global_aberrations[key] + kwargs['aberrations'].get(key)
+                        else:
+                            self.aberrations[key] = kwargs['aberrations'].get(key)
+
             if acquire_image:
-                #Create x and y coordinates such that resulting beam has the same scale as the image.
-                #The size of the kernel which is used for image convolution is chosen to be "1/kernelsize" of the image size (in pixels)
+                # Create x and y coordinates such that resulting beam has the same scale as the image.
+                # The size of the kernel which is used for image convolution is chosen to be "1/kernelsize"
+                # of the image size (in pixels)
                 kernelsize = 2
-                kernelpixel = int(shape[0]/kernelsize)
-                frequencies = np.matrix(np.fft.fftshift(np.fft.fftfreq(kernelpixel, imsize/shape[0])))
+                kernelpixel = int(self.shape[0]/kernelsize)
+                frequencies = np.matrix(np.fft.fftshift(np.fft.fftfreq(kernelpixel, self.imsize/self.shape[0])))
                 x = np.array(np.tile(frequencies, np.size(frequencies)).reshape((kernelpixel,kernelpixel)))
                 y = np.array(np.tile(frequencies.T, np.size(frequencies)).reshape((kernelpixel,kernelpixel)))
                 
-                #compute aberration function up to threefold astigmatism
-                #formula taken from "Advanced Computing in Electron Microscopy", Earl J. Kirkland, 2nd edition, 2010, p. 18
-                #wavelength for 60 keV electrons: 4.87e-3 nm
-                #first line: defocus and twofold astigmatism
-                #second line: coma
-                #third line: threefold astigmatism
-                raw_kernel = np.pi*4.87e-3*(-aberrations[0]*(x**2+y**2) + np.sqrt(aberrations[1]**2+aberrations[2]**2)*(x**2+y**2)*np.cos(2*(np.arctan2(y,x)-np.arctan2(aberrations[2], aberrations[1]))) \
-                    + (2.0/3.0)*np.sqrt(aberrations[3]**2+aberrations[4]**2)*4.87e-3*np.sqrt(x**2+y**2)**3*np.cos(np.arctan2(y,x)-np.arctan2(aberrations[4], aberrations[3])) \
-                    + (2.0/3.0)*np.sqrt(aberrations[5]**2+aberrations[6]**2)*4.87e-3*np.sqrt(x**2+y**2)**3*np.cos(3*(np.arctan2(y,x)-np.arctan2(aberrations[6], aberrations[5]))))
+                # compute aberration function up to threefold astigmatism
+                # formula taken from "Advanced Computing in Electron Microscopy",
+                # Earl J. Kirkland, 2nd edition, 2010, p. 18
+                # wavelength for 60 keV electrons: 4.87e-3 nm
+                raw_kernel = (
+                              (-self.aberrations.get('EHTFocus', 0) * (x**2 + y**2) +       
+                              
+                               np.sqrt(self.aberrations.get('C12_a', 0)**2 + self.aberrations.get('C12_b', 0)**2) * 
+                               (x**2 + y**2) * np.cos(2 * (np.arctan2(y,x) -
+                                                      np.arctan2(self.aberrations.get('C12_b', 0),
+                                                                 self.aberrations.get('C12_a', 0)))) +
+                               (2.0/3.0) *
+                               np.sqrt(self.aberrations.get('C21_a', 0)**2 + self.aberrations.get('C21_b', 0)**2) *
+                               4.87e-3 *
+                               np.sqrt(x**2 + y**2)**3 * np.cos(np.arctan2(y,x) -
+                                                                np.arctan2(self.aberrations.get('C21_b', 0),
+                                                                           self.aberrations.get('C21_a', 0)[3])) + 
+                               (2.0/3.0) *
+                               np.sqrt(self.aberrations.get('C23_a', 0)**2 + self.aberrations.get('C23_a', 0)**2) *
+                               4.87e-3 * 
+                               np.sqrt(x**2 + y**2)**3 * np.cos(3 * (np.arctan2(y,x) - 
+                                                                np.arctan2(self.aberrations.get('C23_b', 0),
+                                                                           self.aberrations.get('C23_b', 0))))) * 
+                               np.pi * 4.87e-3
+                              )
                     
                 kernel = np.cos(raw_kernel)+1j*np.sin(raw_kernel)
                 aperture = np.zeros(kernel.shape)
-                #Calculate size of 25 mrad aperture in k-space for 60 keV electrons
-                aperturesize = (0.025/kernelsize)*imsize/4.87e-3
-                #cv2.circle(aperture, tuple((np.array(kernel.shape)/2).astype('int')), int(kernelsize[0]/4.86), 1, thickness=-1)
-                #cv2.circle(aperture, tuple((np.array(kernel.shape)/2).astype('int')), int(np.rint(aperturesize)), 1, thickness=-1)
+                # Calculate size of 25 mrad aperture in k-space for 60 keV electrons
+                aperturesize = (0.025/kernelsize)*self.imsize/4.87e-3
+                # "Apply" aperture
                 draw_circle(aperture, tuple((np.array(kernel.shape)/2).astype('int')), int(np.rint(aperturesize)), color=1)
                 
                 kernel *= aperture
                 kernel = np.abs(np.fft.fftshift(np.fft.ifft2(np.fft.fftshift(kernel))))**2
                 kernel /= np.sum(kernel)
                 #im = cv2.filter2D(im, -1, kernel)
-                im = fftconvolve(im, kernel, mode='same')
-                shape=im.shape
+                im = fftconvolve(self.delta_graphene, kernel, mode='same')
                 im = np.random.poisson(lam=im.flatten(), size=np.size(im)).astype(im.dtype)
-                return im.reshape(shape).astype('float32')
+                
+                return im.reshape(self.shape).astype('float32')
                 #return kernel    
+            
+            
+                
+        
+        
+            
 
 class Peaking(Imaging):
     
@@ -497,79 +604,7 @@ def symmetry_merit(image, imsize, mask=None):
 #    return {'size_pixels': parameters.size, 'center': parameters.center_nm, 'pixeltime': parameters.pixel_time_us, \
 #            'fov': parameters.fov_nm, 'rotation': parameters.rotation_deg}    
 
-def graphene_generator(imsize, impix, rotation):
-    rotation = rotation*np.pi/180
-    
-    #increase size of initially generated image by 20% to avoid missing atoms at the edges (image will be cropped
-    #to actual size before returning it)
-    image = np.zeros((int(impix*1.2), int(impix*1.2)))
-    rotation_matrix = np.array( ( (np.cos(2.0/3.0*np.pi), np.sin(2.0/3.0*np.pi)), (-np.sin(2.0/3.0*np.pi), np.cos(2.0/3.0*np.pi)) ) )
-    #define basis vectors of unit cell, a1 and a2
-    basis_length = 0.142 * np.sqrt(3) * impix/float(imsize)
-    a1 = np.array((np.cos(rotation), np.sin(rotation))) * basis_length
-    a2 = np.dot(a1, rotation_matrix)
-    #print(a1)
-    #print(a2)
-    a1position = np.array((0.0,0.0))
-    a2position = np.array((0.0,0.0))
-    a2direction = 1.0
-    
-    
-    while (a1position < impix*2.4).all():
-        success = True
-        
-        while success:
-            firsta2 = a2position.copy()
-            cellposition = a1position + a2position
-            #print(str(a1position) + ', '  + str(a2position))
-            #print(cellposition)
-            
-            #place atoms
-            if (cellposition+a1/3.0+a2*(2.0/3.0) < impix*1.2).all() and (cellposition+a1/3.0+a2*(2.0/3.0) >= 0).all():
-                success = True
-                y,x = cellposition+a1/3.0+a2*(2.0/3.0)
-                pixelvalues = distribute_intensity(x,y)
-                pixelpositions = [(0,0), (0,1), (1,1), (1,0)]
-                
-                for i in range(len(pixelvalues)):
-                    try:
-                        image[np.floor(y)+pixelpositions[i][0],np.floor(x)+pixelpositions[i][1]] = pixelvalues[i]
-                    except IndexError:
-                        pass
-                        #print('Could not put pixel at: ' + str((np.floor(y)+pixelpositions[i][0],np.floor(x)+pixelpositions[i][1])))
-            else:
-                success = False
-                
-            if (cellposition+a2/3.0+a1*(2.0/3.0) < impix*1.2).all() and (cellposition+a2/3.0+a1*(2.0/3.0) >= 0).all():
-                success = True
-                y,x = cellposition+a2/3.0+a1*(2.0/3.0)
-                pixelvalues = distribute_intensity(x,y)
-                pixelpositions = [(0,0), (0,1), (1,1), (1,0)]
-                
-                for i in range(len(pixelvalues)):
-                    try:
-                        image[np.floor(y)+pixelpositions[i][0],np.floor(x)+pixelpositions[i][1]] = pixelvalues[i]
-                    except IndexError:
-                        pass
-                        #print('Could not put pixel at: ' + str((np.floor(y)+pixelpositions[i][0],np.floor(x)+pixelpositions[i][1])))
-            else:
-                success = False
-        
-            if not success and a2direction == 1:
-                a2position = firsta2-a2
-                a2direction = -1.0
-                success = True
-            elif not success and a2direction == -1:
-                a2position += 3.0*a2
-                a2direction = 1.0
-            else:
-                a2position += a2direction*a2
-        
-        a1position += a1
-    
-    start = int(impix * 0.1)
-    return image[start:start+impix, start:start+impix]
-    #return image
+
 
 def distribute_intensity(x,y):
     """
