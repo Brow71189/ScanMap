@@ -374,7 +374,7 @@ class Imaging(object):
         reset_aberrations = kwargs.get('reset_aberrations', False)
         # Keys to check for aberrations in aberrations dictionary
         keys = ['EHTFocus', 'C12_a', 'C12_b', 'C21_a', 'C21_b', 'C23_a', 'C23_b']
-           
+        return_image = None
            
 #                #if aberrations should not be reset, change global_aberrations
 #                    if not kwargs.get('reset_aberrations'):
@@ -406,23 +406,26 @@ class Imaging(object):
                         
                         if reset_aberrations:
                             originals[controls[key]] = vt.as2_get_control(self.as2, controls[key])
+            # Apply corrector values to the Hardware
+            for key in self.aberrations.keys():
+                vt.as2_set_control(controls[key], self.aberrations[key])
             
             if acquire_image:
                 assert self.superscan is not None, \
                        'You have to provide an instance of superscan to perform superscan-related operations.'
-                record_parameters = self.create_record_parameters(self.superscan, kwargs.get('frame_parameters'), detectors=kwargs.get('detectors'))
-                im = self.superscan.record(**record_parameters)
+                self.record_parameters = self.create_record_parameters(self.superscan, self.frame_parameters, self.detectors)
+                im = self.superscan.record(**self.record_parameters)
                 if len(im) > 1:
-                    im2 = []
+                    return_image = []
                     for entry in im:
-                        im2.append(entry.data)
+                        return_image.append(entry.data)
                 else:
-                    im2 = im[0].data
-                if len(originals) > 0:
-                    for key in originals.keys():
-                        vt.as2_set_control(key, originals[key])
-                return im2
+                    return_image = im[0].data
+            # reset all corrector values to the original ones
+            for key in originals.keys():
+                vt.as2_set_control(key, originals[key])
         
+        # e.g. offline mode
         else:
             global global_aberrations
             
@@ -444,6 +447,11 @@ class Imaging(object):
                             self.aberrations[key] = global_aberrations[key] + kwargs['aberrations'].get(key)
                         else:
                             self.aberrations[key] = kwargs['aberrations'].get(key)
+            # Write current values to global aberrations if they should be kept (which is similar to applying them to
+            # the hardware in online mode)
+            if not reset_aberrations:
+                for key in self.aberrations.keys():
+                    global_aberrations[key] = self.aberrations[key]
 
             if acquire_image:
                 # Create x and y coordinates such that resulting beam has the same scale as the image.
