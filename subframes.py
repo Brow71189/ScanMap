@@ -97,14 +97,18 @@ def calculate_counts(image, threshold=1e-9):
     
     differences = sort_im[1:] - sort_im[0:-1]
     steps = differences[differences>threshold]
-    int_steps = []
-    for i in range(len(steps)):
-        if len(int_steps) > 2:
-            mean_step = np.mean(int_steps)
-        else:
-            mean_step = 0.0
-        if mean_step == 0.0 or (steps[i] < mean_step*1.5 and steps[i] > 0.5*mean_step):
-            int_steps.append(steps[i])
+    #int_steps = []
+
+    min_step = np.amin(steps)
+    
+    int_steps = steps[steps<1.5*min_step]
+#    for i in range(len(steps)):
+#        if len(int_steps) > 2:
+#            mean_step = np.mean(int_steps)
+#        else:
+#            mean_step = 0.0
+#        if mean_step == 0.0 or (steps[i] < mean_step*1.5 and steps[i] > 0.5*mean_step):
+#            int_steps.append(steps[i])
             
 #    int_steps = []
 #    for i in range(1, len(sort_im)):
@@ -180,8 +184,8 @@ def subframes_preprocessing(filename, dirname, imsize, counts_threshold=1e-9, di
             fft = np.log(np.abs(np.fft.fftshift(np.fft.fft2(image_org)))).astype('float32')
             center = np.array(np.shape(image))/2
             ell = np.ones(np.shape(fft), dtype='float32')
-            cv2.ellipse(ell, (tuple(center), (ellipse_a*2, ellipse_b*2), -angle*180/np.pi), 2)
-            cv2.ellipse(ell, (tuple(center), (ellipse_a*2*np.sqrt(3), ellipse_b*2*np.sqrt(3)), -angle*180/np.pi), 2)            
+            cv2.ellipse(ell, (tuple(center), (ellipse_a*2, ellipse_b*2), -angle*180/np.pi), 4)
+            cv2.ellipse(ell, (tuple(center), (ellipse_a*2*np.sqrt(3), ellipse_b*2*np.sqrt(3)), -angle*180/np.pi), 4)            
             fft *= ell
             savesize = int(2.0*imsize/0.213)
             tifffile.imsave(dirname+'fft_'+dirname.split('/')[-2]+'/'+filename, fft[center[0]-savesize:center[0]+savesize+1, center[1]-savesize:center[1]+savesize+1])
@@ -194,11 +198,11 @@ if __name__ == '__main__':
     
     overall_starttime = time.time()
 
-    dirpath = '/home/mittelberger/Documents/simulated_test_series'
+    dirpath = '/home/mittelberger/Documents/jk-randomwalk/divac-seq3-lowdose'
     #dirpath = '/3tb/Dark_noise/'
-    imsize = 20
-    dirt_threshold = 1000
-    dirt_border = 50
+    imsize = 4
+    dirt_threshold = 1
+    dirt_border = 0
 
     if not dirpath.endswith('/'):
         dirpath += '/'
