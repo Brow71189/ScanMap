@@ -524,7 +524,8 @@ class Imaging(object):
                 # Calculate size of 25 mrad aperture in k-space for 60 keV electrons
                 aperturesize = (0.025/kernelsize)*self.imsize/4.87e-3
                 # "Apply" aperture
-                draw_circle(aperture, tuple((np.array(kernel.shape)/2).astype('int')), int(np.rint(aperturesize)), color=1)
+                draw_circle(aperture, tuple((np.array(kernel.shape)/2).astype('int')),
+                            int(np.rint(aperturesize)), color=1)
                 
                 kernel *= aperture
                 kernel = np.abs(np.fft.fftshift(np.fft.ifft2(np.fft.fftshift(kernel))))**2
@@ -578,9 +579,11 @@ class Peaking(Imaging):
                     imsize: Size of the input image in nm.
 
             Output:
-                    List of tuples that contain the coordinates of the reflections. The tuples have the form (y, x, intensity_of_peak_maximum)
+                    List of tuples that contain the coordinates of the reflections. The tuples have the form 
+                    (y, x, intensity_of_peak_maximum)
                     If no peaks were found the return value will be None.
-                    Note that the returned intesities might be smaller than that of the raw fft because of the processing done in the function.
+                    Note that the returned intesities might be smaller than that of the raw fft because of the
+                    processing done in the function.
         """
         # Check kwargs for entrys that override class variables
         if kwargs.get('image') is not None:
