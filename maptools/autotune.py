@@ -554,6 +554,7 @@ class Peaking(Imaging):
         self._center = tuple((np.array(np.shape(image))/2).astype(np.int))
         self.fft = None
         self._mask = None
+        self.peaks = None
         
     @property
     def center(self):
@@ -571,7 +572,7 @@ class Peaking(Imaging):
             assert self.image is not None, 'Can not calculate the fft because no image is given.'
             self._fft = np.fft.fftshift(np.fft.fft2(self.image))
     
-    def find_peaks(self, half_line_thickness=5, position_tolerance=5, second_order=False, debug_mode=False, **kwargs):
+    def find_peaks(self, half_line_thickness=3, position_tolerance=5, second_order=False, debug_mode=False, **kwargs):
         """
             This function can find the 6 first-order peaks in the FFT of an atomic-resolution image of graphene.
             Input:
@@ -760,12 +761,14 @@ class Peaking(Imaging):
             return peaks
         
     def fourier_filter(self, filter_radius=7, **kwargs):
-        peaks = self.find_peaks(second_order=True, half_line_thickness=3, **kwargs)
+        # check if peaks are already saved and if second order is there        
+        if len(np.shape(self.peaks)) < 2:
+            self.peaks = self.find_peaks(second_order=True, **kwargs)
         xdata = np.mgrid[-filter_radius:filter_radius+1, -filter_radius:filter_radius+1]
         mask = gaussian2D(xdata, 0, 0, filter_radius/2, filter_radius/2, 1, 0)
         maskradius = int(np.shape(mask)[0]/2)
         fft_masked = np.zeros(self.shape, dtype=self.fft.dtype)
-        for order in peaks:
+        for order in self.peaks:
             for peak in order:
                 if np.count_nonzero(peak) > 0:
                     fft_masked[peak[0]-maskradius:peak[0]+maskradius+1, peak[1]-maskradius:peak[1]+maskradius+1] += \
@@ -787,17 +790,6 @@ class Tuning(Peaking):
         self.average_frames = kwargs.get('average_frames')
         self.aberrations_tracklist = []
         
-    def tuning_merit(imsize, average_frames, integration_radius, save_images, savepath, dirt_threshold, kwargs):
-        intensities, image, mask = check_tuning(imsize, average_frames=average_frames, integration_radius=integration_radius, \
-                            save_images=save_images, savepath=savepath, return_image = True, dirt_threshold=dirt_threshold, **kwargs)
-        
-        symmetry = symmetry_merit(image, imsize, mask=mask)
-        
-        print('sum intensities: ' + str(np.sum(intensities)) + '\tvar intensities: ' + str(np.std(intensities)/np.sum(intensities)) + '\tsymmetry: ' + str(symmetry))
-        #return 1.0/(np.sum(intensities/1e6) + np.sum(symmetry) + np.count_nonzero(intensities)/10.0)
-        return 1.0/(np.sum(intensities)/1e6 + np.sum(symmetry))
-        
-    
     def kill_aberrations(superscan=None, as2=None, document_controller=None, average_frames=3, integration_radius=1, image=None, \
                         imsize=None, only_focus=False, save_images=False, savepath=None, event=None, dirt_threshold=None, \
                         steps = {'EHTFocus': 2, 'C12_a': 2, 'C12_b': 2, 'C21_a': 300, 'C21_b': 300, 'C23_a': 75, 'C23_b': 75}, \
@@ -1095,104 +1087,47 @@ class Tuning(Peaking):
         
         return global_aberrations
     
-    
-    
-    
-    def check_tuning(self, imagesize, im=None, check_astig=False, average_frames=0, integration_radius=0, save_images=False, savepath=None, \
-                    process_image=True, return_image = False, dirt_threshold = 0.015, **kwargs):
-    
-        global global_aberrations                    
-                        
-        if kwargs.get('imsize') is None:
-            kwargs['imsize'] = imagesize
-        else:
-            imagesize=kwargs['imsize']
-            
-        if (process_image or im is None) and average_frames < 2:
-            if im is not None and kwargs.get('image') is None:
-                kwargs['image'] = im
-            im = self.image_grabber(**kwargs)
-                
-        if average_frames > 1:
-            im = []
-            #Acquire only one image in the first place to avoid "stacking" of aberations
-            single_image = self.image_grabber(**kwargs)
-            im.append(single_image)
-            
-            #remove aberrations from kwargs fore next frames
-            kwargs2 = kwargs.copy()
-            if kwargs.get('relative_aberrations'):
-                    if not kwargs.get('reset_aberrations'):
-                        keys = ['EHTFocus', 'C12_a', 'C12_b', 'C21_a', 'C21_b', 'C23_a', 'C23_b']
-                        for key in keys:
-                            kwargs2.pop(key, 0)
-            
-            for i in range(average_frames-1):
-                im.append(self.image_grabber(**kwargs2))
-                
-    #Apply dirt detection, but only when real images are used
-        #Averaging is only done with real images
-        mask = None
-        if average_frames > 1:
-            for image in im:
-                mask = self.dirt_detector(image, threshold=0.015)
-                if np.sum(mask) > 0.5*np.prod(np.array(np.shape(image))):
-                    raise DirtError('Cannot check tuning of images with more than 50% dirt coverage.')
-        #If no image is provided or just a tuning check without real or simulated acquisition should be done it is real data
-        elif kwargs.get('image') is None or not process_image:
-            mask = self.dirt_detector(im, threshold=0.015)
-            if np.sum(mask) > 0.5*np.prod(np.array(np.shape(im))):
-                raise DirtError('Cannot check tuning of images with more than 50% dirt coverage.')
-        
-        if save_images:
-            if not os.path.exists(savepath):
-                os.makedirs(savepath)
-            name = str(int(time.time()*100))+'.tif'
-            logfile = open(savepath+'log.txt', 'a')
-    #        kwargs2 = kwargs.copy()
-    #        kwargs2.pop('image', 0)
-    #        logfile.write(name+': '+str(kwargs2)+'\n')
-            logfile.write(name+': '+str(global_aberrations)+'\n')
-            logfile.close()
-            if average_frames < 2:
-                tifffile.imsave(savepath+name, im.astype('float32'))
-            else:
-                tifffile.imsave(savepath+name, im[0].astype('float32'))
-                
-        try:
-            peaks_first, peaks_second = self.find_peaks(im, imagesize, integration_radius=integration_radius, second_order=True, position_tolerance=9)
-        except RuntimeError as detail:
-            raise RuntimeError('Tuning check failed. Reason: '+ str(detail))
-    
+    def peak_intensity_merit(self):
+        # Check if peaks are already stored and if second order is there        
+        if len(np.shape(self.peaks)) < 2:
+            self.peaks = self.find_peaks(second_order=True)
+        peaks_first, peaks_second = self.peaks
         intensities = []
         for peak in peaks_first:
             intensities.append(peak[3])
         for peak in peaks_second:
             intensities.append(peak[3])
-        intensities=np.array(intensities)
         
-        if return_image:
-            return (intensities, (im if average_frames < 2 else im[0]) , mask)
-        else:        
-            return intensities
+        return np.array(intensities)
             
-    def measure_symmetry(image, imsize):
-        point_mirrored = np.flipud(np.fliplr(image)) 
-        return autoalign.find_shift(image, point_mirrored, ratio=0.142/imsize/2)
-        
-    def symmetry_merit(self, image, imsize, mask=None):
-        if mask is None:
-            mean = np.mean(image)
-        else:
-            mean = np.mean(image[mask==0])
             
-        ffil = self.fourier_filter(image, imsize)
+    def measure_symmetry(self, filtered_image):
+        point_mirrored = np.flipud(np.fliplr(filtered_image)) 
+        return autoalign.find_shift(filtered_image, point_mirrored, ratio=0.142/self.imsize/2)
         
-        if mask is None:
-            return (self.measure_symmetry(ffil, imsize)[1], np.var(ffil)/mean**2*100)
+    def symmetry_merit(self):
+        if self.mask is None:
+            mean = np.mean(self.image)
         else:
-            return (self.measure_symmetry(ffil, imsize)[1]*(1.0-np.sum(mask)/np.size(mask)), np.var(ffil[mask==0]/mean**2*50))
+            mean = np.mean(self.image[self.mask==0])
+            
+        ffil = self.fourier_filter()
+        
+        if self.mask is None:
+            return (self.measure_symmetry(ffil)[1], np.var(ffil)/mean**2*100)
+        else:
+            return (self.measure_symmetry(ffil)[1]*(1.0-np.sum(self.mask)/np.size(self.mask)),
+                    np.var(ffil[self.mask==0]/mean**2*50))
 
+    def tuning_merit(self):
+        intensities = self.peak_intensity_merit()
+        symmetry = self.symmetry_merit()
+        
+        print('sum intensities: ' + str(np.sum(intensities)) + '\tvar intensities: ' +
+              str(np.std(intensities)/np.sum(intensities)) + '\tsymmetry: ' + str(symmetry))
+        return 1.0/(np.sum(intensities)/1e6 + np.sum(symmetry))
+
+        
 def draw_circle(image, center, radius, color=-1, thickness=-1):
     
     subarray = image[center[0]-radius:center[0]+radius+1, center[1]-radius:center[1]+radius+1]
@@ -1207,8 +1142,7 @@ def draw_circle(image, center, radius, color=-1, thickness=-1):
         subarray[(distances < radius+thickness+1) * (distances > radius-thickness)] = color
         
 def gaussian2D(xdata, x0, y0, x_std, y_std, amplitude, offset):
-    x0, y0, x_std, y_std, amplitude, offset = float(x0), float(y0), float(x_std), float(y_std), float(amplitude), float(offset)
-    return (amplitude*np.exp( -0.5*( ((xdata[1]-x0)/x_std)**2 + ((xdata[0]-y0)/y_std)**2 ) ) + offset)#.ravel()
+    return (amplitude*np.exp( -0.5*( ((xdata[1]-x0)/x_std)**2 + ((xdata[0]-y0)/y_std)**2 ) ) + offset)
 
 def hyperbola1D(xdata, a, offset):
     a, offset = float(a), float(offset)
