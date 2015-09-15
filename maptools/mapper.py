@@ -29,18 +29,18 @@ def find_offset_and_rotation(as2, superscan):
     It returns a tuple of the form (rotation(degrees), offset(fraction of images)).
 
     """
-    
+
     frame_parameters = superscan.get_frame_parameters()
-    
+
     imsize = frame_parameters['fov_nm']
-    
+
     image_grabber_parameters = {'size_pixels': frame_parameters['size'], 'rotation': 0,
                                 'pixeltime': frame_parameters['pixel_time_us'], 'fov': frame_parameters['fov_nm']}
 
     leftX = vt.as2_get_control(as2, 'StageOutX')
     vt.as2_set_control(as2, 'StageOutX', leftX + 6.0*imsize)
     time.sleep(5)
-    
+
     image1 = autotune.image_grabber(frame_parameters=image_grabber_parameters, detectors={'MAADF': True, 'HAADF': False})
     #Go to the right by one half image size
     vt.as2_set_control('StageOutX', leftX + 6.5*imsize)
@@ -186,17 +186,17 @@ def create_map_coordinates(leftX, topY, imsize, distance, num_subframes, coords,
     if compensate_stage_error:
         num_subframes += np.array((2*extra_frames, extra_lines))
         leftX -= extra_frames*(imsize+distance)
-        for i in range(extra_lines):        
+        for i in range(extra_lines):
             if i % 2 == 0:  # Odd lines (have even indices because numbering starts with 0), e.g. map from left to right
                 topY += imsize+oldm*distance
             else:
                 topY += imsize+eldm*distance
-    
+
     # make a list of coordinates where images will be aquired.
     # Starting point is the upper-left corner and mapping will proceed to the right. The next line will start
     # at the right and scan towards the left. The next line will again start at the left, and so on. E.g. a "snake shaped"
     # path is chosen for the mapping.
-    
+
     for j in range(num_subframes[1]):
         for i in range(num_subframes[0]):
             if j % 2 == 0:  # Odd lines (have even indices because numbering starts with 0), e.g. map from left to right
@@ -204,7 +204,7 @@ def create_map_coordinates(leftX, topY, imsize, distance, num_subframes, coords,
                                    tuple( interpolation( (leftX+i*(imsize+distance),
                                                           topY-j*(imsize+distance)-oldm*(imsize+distance) ),
                                                           coords) ) )
-                
+
                 # Apply correct (continuous) frame numbering for all cases. If no extra positions are added, just append
                 # the correct frame number. Elsewise append the correct frame number if a non-additional one, else None
                 if not compensate_stage_error:
@@ -219,17 +219,17 @@ def create_map_coordinates(leftX, topY, imsize, distance, num_subframes, coords,
                                    tuple( interpolation( (leftX+(num_subframes[0]-(i+1))*(imsize+distance),
                                                           topY-j*(imsize+eldm*distance) - eldm*(imsize+distance) ),
                                                           coords) ) )
-                
+
                 # Apply correct (continuous) frame numbering for all cases. If no extra positions are added, just append
                 # the correct frame number. Elsewise append the correct frame number if a non-additional one, else None
                 if not compensate_stage_error:
                     frame_number.append(j*num_subframes[0]+(num_subframes[0]-(i+1)))
                 elif extra_frames <= i < num_subframes[0]-extra_frames and j >= extra_lines:
-                    frame_number.append( (j-extra_lines)*(num_subframes[0]-2*extra_frames) + 
+                    frame_number.append( (j-extra_lines)*(num_subframes[0]-2*extra_frames) +
                                          ((num_subframes[0]-2*extra_frames)-(i-extra_frames+1)) )
                 else:
                     frame_number.append(None)
-    
+
     return (map_coords, frame_number)
 
 
@@ -375,10 +375,10 @@ def SuperScan_mapping(coord_dict, filepath='Z:\\ScanMap\\', do_autofocus=False, 
     #to ensure they do not overlap
     distance = offset*imsize
     num_subframes = ( int(np.abs(rightX-leftX)/(imsize+distance))+1, int(np.abs(topY-botY)/(imsize+distance))+1 )
-    
+
     map_coords, frame_number = create_map_coordinates(leftX, topY, imsize, distance, num_subframes, coords,
                                                       compensate_stage_error=compensate_stage_error)
-    
+
 #    map_coords = []
 #    frame_number = []
 #    new_focus_point = []
@@ -475,14 +475,14 @@ def SuperScan_mapping(coord_dict, filepath='Z:\\ScanMap\\', do_autofocus=False, 
             vt.as2_set_control(as2, 'EHTFocus', fine_focus)
 
             #Wait until movement of stage is done (wait longer time before first frame)
-            
+
             if counter == 1:
                 time.sleep(10) #time in seconds
             elif frame_number[counter-1] is None:
                 time.sleep(1)
             else:
                 time.sleep(3)
-            
+
             if frame_number[counter-1] is not None:
                 if do_autofocus:
     #                if autofocus_pattern == 'edges':
@@ -516,13 +516,13 @@ def SuperScan_mapping(coord_dict, filepath='Z:\\ScanMap\\', do_autofocus=False, 
     #                        data=autotune.image_grabber()
     #                        tifffile.imsave(store+str('%.4d_%.3f_%.3f.tif' % (frame_number[counter-1],stagex*1e6,stagey*1e6)), data)
     #                        test_map.append(frame_coord[0:3] + (new_focus,))
-    
+
                     if autofocus_pattern == 'testing':
                         #tests in each frame after aquisition if all 6 reflections in the fft are still there (only for frames where less than 50% of the area are
                         #covered with dirt). If not all reflections are visible, autofocus is applied and the result is added as offset to the interpolated focus values.
                         #The dirt coverage is calculated by considering all pixels intensities that are higher than 0.02 as dirt
                         data=autotune.image_grabber(superscan=superscan, frame_parameters=frame_parameters)
-    
+
                         name = str('%.4d_%.3f_%.3f.tif' % (frame_number[counter-1],stagex*1e6,stagey*1e6))
                         dirt_mask = autotune.dirt_detector(data, threshold=0.01, median_blur_diam=39, gaussian_blur_radius=3)
                         #calculate the fraction of 'bad' pixels and save frame if fraction is >0.5, but add note to "bad_frames" file
@@ -538,14 +538,14 @@ def SuperScan_mapping(coord_dict, filepath='Z:\\ScanMap\\', do_autofocus=False, 
                             except:
                                 first_order = second_order = 0
                                 number_peaks = 0
-    
+
                             if number_peaks == 12:
                                 missing_peaks = 0
                             elif number_peaks < 10:
                                 bad_frames[name] = 'Missing '+str(12 - number_peaks)+' peaks.'
                                 logwrite('No. '+str(frame_number[counter-1]) + ': Missing '+str(12 - number_peaks)+' peaks.')
                                 missing_peaks += 12 - number_peaks
-    
+
                             if missing_peaks > 12:
                                 logwrite('No. '+str(frame_number[counter-1]) + ': Retune because '+str(missing_peaks)+' peaks miss in total.')
                                 bad_frames[name] = 'Retune because '+str(missing_peaks)+' peaks miss in total.'
@@ -561,7 +561,7 @@ def SuperScan_mapping(coord_dict, filepath='Z:\\ScanMap\\', do_autofocus=False, 
                                 else:
                                     logwrite('No. '+str(frame_number[counter-1]) + ': New tuning: '+str(tuning_result))
                                     bad_frames[name] = 'New tuning: '+str(tuning_result)
-    
+
                                     data_new = autotune.image_grabber()
                                     try:
                                         first_order_new, second_order_new = autotune.find_peaks(data, imsize*1e9, position_tolerance=9, second_order=True)
@@ -576,7 +576,7 @@ def SuperScan_mapping(coord_dict, filepath='Z:\\ScanMap\\', do_autofocus=False, 
                                         for key, value in tuning_result.items():
                                             kwargs[key] = -value
                                         autotune.image_grabber(acquire_image=False, **kwargs)
-    
+
                                     else:
                                         if number_peaks_new > number_peaks:
                                             tifffile.imsave(store+name, data_new)
@@ -598,16 +598,16 @@ def SuperScan_mapping(coord_dict, filepath='Z:\\ScanMap\\', do_autofocus=False, 
                                                 kwargs[key] = -value
                                             autotune.image_grabber(acquire_image=False, **kwargs)
                                             missing_peaks=0
-    
+
                             else:
                                 tifffile.imsave(store+name, data)
                                 test_map.append(frame_coord)
-    
+
                 else:
                     #Take frame and save it to disk
                     if number_of_images < 2:
                         data = autotune.image_grabber(superscan=superscan, frame_parameters=frame_parameters)
-    
+
                         tifffile.imsave(store+str('%.4d_%.3f_%.3f.tif' % (frame_number[counter-1],stagex*1e6,stagey*1e6)), data)
                         test_map.append(frame_coord)
                     else:
@@ -616,7 +616,7 @@ def SuperScan_mapping(coord_dict, filepath='Z:\\ScanMap\\', do_autofocus=False, 
                                 frame_parameters['pixeltime'] = pixeltime[i]
                             data = autotune.image_grabber(superscan=superscan, frame_parameters=frame_parameters)
                             tifffile.imsave(store+str('%.4d_%.3f_%.3f_%.2d.tif' % (frame_number[counter-1],stagex*1e6,stagey*1e6, i)), data)
-    
+
                         test_map.append(frame_coord)
 
         else:
