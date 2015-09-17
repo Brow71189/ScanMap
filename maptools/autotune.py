@@ -71,6 +71,7 @@ class Imaging(object):
         self.aberrations = kwargs.get('aberrations', {})
         self.superscan = kwargs.get('superscan')
         self.as2 = kwargs.get('as2')
+        self.document_controller = kwargs.get('document_controller')
         self.delta_graphene = None
 
     @property
@@ -543,6 +544,25 @@ class Imaging(object):
 
         return return_image
 
+    def logwrite(self, msg, level='info'):
+        if self.document_controller is None:
+            if level.lower() == 'info':
+                logging.info(str(msg))
+            elif level.lower() == 'warn':
+                logging.warn(str(msg))
+            elif level.lower() == 'error':
+                logging.error(str(msg))
+            else:
+                logging.debug(str(msg))
+        else:
+            if level.lower() == 'info':
+                self.document_controller.queue_task(lambda: logging.info(str(msg)))
+            elif level.lower() == 'warn':
+                self.document_controller.queue_task(lambda: logging.warn(str(msg)))
+            elif level.lower() == 'error':
+                self.document_controller.queue_task(lambda: logging.error(str(msg)))
+            else:
+                self.document_controller.queue_task(lambda: logging.debug(str(msg)))
 
 class Peaking(Imaging):
 
@@ -790,7 +810,6 @@ class Tuning(Peaking):
         self.steps = kwargs.get('steps')
         self.keys = kwargs.get('keys')
         self.event = kwargs.get('event')
-        self.document_controller = kwargs.get('document_controller')
         self.save_images = kwargs.get('save_images', False)
         self.savepath = kwargs.get('savepath')
         self.average_frames = kwargs.get('average_frames')
@@ -1004,26 +1023,6 @@ class Tuning(Peaking):
 #                pass
 #        else:
 #            image_grabber(acquire_image=False, **kwargs)
-
-    def logwrite(self, msg, level='info'):
-        if self.document_controller is None:
-            if level.lower() == 'info':
-                logging.info(str(msg))
-            elif level.lower() == 'warn':
-                logging.warn(str(msg))
-            elif level.lower() == 'error':
-                logging.error(str(msg))
-            else:
-                logging.debug(str(msg))
-        else:
-            if level.lower() == 'info':
-                self.document_controller.queue_task(lambda: logging.info(str(msg)))
-            elif level.lower() == 'warn':
-                self.document_controller.queue_task(lambda: logging.warn(str(msg)))
-            elif level.lower() == 'error':
-                self.document_controller.queue_task(lambda: logging.error(str(msg)))
-            else:
-                self.document_controller.queue_task(lambda: logging.debug(str(msg)))
 
     def peak_intensity_merit(self):
         # Check if peaks are already stored and if second order is there
