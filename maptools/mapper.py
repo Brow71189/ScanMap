@@ -23,7 +23,6 @@ from . import autoalign
 class Mapping(object):
     
     _corners = ['top-left', 'top-right', 'bottom-right', 'bottom-left']
-    _dictionaries = ['switches', ]
     
     def __init__(self, **kwargs):
         self.superscan = kwargs.get('superscan')
@@ -44,6 +43,22 @@ class Mapping(object):
         self.event = kwargs.get('event')
         self.foldername = 'map_' + time.strftime('%Y_%m_%d_%H_%M')
         self.offset = kwargs.get('offset')
+        self._online = kwargs.get('online')
+        self.imaging = kwargs.get('imaging')
+        
+    @property
+    def online(self):
+        if self._online is None:
+            if self.as2 is not None or self.superscan is not None:
+                self._online = True
+            else:
+                logging.info('Going to offline mode because no instance of as2 or superscan was provided.')
+                self._online = False
+        return self.online
+
+    @online.setter
+    def online(self, online):
+        self._online = online
         
     @property
     def savepath(self):
@@ -53,6 +68,170 @@ class Mapping(object):
     def savepath(self, savepath):
         self._savepath = os.path.normpath(savepath)
         
+    def create_map_coordinates(self, compensate_stage_error=False):
+        extra_lines = 2  # Number of lines to add at the beginning of the map
+        extra_frames = 5  # Number of extra moves at each end of a line
+        oldm = 0.25  # odd line distance mover (additional offset of odd lines, in fractions of (imsize+distance))
+        eldm = 0  # even line distance mover (additional offset of even lines, in fractions of (imsize+distance))
+        imsize = self.frame_parameters['fov']
+        distance = self.offset*imsize
+        self.num_subframes = np.array((int(np.abs(self.rightX-self.leftX)/(imsize+distance))+1, 
+                                       int(np.abs(self.topY-self.botY)/(imsize+distance))+1))
+    
+        map_coords = []
+        frame_number = []
+    
+        # add additional lines and frames to number of subframes
+        if compensate_stage_error:
+            self.num_subframes += np.array((2*extra_frames, extra_lines))
+            self.leftX -= extra_frames*(imsize+distance)
+            for i in range(extra_lines):
+                if i % 2 == 0:  # Odd lines (have even indices because numbering starts with 0), e.g. map from left to right
+                    self.topY += imsize+oldm*distance
+                else:
+                    self.topY += imsize+eldm*distance
+    
+        # make a list of coordinates where images will be aquired.
+        # Starting point is the upper-left corner and mapping will proceed to the right. The next line will start
+        # at the right and scan towards the left. The next line will again start at the left, and so on. E.g. a "snake shaped"
+        # path is chosen for the mapping.
+    
+        for j in range(self.num_subframes[1]):
+            for i in range(self.num_subframes[0]):
+                if j % 2 == 0:  # Odd lines (have even indices because numbering starts with 0), e.g. map from left to right
+                    map_coords.append(tuple((self.leftX+i*(imsize+distance), 
+                                             self.topY-j*(imsize+distance)-oldm*(imsize+distance))) +
+                                      tuple(self.interpolation((self.leftX+i*(imsize+distance),
+                                            self.topY-j*(imsize+distance)-oldm*(imsize+distance)))))
+    
+                    # Apply correct (continuous) frame numbering for all cases. If no extra positions are added, just 
+                    # append the correct frame number. Elsewise append the correct frame number if a non-additional
+                    # one, else None
+                    if not compensate_stage_error:
+                        frame_number.append(j*self.num_subframes[0]+i)
+                    elif extra_frames <= i < self.num_subframes[0]-extra_frames and j >= extra_lines:
+                        frame_number.append((j-extra_lines)*(self.num_subframes[0]-2*extra_frames)+(i-extra_frames))
+                    else:
+                        frame_number.append(None)
+    
+                else: # Even lines, e.g. scan from right to left
+                    map_coords.append(tuple((self.leftX+(self.num_subframes[0]-(i+1))*(imsize+distance),
+                                                         self.topY-j*(imsize+distance) - eldm*(imsize+distance) ) ) +
+                                       tuple(self.interpolation((self.leftX+
+                                                                (self.num_subframes[0]-(i+1))*(imsize+distance),
+                                                                self.topY-j*(imsize+eldm*distance) -
+                                                                eldm*(imsize+distance)))))
+    
+                    # Apply correct (continuous) frame numbering for all cases. If no extra positions are added, just 
+                    # append the correct frame number. Elsewise append the correct frame number if a non-additional
+                    # one, else None
+                    if not compensate_stage_error:
+                        frame_number.append(j*self.num_subframes[0]+(self.num_subframes[0]-(i+1)))
+                    elif extra_frames <= i < self.num_subframes[0]-extra_frames and j >= extra_lines:
+                        frame_number.append( (j-extra_lines)*(self.num_subframes[0]-2*extra_frames) +
+                                             ((self.num_subframes[0]-2*extra_frames)-(i-extra_frames+1)) )
+                    else:
+                        frame_number.append(None)
+    
+        return (map_coords, frame_number)
+
+    def interpolation(self, target):
+        """
+        Bilinear Interpolation between 4 points that do not have to lie on a regular grid.
+    
+        Parameters
+        -----------
+        target : Tuple
+            (x,y) coordinates of the point you want to interpolate
+    
+        points : List of tuples
+            Defines the corners of a quadrilateral. The points in the list
+            are supposed to have the order (top-left, top-right, bottom-right, bottom-left)
+            The length of the tuples has to be at least 3 and can be as long as necessary.
+            The output will always have the length (points[i] - 2).
+    
+        Returns
+        -------
+        interpolated_point : Tuple
+            Tuple with the length (points[i] - 2) that contains the interpolated value(s) at target (i is
+            a number iterating over the list entries).
+        """
+        result = tuple()
+        points = []        
+
+        for corner in self._corners:
+            points.append(self.coord_dict[corner])    
+        # Bilinear interpolation within 4 points that are not lying on a regular grid.
+        m = (target[0]-points[0][0]) / (points[1][0]-points[0][0])
+        n = (target[0]-points[3][0]) / (points[2][0]-points[3][0])
+    
+        Q1 = np.array(points[0]) + m*(np.array(points[1])-np.array(points[0]))
+        Q2 = np.array(points[3]) + n*(np.array(points[2])-np.array(points[3]))
+    
+        l = (target[1]-Q1[1]) / (Q2[1]-Q1[1])
+    
+        T = Q1 + l*(Q2-Q1)
+    
+        for j in range(len(points[0])-2):
+            result += (T[j+2],)
+    
+    #Interpolation with Inverse distance weighting with a Thin-PLate-Spline Kernel
+    #    for j in range(len(points[0])-2):
+    #        interpolated = 0
+    #        sum_weights = 0
+    #        for i in range(len(points)):
+    #            distance = np.sqrt((target[0]-points[i][0])**2 + (target[1]-points[i][1])**2)
+    #            weight = 1/(distance**2*np.log(distance))
+    #            interpolated += weight * points[i][j+2]
+    #            sum_weights += weight
+    #        result += (interpolated/sum_weights,)
+        return result
+                
+    def load_mapping_config(self, path):
+        config_file = open(os.path.normpath(path))
+        counter = 0
+        # make sure function is not caught in an endless loop if 'end' is missing at the end
+        while counter < 1e3:
+            counter += 1
+            line = config_file.readline().strip()
+            
+            if line == 'end':
+                break
+            elif line.startswith('#'):
+                continue
+            elif line.startswith('{'):
+                line = line[1:].strip()
+                self.fill_dicts(line, config_file)
+            elif len(line.split(':')) == 2:
+                line = line.split(':')
+                if hasattr(self, line[0].strip()):
+                    setattr(self, line[0].strip(), eval(line[1].strip()))
+                continue
+            else:
+                continue
+        
+        config_file.close()
+            
+    def fill_dicts(self, line, file):
+        if hasattr(self, line):
+            if getattr(self, line) is None:
+                setattr(self, line, {})
+            counter = 0
+            # Make sure function is not caught in an endless loop if '}' is missing
+            while counter < 100:
+                counter += 1
+                subline = file.readline().strip()
+                if subline.startswith('}'):
+                    break
+                elif subline.endswith('}'):
+                    subline = subline[:-1]
+                    subline = subline.split(':')
+                    getattr(self, line)[subline[0].strip()] = eval(subline[1].strip())
+                    break
+                else:
+                    subline = subline.split(':')
+                    getattr(self, line)[subline[0].strip()] = eval(subline[1].strip())
+
     def save_mapping_config(self, path=None):
         if path is None:
             path = os.path.join(self.savepath, self.foldername)
@@ -84,58 +263,48 @@ class Mapping(object):
         config_file.write('offset: ' + str(self.offset) + '\n')
         config_file.write('\nend')
         
-        config_file.close()        
-        
-    def load_mapping_config(self, path):
-        config_file = open(os.path.normpath(path))
-        counter = 0
-        # make sure function is not caught in an endless loop if 'end' is missing at the end
-        while counter < 1e3:
-            counter += 1
-            line = config_file.readline().strip()
-            
-            if line == 'end':
-                break
-            elif line.startswith('#'):
-                continue
-            elif line.startswith('{'):
-                line = line[1:].strip()
-                self.fill_dicts(line, config_file)
-            elif len(line.split(':')) == 2:
-                line = line.split(':')
-                if hasattr(self, line[0].strip()):
-                    setattr(self, line[0].strip(), line[1].strip())
-                continue
-            else:
-                continue
-        
         config_file.close()
-            
-    def fill_dicts(self, line, file):
-        if hasattr(self, line):
-            if self.line is None:
-                self.line = {}
-            counter = 0
-            # Make sure function is not caught in an endless loop if '}' is missing
-            while counter < 100:
-                counter += 1
-                subline = file.readline().strip()
-                if subline.startswith('}'):
-                    break
-                elif subline.endswith('}'):
-                    subline = subline[:-1]
-                    subline = subline.split(':')
-                    self.line[subline[0].strip()] = subline[1].strip()
-                    break
-                else:
-                    subline = subline.split(':')
-                    self.line[subline[0].strip()] = subline[1].strip()
 
-    def SuperScan_mapping(self, coord_dict, filepath='Z:\\ScanMap\\', do_autofocus=False, offset = 0.0, rotation = 0.0, imsize=200,
-                          impix=512, pixeltime=4, detectors=('MAADF'), use_z_drive=False, auto_offset=False,
-                          auto_rotation=False, autofocus_pattern='edges', number_of_images=1, acquire_overview=False,
-                          blank_beam=False, compensate_stage_error=False,
-                          document_controller=None, event=None, superscan=None, as2=None, **kwargs):
+    def sort_quadrangle(self):
+        """
+        Brings 4 points in the correct order to form a quadrangle.
+    
+        Parameters
+        ----------
+        coord_dict : dictionary
+            4 points that are supposed to form a quadrangle.
+    
+        Returns
+        ------
+        coord_dict_sorted : dictionary
+            Keys are called 'top-left', 'top-right', 'bottom-right' and 'bottom-left'. They contain the respective input tuple.
+            Axis of the result are in standard directions, e.g. x points to the right and y to the top.
+        """
+        result = {}
+        points = []        
+
+        for corner in self._corners:
+            points.append(self.coord_dict[corner])
+
+        points.sort()
+        
+        if points[0][1] > points[1][1]:
+            result['top-left'] = points[0]
+            result['bottom-left'] = points[1]
+        elif points[0][1] < points[1][1]:
+            result['top-left'] = points[1]
+            result['bottom-left'] = points[0]
+    
+        if points[2][1] > points[3][1]:
+            result['top-right'] = points[2]
+            result['bottom-right'] = points[3]
+        elif points[2][1] < points[3][1]:
+            result['top-right'] = points[3]
+            result['bottom-right'] = points[2]
+    
+        return result
+        
+    def SuperScan_mapping(self, **kwargs):
         """
             This function will take a series of STEM images (subframes) to map a large rectangular sample area.
             coord_dict is a dictionary that has to consist of at least 4 tuples that hold stage coordinates in x,y,z - direction
@@ -161,200 +330,49 @@ class Mapping(object):
             self.offset = kwargs.get('offset')
         if kwargs.get('number_of_images') is not None:
             self.number_of_images = kwargs.get('number_of_images')
-        def logwrite(msg, level='info'):
-            if document_controller is None:
-                if level.lower() == 'info':
-                    logging.info(str(msg))
-                elif level.lower() == 'warn':
-                    logging.warn(str(msg))
-                elif level.lower() == 'error':
-                    logging.error(str(msg))
-                else:
-                    logging.debug(str(msg))
-            else:
-                if level.lower() == 'info':
-                    document_controller.queue_task(lambda: logging.info(str(msg)))
-                elif level.lower() == 'warn':
-                    document_controller.queue_task(lambda: logging.warn(str(msg)))
-                elif level.lower() == 'error':
-                    document_controller.queue_task(lambda: logging.error(str(msg)))
-                else:
-                    document_controller.queue_task(lambda: logging.debug(str(msg)))
+        if kwargs.get('savepath') is not None:
+            self.savepath = kwargs.get('savepath')
+        if kwargs.get('foldername') is not None:
+            self.foldername = kwargs.get('foldername')
     
-        imsize = float(imsize)*1e-9
-        rotation = float(rotation)*np.pi/180.0
-    
-        if autofocus_pattern not in ['edges', 'testing']:
-            logwrite('Unknown option for autofocus_pattern. Defaulting to \'edges\'.', level='warn')
-            autofocus_pattern = 'edges'
-    
-        if np.size(pixeltime) > 1 and np.size(pixeltime) != number_of_images:
+        if np.size(self.frame_parameters['pixeltime']) > 1 and \
+           np.size(self.frame_parameters['pixeltime']) != self.number_of_images:
             raise ValueError('The number of given pixeltimes do not match the given number of frames that should be ' +
                              'recorded per location. You can either input one number or a list with a matching length.')
-    
-        if np.size(pixeltime) > 1 and do_autofocus == True:
-            logwrite('Acquiring an image series and using autofocus is currently not possible. Autofocus will be disabled.',
+        
+        img = Imaging(frame_parameters=self.frame_parameters, detectors=self.detectors, online=self.online,
+                      as2=self.as2, superscan=self.superscan, document_controller=self.document_controller)
+
+        if self.number_of_images > 1 and self.switches['do_autotuning'] == True:
+            img.logwrite('Acquiring an image series and using autofocus is currently not possible. Autofocus will be disabled.',
                      level='warn')
-            do_autofocus = False
-        #If not running on microscope computer this will be set to true later.
-        #No functions that require real Microscope Hardware will be executed, so no errors appear (test mode)
-        offline = False
-    
-    #    HAADF = MAADF = False
-    #    if 'MAADF' in detectors:
-    #        MAADF = True
-    #    if 'HAADF' in detectors:
-    #        HAADF = True
-    
-        #start with getting the corners of the area that will be mapped
-        corners = ('top-left', 'top-right', 'bottom-right', 'bottom-left')
-        #list of tuples that contain the coordinates of the corners (x,y,z) in the same order as they are listed obove
-        coords = []
-        for corner in corners:
-            coords.append(coord_dict[corner])
-    
-        #Sort points in case the axis are not pointing in positive x- and y-direction
-        coord_dict_sorted = sort_quadrangle(coords)
-    
-        #make list of tuples from sorted dictionary
-        coords = []
-        for corner in corners:
-            coords.append(coord_dict_sorted[corner])
-    
-        #Find bounding rectangle of the four points given by the user
-        leftX = np.min((coords[0][0],coords[3][0]))
-        rightX = np.max((coords[1][0],coords[2][0]))
-        topY = np.max((coords[0][1],coords[1][1]))
-        botY = np.min((coords[2][1],coords[3][1]))
-    
-    #    #Find scan rotation and offset between the images if desired by the user
-    #    if auto_offset or auto_rotation:
-    #        #set scan parameters for finding rotation and offset
-    #        ss.SS_Functions_SS_SetFrameParams(impix, impix, 0, 0, 2, imsize*1e9, 0, False, True, False, False)
-    #        #Go first some distance into the opposite direction to reduce the influence of backlash in the mechanics on the calibration
-    #        vt.as2_set_control('StageOutX', leftX-5.0*imsize)
-    #        vt.as2_set_control('StageOutY', topY)
-    #        time.sleep(4)
-    #        #Goto point for first image and aquire it
-    #        vt.as2_set_control('StageOutX', leftX)
-    #        vt.as2_set_control('StageOutY', topY)
-    #        if use_z_drive:
-    #            vt.as2_set_control('StageOutZ', interpolation((leftX,  topY), coords)[0])
-    #        vt.as2_set_control('EHTFocus', interpolation((leftX,  topY), coords)[1])
-    #        time.sleep(4)
-    #        frame_nr = ss.SS_Functions_SS_StartFrame(0)
-    #        ss.SS_Functions_SS_WaitForEndOfFrame(frame_nr)
-    #        im1 = np.asarray(ss.SS_Functions_SS_GetImageForFrame(frame_nr, 0))
-    #        #Go to the right by one half image size
-    #        vt.as2_set_control('StageOutX', leftX+imsize/2.0)
-    #        if use_z_drive:
-    #            vt.as2_set_control('StageOutZ', interpolation((leftX+imsize/2.0,  topY), coords)[0])
-    #        vt.as2_set_control('EHTFocus', interpolation((leftX+imsize/2.0,  topY), coords)[1])
-    #        time.sleep(2)
-    #        frame_nr = ss.SS_Functions_SS_StartFrame(0)
-    #        ss.SS_Functions_SS_WaitForEndOfFrame(frame_nr)
-    #        im2 = np.asarray(ss.SS_Functions_SS_GetImageForFrame(frame_nr, 0))
-    #        #find offset between the two images
-    #        #frame_rotation, frame_distance = autoalign.rot_dist(im1, im2)
-    #        try:
-    #            frame_rotation, frame_distance = autoalign.rot_dist_fft(im1, im2)
-    #        except RuntimeError:
-    #            logwrite('Could not find offset and/or rotation automatically. Please disable these two options and set values manually.', level='error')
-    #            raise
-    #
-    #        logwrite('Found rotation between x-axis of stage and scan to be: '+str(frame_rotation))
-    #        logwrite('Found that the stage moves %.2f times the image size when setting the moving distance to the image size.' % (frame_distance*2.0/impix))
-    #        if auto_offset:
-    #            offset = impix/(frame_distance*2.0) - 1.0
-    #        if auto_rotation:
-    #            rotation = -frame_rotation/180*np.pi
-    
-        #Scan configuration
-        if superscan is not None and as2 is not None:
-            if np.size(pixeltime) > 1:
-                frame_parameters = {'size_pixels': (impix, impix), 'center': (0,0), 'pixeltime': pixeltime[0], \
-                                    'fov': imsize*1e9, 'rotation': rotation}
-            else:
-                frame_parameters = {'size_pixels': (impix, impix), 'center': (0,0), 'pixeltime': pixeltime, \
-                                    'fov': imsize*1e9, 'rotation': rotation}
-            #record_parameters = autotune.create_record_parameters(superscan, frame_parameters)
-            logwrite('Using frame rotation of: ' + str(rotation*180/np.pi) + ' deg')
-        else:
-            offline = True
-            logwrite('Going back to offline mode because no instance of as2 or superscan was provided.', level='warn')
+            self.switches['do_autotuning'] = False
+            
+        # Sort coordinates in case they were not in the right order
+        self.coord_dict = self.sort_quadrangle(self.coord_dict)    
+        # Find bounding rectangle of the four points given by the user        
+        self.leftX = np.min((self.coord_dict['top-left'][0], self.coord_dict['bottom-left'][0]))
+        self.rightX = np.max((self.coord_dict['top-right'][0], self.coord_dict['bottom-right'][0]))
+        self.topY = np.max((self.coord_dict['top-left'][1], self.coord_dict['top-right'][1]))
+        self.botY = np.min((self.coord_dict['bottom-left'][1], self.coord_dict['bottom-right'][1]))
+            
+        pixeltimes = None
+        if np.size(self.frame_parameters['pixeltime']) > 1:
+            pixeltimes = self.frame_parameters['pixeltime']
+            self.frame_parameters['pixeltime'] = pixeltimes[0]
     
         #calculate the number of subframes in (x,y). A small distance is kept between the subframes
         #to ensure they do not overlap
-        distance = offset*imsize
-        num_subframes = ( int(np.abs(rightX-leftX)/(imsize+distance))+1, int(np.abs(topY-botY)/(imsize+distance))+1 )
+
     
-        map_coords, frame_number = create_map_coordinates(leftX, topY, imsize, distance, num_subframes, coords,
-                                                          compensate_stage_error=compensate_stage_error)
-    
-    #    map_coords = []
-    #    frame_number = []
-    #    new_focus_point = []
-    #
-    #    for j in range(num_subframes[1]):
-    #        for i in range(num_subframes[0]):
-    #            if j%2 == 0: #Odd lines (have even indices because numbering starts with 0), e.g. map from left to right
-    #                map_coords.append( tuple( ( leftX+i*(imsize+distance),  topY-j*(imsize+distance) ) ) + tuple( interpolation((leftX+i*(imsize+distance),  topY-j*(imsize+distance)), coords) ) )
-    #                frame_number.append(j*num_subframes[0]+i)
-    #                if do_autofocus and autofocus_pattern == 'edges':
-    #                    if i==0:
-    #                        new_focus_point.append('top-left')
-    #                    elif i==num_subframes[0]-1:
-    #                        new_focus_point.append('top-right')
-    #                    else:
-    #                        new_focus_point.append(None)
-    #            else: #Even lines, e.g. scan from right to left
-    #                map_coords.append( tuple( ( leftX+(num_subframes[0]-(i+1))*(imsize+distance),  topY-j*(imsize+distance) ) ) + tuple( interpolation( (leftX+(num_subframes[0]-(i+1))*(imsize+distance),  topY-j*(imsize+distance)), coords) ) )
-    #                frame_number.append(j*num_subframes[0]+(num_subframes[0]-(i+1)))
-    #                if do_autofocus and autofocus_pattern=='edges':
-    #                    if i==0:
-    #                        new_focus_point.append('top-right')
-    #                    elif i==num_subframes[0]-1:
-    #                        new_focus_point.append('top-left')
-    #                    else:
-    #                        new_focus_point.append(None)
+        map_coords, frame_number = self.create_map_coordinates(compensate_stage_error=
+                                                               self.switches['compensate_stage_error'])
     
         #Now go to each position in "map_coords" and take a snapshot
-    
         #create output folder:
-        if os.name is 'posix':
-            store = filepath+'/map_'+time.strftime('%Y_%m_%d_%H_%M')+'/'
-        else:
-            store = filepath+'\\map_'+time.strftime('%Y_%m_%d_%H_%M')+'\\'
-    
-        if not os.path.exists(store):
-            os.makedirs(store)
-    
-        def translator(switch_state):
-            if switch_state:
-                return 'ON'
-            else:
-                return 'OFF'
-    
-        config_file = open(store+'map_configurations.txt', 'w')
-        config_file.write('#This file contains all parameters used for the mapping.\n\n')
-        config_file.write('#Map parameters:\n')
-        map_paras = {'Autofocus': translator(do_autofocus), 'Autofocus_pattern': autofocus_pattern,
-                     'Auto Rotation': translator(auto_rotation), 'Auto Offset': translator(auto_offset),
-                     'Z Drive': translator(use_z_drive), 'top-left': str(coord_dict_sorted['top-left']),
-                     'top-right': str(coord_dict_sorted['top-right']), 'bottom-left': str(coord_dict_sorted['bottom-left']),
-                     'bottom-right': str(coord_dict_sorted['bottom-right']),  'Acquire_Overview': translator(acquire_overview),
-                     'Number of frames': str(num_subframes[0])+'x'+str(num_subframes[1])}
-        for key, value in map_paras.items():
-            if key is not 'Autofocus_pattern' or do_autofocus:
-                config_file.write('{0:18}{1:}\n'.format(key+':', value))
-        config_file.write('\n#Scan parameters:\n')
-        scan_paras = {'SuperScan FOV value': str(imsize*1e9)+' nm', 'Image size': str(impix)+' px',
-                      'Pixel time': str(pixeltime)+' us', 'Offset between images': str(offset)+' x image size',
-                      'Scan rotation': str('%.2f' % (rotation*180.0/np.pi)) +' deg', 'Detectors': str(detectors)}
-        for key, value in scan_paras.items():
-            config_file.write('{0:25}{1:}\n'.format(key+':', value))
-    
-        config_file.close()
+        self.store = os.join(self.savepath, self.foldername)
+        if not os.path.exists(self.store):
+            os.makedirs(self.store)
     
         test_map = []
         counter = 0
@@ -362,29 +380,29 @@ class Mapping(object):
         bad_frames = {}
     
         for frame_coord in map_coords:
-            if event is not None and event.is_set():
+            if self.event is not None and self.event.is_set():
                 break
             counter += 1
             stagex, stagey, stagez, fine_focus = frame_coord
-            logwrite( str(counter)+': (No. '+str(frame_number[counter-1])+') x: '+str((stagex))+', y: '+str((stagey))+
+            img.logwrite( str(counter)+': (No. '+str(frame_number[counter-1])+') x: '+str((stagex))+', y: '+str((stagey))+
                       ', z: '+str((stagez))+', focus: '+str((fine_focus)) )
             #print(str(counter)+': x: '+str((stagex))+', y: '+str((stagey))+', z: '+str((stagez))+', focus: '+str((fine_focus)))
     
             #only do hardware operations when online
-            if not offline:
+            if self.online:
     
-                #stop playing and set beam to be blank in between acqusition if desired
-                if blank_beam:
-                    superscan.set_property_as_str('static_probe_state', 'blanked')
+#                #stop playing and set beam to be blanked in between acqusition if desired
+#                if self.switches['blank_beam']:
+#                    self.superscan.set_property_as_str('static_probe_state', 'blanked')
     
-                if superscan.is_playing:
-                    superscan.abort_playing()
+                if self.superscan.is_playing:
+                    self.superscan.abort_playing()
     
-                vt.as2_set_control(as2, 'StageOutX', stagex)
-                vt.as2_set_control(as2, 'StageOutY', stagey)
-                if use_z_drive:
-                    vt.as2_set_control(as2, 'StageOutZ', stagez)
-                vt.as2_set_control(as2, 'EHTFocus', fine_focus)
+                vt.as2_set_control(self.as2, 'StageOutX', stagex)
+                vt.as2_set_control(self.as2, 'StageOutY', stagey)
+                if self.switches['use_z_drive']:
+                    vt.as2_set_control(self.as2, 'StageOutZ', stagez)
+                vt.as2_set_control(self.as2, 'EHTFocus', fine_focus)
     
                 #Wait until movement of stage is done (wait longer time before first frame)
     
@@ -396,89 +414,77 @@ class Mapping(object):
                     time.sleep(3)
     
                 if frame_number[counter-1] is not None:
-                    if do_autofocus:
-        #                if autofocus_pattern == 'edges':
-        #                    #find focus at the edges of the scan area. The new_focus_point list is None everywhere inside the scan area
-        #                    #and contains 'top-left' or 'top-right' at the left and right side of the scan area, respectively.
-        #                    if new_focus_point[counter-1] != None:
-        #                        #find amount of focus adjusting
-        #                        focus_adjusted = autotune.autofocus(start_stepsize=2, end_stepsize=0.5)
-        #                        logwrite('Focus at x: ' + str(frame_coord[0]) + ' y: ' + str(frame_coord[1]) + 'adjusted by ' + str(focus_adjusted) + ' nm. (Originally: '+ str(frame_coord[3]*1e9) + ' nm)')
-        #                        #update the respective coordinate with the new focus
-        #                        new_point = np.array(coord_dict_sorted[new_focus_point[counter-1]])
-        #                        new_point[3] += focus_adjusted*1e-9
-        #                        coord_dict_sorted[new_focus_point[counter-1]] = tuple(new_point)
-        #                        #take frame at this point with the new focus
-        #                        vt.as2_set_control(as2, 'EHTFocus', new_point[3])
-        #                        time.sleep(0.1)
-        #                        data=autotune.image_grabber()
-        #                        tifffile.imsave(store+str('%.4d_%.2f_%.2f.tif' % (frame_number[counter-1],stagex*1e6,stagey*1e6)), data)
-        #                        test_map.append(tuple(new_point))
-        #                   #make list of tuples from sorted dictionary with new value inside
-        #                    else:
-        #                        #make list of new coordinates in coor_dict_sorted
-        #                        coords = []
-        #                        for corner in corners:
-        #                            coords.append(coord_dict_sorted[corner])
-        #                        #set focus to new interpolated value
-        #                        new_focus = interpolation(frame_coord[0:2], coords)[1]
-        #                        vt.as2_set_control(as2, 'EHTFocus',  new_focus)
-        #                        time.sleep(0.1)
-        #                        #take frame
-        #                        data=autotune.image_grabber()
-        #                        tifffile.imsave(store+str('%.4d_%.3f_%.3f.tif' % (frame_number[counter-1],stagex*1e6,stagey*1e6)), data)
-        #                        test_map.append(frame_coord[0:3] + (new_focus,))
-    
-                        if autofocus_pattern == 'testing':
-                            #tests in each frame after aquisition if all 6 reflections in the fft are still there (only for frames where less than 50% of the area are
-                            #covered with dirt). If not all reflections are visible, autofocus is applied and the result is added as offset to the interpolated focus values.
-                            #The dirt coverage is calculated by considering all pixels intensities that are higher than 0.02 as dirt
-                            data=autotune.image_grabber(superscan=superscan, frame_parameters=frame_parameters)
-    
-                            name = str('%.4d_%.3f_%.3f.tif' % (frame_number[counter-1],stagex*1e6,stagey*1e6))
-                            dirt_mask = autotune.dirt_detector(data, threshold=0.01, median_blur_diam=39, gaussian_blur_radius=3)
-                            #calculate the fraction of 'bad' pixels and save frame if fraction is >0.5, but add note to "bad_frames" file
-                            if np.sum(dirt_mask)/(np.shape(data)[0]*np.shape(data)[1]) > 0.5:
-                                tifffile.imsave(store+name, data)
-                                test_map.append(frame_coord)
-                                bad_frames[name] = 'Over 50% dirt coverage.'
-                                logwrite('Over 50% dirt coverage in ' + name)
-                            else:
+                    if self.switches['do_autotuning']:
+                        #tests in each frame after aquisition if all 6 reflections in the fft are still there (only for frames where less than 50% of the area are
+                        #covered with dirt). If not all reflections are visible, autofocus is applied and the result is added as offset to the interpolated focus values.
+                        #The dirt coverage is calculated by considering all pixels intensities that are higher than 0.02 as dirt
+                        data=img.image_grabber()
+
+                        name = str('%.4d_%.3f_%.3f.tif' % (frame_number[counter-1],stagex*1e6,stagey*1e6))
+                        dirt_mask = autotune.dirt_detector(data, threshold=0.01, median_blur_diam=39, gaussian_blur_radius=3)
+                        #calculate the fraction of 'bad' pixels and save frame if fraction is >0.5, but add note to "bad_frames" file
+                        if np.sum(dirt_mask)/(np.shape(data)[0]*np.shape(data)[1]) > 0.5:
+                            tifffile.imsave(store+name, data)
+                            test_map.append(frame_coord)
+                            bad_frames[name] = 'Over 50% dirt coverage.'
+                            logwrite('Over 50% dirt coverage in ' + name)
+                        else:
+                            try:
+                                first_order, second_order = autotune.find_peaks(data, imsize*1e9, position_tolerance=9, second_order=True)
+                                number_peaks = np.count_nonzero(first_order[:,-1])+np.count_nonzero(second_order[:,-1])
+                            except:
+                                first_order = second_order = 0
+                                number_peaks = 0
+
+                            if number_peaks == 12:
+                                missing_peaks = 0
+                            elif number_peaks < 10:
+                                bad_frames[name] = 'Missing '+str(12 - number_peaks)+' peaks.'
+                                logwrite('No. '+str(frame_number[counter-1]) + ': Missing '+str(12 - number_peaks)+' peaks.')
+                                missing_peaks += 12 - number_peaks
+
+                            if missing_peaks > 12:
+                                logwrite('No. '+str(frame_number[counter-1]) + ': Retune because '+str(missing_peaks)+' peaks miss in total.')
+                                bad_frames[name] = 'Retune because '+str(missing_peaks)+' peaks miss in total.'
                                 try:
-                                    first_order, second_order = autotune.find_peaks(data, imsize*1e9, position_tolerance=9, second_order=True)
-                                    number_peaks = np.count_nonzero(first_order[:,-1])+np.count_nonzero(second_order[:,-1])
-                                except:
-                                    first_order = second_order = 0
-                                    number_peaks = 0
-    
-                                if number_peaks == 12:
-                                    missing_peaks = 0
-                                elif number_peaks < 10:
-                                    bad_frames[name] = 'Missing '+str(12 - number_peaks)+' peaks.'
-                                    logwrite('No. '+str(frame_number[counter-1]) + ': Missing '+str(12 - number_peaks)+' peaks.')
-                                    missing_peaks += 12 - number_peaks
-    
-                                if missing_peaks > 12:
-                                    logwrite('No. '+str(frame_number[counter-1]) + ': Retune because '+str(missing_peaks)+' peaks miss in total.')
-                                    bad_frames[name] = 'Retune because '+str(missing_peaks)+' peaks miss in total.'
+                                    tuning_result = autotune.kill_aberrations(event=event, document_controller=document_controller)
+                                    if event is not None and event.is_set():
+                                        break
+                                except DirtError:
+                                    logwrite('No. '+str(frame_number[counter-1]) + ': Tuning was aborted because of dirt coming in.')
+                                    bad_frames[name] = 'Tuning was aborted because of dirt coming in.'
+                                    tifffile.imsave(store+name, data)
+                                    test_map.append(frame_coord)
+                                else:
+                                    logwrite('No. '+str(frame_number[counter-1]) + ': New tuning: '+str(tuning_result))
+                                    bad_frames[name] = 'New tuning: '+str(tuning_result)
+
+                                    data_new = autotune.image_grabber()
                                     try:
-                                        tuning_result = autotune.kill_aberrations(event=event, document_controller=document_controller)
-                                        if event is not None and event.is_set():
-                                            break
-                                    except DirtError:
-                                        logwrite('No. '+str(frame_number[counter-1]) + ': Tuning was aborted because of dirt coming in.')
-                                        bad_frames[name] = 'Tuning was aborted because of dirt coming in.'
+                                        first_order_new, second_order_new = autotune.find_peaks(data, imsize*1e9, position_tolerance=9, second_order=True)
+                                        number_peaks_new = np.count_nonzero(first_order_new[:,-1])+np.count_nonzero(second_order_new[:,-1])
+                                    except RuntimeError:
+                                        bad_frames[name] = 'Dismissed result because it did not improve tuning: '+str(tuning_result)
+                                        logwrite('No. '+str(frame_number[counter-1]) + ': Dismissed result because it did not improve tuning: '+str(tuning_result))
                                         tifffile.imsave(store+name, data)
                                         test_map.append(frame_coord)
+                                        #reset aberrations to values before tuning
+                                        kwargs = {'relative_aberrations': True}
+                                        for key, value in tuning_result.items():
+                                            kwargs[key] = -value
+                                        autotune.image_grabber(acquire_image=False, **kwargs)
+
                                     else:
-                                        logwrite('No. '+str(frame_number[counter-1]) + ': New tuning: '+str(tuning_result))
-                                        bad_frames[name] = 'New tuning: '+str(tuning_result)
-    
-                                        data_new = autotune.image_grabber()
-                                        try:
-                                            first_order_new, second_order_new = autotune.find_peaks(data, imsize*1e9, position_tolerance=9, second_order=True)
-                                            number_peaks_new = np.count_nonzero(first_order_new[:,-1])+np.count_nonzero(second_order_new[:,-1])
-                                        except RuntimeError:
+                                        if number_peaks_new > number_peaks:
+                                            tifffile.imsave(store+name, data_new)
+                                            #add new focus as offset to all coordinates
+                                            for i in range(len(map_coords)):
+                                                map_coords[i] = np.array(map_coords[i])
+                                                map_coords[i][3] += tuning_result['EHTFocus']*1e-9
+                                                map_coords[i] = tuple(map_coords[i])
+                                            test_map.append(map_coords[counter-1])
+                                            missing_peaks = 0
+                                        else:
                                             bad_frames[name] = 'Dismissed result because it did not improve tuning: '+str(tuning_result)
                                             logwrite('No. '+str(frame_number[counter-1]) + ': Dismissed result because it did not improve tuning: '+str(tuning_result))
                                             tifffile.imsave(store+name, data)
@@ -488,46 +494,26 @@ class Mapping(object):
                                             for key, value in tuning_result.items():
                                                 kwargs[key] = -value
                                             autotune.image_grabber(acquire_image=False, **kwargs)
-    
-                                        else:
-                                            if number_peaks_new > number_peaks:
-                                                tifffile.imsave(store+name, data_new)
-                                                #add new focus as offset to all coordinates
-                                                for i in range(len(map_coords)):
-                                                    map_coords[i] = np.array(map_coords[i])
-                                                    map_coords[i][3] += tuning_result['EHTFocus']*1e-9
-                                                    map_coords[i] = tuple(map_coords[i])
-                                                test_map.append(map_coords[counter-1])
-                                                missing_peaks = 0
-                                            else:
-                                                bad_frames[name] = 'Dismissed result because it did not improve tuning: '+str(tuning_result)
-                                                logwrite('No. '+str(frame_number[counter-1]) + ': Dismissed result because it did not improve tuning: '+str(tuning_result))
-                                                tifffile.imsave(store+name, data)
-                                                test_map.append(frame_coord)
-                                                #reset aberrations to values before tuning
-                                                kwargs = {'relative_aberrations': True}
-                                                for key, value in tuning_result.items():
-                                                    kwargs[key] = -value
-                                                autotune.image_grabber(acquire_image=False, **kwargs)
-                                                missing_peaks=0
-    
-                                else:
-                                    tifffile.imsave(store+name, data)
-                                    test_map.append(frame_coord)
+                                            missing_peaks=0
+
+                            else:
+                                tifffile.imsave(store+name, data)
+                                test_map.append(frame_coord)
     
                     else:
                         #Take frame and save it to disk
-                        if number_of_images < 2:
-                            data = autotune.image_grabber(superscan=superscan, frame_parameters=frame_parameters)
+                        if self.number_of_images < 2:
+                            data = img.image_grabber()
     
-                            tifffile.imsave(store+str('%.4d_%.3f_%.3f.tif' % (frame_number[counter-1],stagex*1e6,stagey*1e6)), data)
+                            tifffile.imsave(self.store+str('%.4d_%.3f_%.3f.tif' % (frame_number[counter-1],stagex*1e6,stagey*1e6)), data)
                             test_map.append(frame_coord)
                         else:
-                            for i in range(number_of_images):
-                                if np.size(pixeltime) > 1:
-                                    frame_parameters['pixeltime'] = pixeltime[i]
-                                data = autotune.image_grabber(superscan=superscan, frame_parameters=frame_parameters)
-                                tifffile.imsave(store+str('%.4d_%.3f_%.3f_%.2d.tif' % (frame_number[counter-1],stagex*1e6,stagey*1e6, i)), data)
+                            for i in range(self.number_of_images):
+                                if pixeltimes is not None:
+                                    self.frame_parameters['pixeltime'] = pixeltimes[i]
+                                data = img.image_grabber(frame_parameters=self.frame_parameters)
+                                tifffile.imsave(self.store+str('%.4d_%.3f_%.3f_%.2d.tif' % (frame_number[counter-1],
+                                                               stagex*1e6,stagey*1e6, i)), data)
     
                             test_map.append(frame_coord)
     
@@ -535,60 +521,91 @@ class Mapping(object):
                 if frame_number[counter-1] is not None:
                     test_map.append(frame_coord)
     
-        if do_autofocus and autofocus_pattern == 'testing':
-            bad_frames_file = open(store+'bad_frames.txt', 'w')
+        if self.switches['do_autotuning']:
+            bad_frames_file = open(self.store+'bad_frames.txt', 'w')
             bad_frames_file.write('#This file contains the filenames of \"bad\" frames and the cause for the listing.\n\n')
             for key, value in bad_frames.items():
                 bad_frames_file.write('{0:30}{1:}\n'.format(key+':', value))
-            config_file.close()
     
         #acquire overview image if desired
-        if not offline and acquire_overview:
+        if self.online and self.switches['acquire_overview']:
             #Use longest edge as image size
-            if abs(rightX-leftX) < abs(topY-botY):
-                over_size = abs(topY-botY)*1.2e9
+            if abs(self.rightX-self.leftX) < abs(self.topY-self.botY):
+                over_size = abs(self.topY-self.botY)*1.2e9
             else:
-                over_size = abs(rightX-leftX)*1.2e9
+                over_size = abs(self.rightX-self.leftX)*1.2e9
     
             #Find center of mapped area:
-            map_center = ((leftX+rightX)/2, (topY+botY)/2)
+            map_center = ((self.leftX+self.rightX)/2, (self.topY+self.botY)/2)
             #Goto center
-            vt.as2_set_control(as2, 'StageOutX', map_center[0])
-            vt.as2_set_control(as2, 'StageOutY', map_center[1])
+            vt.as2_set_control(self.as2, 'StageOutX', map_center[0])
+            vt.as2_set_control(self.as2, 'StageOutY', map_center[1])
             time.sleep(5)
             #acquire image and save it
             overview_parameters = {'size_pixels': (4096, 4096), 'center': (0,0), 'pixeltime': 4, \
-                                'fov': over_size, 'rotation': rotation}
-            image = autotune.image_grabber(superscan=superscan, frame_parameters=overview_parameters)
+                                'fov': over_size, 'rotation': self.frame_parameters['rotation']}
+            image = img.image_grabber(frame_parameters=overview_parameters)
     
-            tifffile.imsave(store+'Overview_'+str(np.rint(over_size))+'_nm.tif', image)
+            tifffile.imsave(self.store+'Overview_'+str(np.rint(over_size))+'_nm.tif', image)
     
-        if event is None or not event.is_set():
-            x_map = np.zeros((num_subframes[1],num_subframes[0]))
-            y_map = np.zeros((num_subframes[1],num_subframes[0]))
-            z_map = np.zeros((num_subframes[1],num_subframes[0]))
-            focus_map = np.zeros((num_subframes[1],num_subframes[0]))
+        if self.event is None or not self.event.is_set():
+            x_map = np.zeros((self.num_subframes[1], self.num_subframes[0]))
+            y_map = np.zeros((self.num_subframes[1], self.num_subframes[0]))
+            z_map = np.zeros((self.num_subframes[1], self.num_subframes[0]))
+            focus_map = np.zeros((self.num_subframes[1], self.num_subframes[0]))
     
-            for j in range(num_subframes[1]):
-                for i in range(num_subframes[0]):
+            for j in range(self.num_subframes[1]):
+                for i in range(self.num_subframes[0]):
                     if j%2 == 0: #Odd lines, e.g. map from left to right
-                        x_map[j,i] = test_map[i+j*num_subframes[0]][0]
-                        y_map[j,i] = test_map[i+j*num_subframes[0]][1]
-                        z_map[j,i] = test_map[i+j*num_subframes[0]][2]
-                        focus_map[j,i] = test_map[i+j*num_subframes[0]][3]
+                        x_map[j,i] = test_map[i+j*self.num_subframes[0]][0]
+                        y_map[j,i] = test_map[i+j*self.num_subframes[0]][1]
+                        z_map[j,i] = test_map[i+j*self.num_subframes[0]][2]
+                        focus_map[j,i] = test_map[i+j*self.num_subframes[0]][3]
                     else: #Even lines, e.g. scan from right to left
-                        x_map[j,(num_subframes[0]-(i+1))] = test_map[i+j*num_subframes[0]][0]
-                        y_map[j,(num_subframes[0]-(i+1))] = test_map[i+j*num_subframes[0]][1]
-                        z_map[j,(num_subframes[0]-(i+1))] = test_map[i+j*num_subframes[0]][2]
-                        focus_map[j,(num_subframes[0]-(i+1))] = test_map[i+j*num_subframes[0]][3]
+                        x_map[j,(self.num_subframes[0]-(i+1))] = test_map[i+j*self.num_subframes[0]][0]
+                        y_map[j,(self.num_subframes[0]-(i+1))] = test_map[i+j*self.num_subframes[0]][1]
+                        z_map[j,(self.num_subframes[0]-(i+1))] = test_map[i+j*self.num_subframes[0]][2]
+                        focus_map[j,(self.num_subframes[0]-(i+1))] = test_map[i+j*self.num_subframes[0]][3]
     
     
-            tifffile.imsave(store+str('x_map.tif'),np.asarray(x_map, dtype='float32'))
-            tifffile.imsave(store+str('y_map.tif'),np.asarray(y_map, dtype='float32'))
-            tifffile.imsave(store+str('z_map.tif'),np.asarray(z_map, dtype='float32'))
-            tifffile.imsave(store+str('focus_map.tif'),np.asarray(focus_map, dtype='float32'))
+            tifffile.imsave(self.store+str('x_map.tif'),np.asarray(x_map, dtype='float32'))
+            tifffile.imsave(self.store+str('y_map.tif'),np.asarray(y_map, dtype='float32'))
+            tifffile.imsave(self.store+str('z_map.tif'),np.asarray(z_map, dtype='float32'))
+            tifffile.imsave(self.store+str('focus_map.tif'),np.asarray(focus_map, dtype='float32'))
     
-        logwrite('Done.\n')            
+        img.logwrite('Done.\n')
+
+    def write_map_info_file(self):
+    
+            def translator(switch_state):
+                if switch_state:
+                    return 'ON'
+                else:
+                    return 'OFF'
+        
+            config_file = open(self.store+'map_configurations.txt', 'w')
+            config_file.write('#This file contains all parameters used for the mapping.\n\n')
+            config_file.write('#Map parameters:\n')
+            map_paras = {'Autofocus': translator(self.switches['do_autotuning']),
+                         'Auto Rotation': translator(self.switches['auto_rotation']),
+                         'Auto Offset': translator(self.switches['auto_offset']),
+                         'Z Drive': translator(self.switches['use_z_drive']),
+                         'Acquire_Overview': translator(self.switches['acquire_overview']),
+                         'Number of frames': str(self.num_subframes[0])+'x'+str(self.num_subframes[1])}
+            for key, value in map_paras.items():
+                config_file.write('{0:18}{1:}\n'.format(key+':', value))
+            
+            config_file.write('\n#Scan parameters:\n')
+            scan_paras = {'SuperScan FOV value': str(self.frame_parameters['fov']) + ' nm',
+                          'Image size': str(self.frame_parameters['size_pixels'])+' px',
+                          'Pixel time': str(self.frame_parameters['pixeltime'])+' us',
+                          'Offset between images': str(self.offset)+' x image size',
+                          'Scan rotation': str('%.2f' % (self.frame_parameters['rotation'])) +' deg',
+                          'Detectors': str(self.detectors)}
+            for key, value in scan_paras.items():
+                config_file.write('{0:25}{1:}\n'.format(key+':', value))
+        
+            config_file.close()
             
 def find_offset_and_rotation(as2, superscan):
     """
@@ -623,89 +640,6 @@ def find_offset_and_rotation(as2, superscan):
 
     return (frame_rotation, frame_distance)
 
-def interpolation(target, points):
-    """
-    Bilinear Interpolation between 4 points that do not have to lie on a regular grid.
-
-    Parameters
-    -----------
-    target : Tuple
-        (x,y) coordinates of the point you want to interpolate
-
-    points : List of tuples
-        Defines the corners of a quadrilateral. The points in the list
-        are supposed to have the order (top-left, top-right, bottom-right, bottom-left)
-        The length of the tuples has to be at least 3 and can be as long as necessary.
-        The output will always have the length (points[i] - 2).
-
-    Returns
-    -------
-    interpolated_point : Tuple
-        Tuple with the length (points[i] - 2) that contains the interpolated value(s) at target (i is
-        a number iterating over the list entries).
-    """
-    result = tuple()
-
-#Bilinear interpolation within 4 points that are not lying on a regular grid.
-    m = (target[0]-points[0][0]) / (points[1][0]-points[0][0])
-    n = (target[0]-points[3][0]) / (points[2][0]-points[3][0])
-
-    Q1 = np.array(points[0]) + m*(np.array(points[1])-np.array(points[0]))
-    Q2 = np.array(points[3]) + n*(np.array(points[2])-np.array(points[3]))
-
-    l = (target[1]-Q1[1]) / (Q2[1]-Q1[1])
-
-    T = Q1 + l*(Q2-Q1)
-
-    for j in range(len(points[0])-2):
-        result += (T[j+2],)
-
-#Interpolation with Inverse distance weighting with a Thin-PLate-Spline Kernel
-#    for j in range(len(points[0])-2):
-#        interpolated = 0
-#        sum_weights = 0
-#        for i in range(len(points)):
-#            distance = np.sqrt((target[0]-points[i][0])**2 + (target[1]-points[i][1])**2)
-#            weight = 1/(distance**2*np.log(distance))
-#            interpolated += weight * points[i][j+2]
-#            sum_weights += weight
-#        result += (interpolated/sum_weights,)
-    return result
-
-def sort_quadrangle(points):
-    """
-    Brings 4 points in the correct order to form a quadrangle.
-
-    Parameters
-    ----------
-    points : List of tuples
-        4 points that are supposed to form a quadrangle.
-
-    Returns
-    ------
-    sorted_points : Dictionary
-        Keys are called 'top-left', 'top-right', 'bottom-right' and 'bottom-left'. They contain the respective input tuple.
-        Axis of the result are in standard directions, e.g. x points to the right and y to the top.
-    """
-    result = {}
-    points.sort()
-    if points[0][1] > points[1][1]:
-        result['top-left'] = points[0]
-        result['bottom-left'] = points[1]
-    elif points[0][1] < points[1][1]:
-        result['top-left'] = points[1]
-        result['bottom-left'] = points[0]
-
-    if points[2][1] > points[3][1]:
-        result['top-right'] = points[2]
-        result['bottom-right'] = points[3]
-    elif points[2][1] < points[3][1]:
-        result['top-right'] = points[3]
-        result['bottom-right'] = points[2]
-
-    return result
-
-
 def find_nearest_neighbors(number, target, points):
     """
     Finds the nearest neighbor(s) of a point (target) in a number of points (points).
@@ -739,64 +673,3 @@ def find_nearest_neighbors(number, target, points):
             nearest.sort(reverse=True)
 
     return nearest.sort()
-
-def create_map_coordinates(leftX, topY, imsize, distance, num_subframes, coords, compensate_stage_error=False):
-    extra_lines = 2  # Number of lines to add at the beginning of the map
-    extra_frames = 5  # Number of extra moves at each end of a line
-    oldm = 0.25  # odd line distance mover (additional offset of odd lines, in fractions of (imsize+distance))
-    eldm = 0  # even line distance mover (additional offset of even lines, in fractions of (imsize+distance))
-
-    num_subframes = np.array(num_subframes)
-
-    map_coords = []
-    frame_number = []
-
-    # add additional lines and frames to number of subframes
-    if compensate_stage_error:
-        num_subframes += np.array((2*extra_frames, extra_lines))
-        leftX -= extra_frames*(imsize+distance)
-        for i in range(extra_lines):
-            if i % 2 == 0:  # Odd lines (have even indices because numbering starts with 0), e.g. map from left to right
-                topY += imsize+oldm*distance
-            else:
-                topY += imsize+eldm*distance
-
-    # make a list of coordinates where images will be aquired.
-    # Starting point is the upper-left corner and mapping will proceed to the right. The next line will start
-    # at the right and scan towards the left. The next line will again start at the left, and so on. E.g. a "snake shaped"
-    # path is chosen for the mapping.
-
-    for j in range(num_subframes[1]):
-        for i in range(num_subframes[0]):
-            if j % 2 == 0:  # Odd lines (have even indices because numbering starts with 0), e.g. map from left to right
-                map_coords.append( tuple( ( leftX+i*(imsize+distance),  topY-j*(imsize+distance)-oldm*(imsize+distance) ) ) +
-                                   tuple( interpolation( (leftX+i*(imsize+distance),
-                                                          topY-j*(imsize+distance)-oldm*(imsize+distance) ),
-                                                          coords) ) )
-
-                # Apply correct (continuous) frame numbering for all cases. If no extra positions are added, just append
-                # the correct frame number. Elsewise append the correct frame number if a non-additional one, else None
-                if not compensate_stage_error:
-                    frame_number.append(j*num_subframes[0]+i)
-                elif extra_frames <= i < num_subframes[0]-extra_frames and j >= extra_lines:
-                    frame_number.append((j-extra_lines)*(num_subframes[0]-2*extra_frames)+(i-extra_frames))
-                else:
-                    frame_number.append(None)
-
-            else: # Even lines, e.g. scan from right to left
-                map_coords.append( tuple( (leftX+(num_subframes[0]-(i+1))*(imsize+distance), topY-j*(imsize+distance) - eldm*(imsize+distance) ) ) +
-                                   tuple( interpolation( (leftX+(num_subframes[0]-(i+1))*(imsize+distance),
-                                                          topY-j*(imsize+eldm*distance) - eldm*(imsize+distance) ),
-                                                          coords) ) )
-
-                # Apply correct (continuous) frame numbering for all cases. If no extra positions are added, just append
-                # the correct frame number. Elsewise append the correct frame number if a non-additional one, else None
-                if not compensate_stage_error:
-                    frame_number.append(j*num_subframes[0]+(num_subframes[0]-(i+1)))
-                elif extra_frames <= i < num_subframes[0]-extra_frames and j >= extra_lines:
-                    frame_number.append( (j-extra_lines)*(num_subframes[0]-2*extra_frames) +
-                                         ((num_subframes[0]-2*extra_frames)-(i-extra_frames+1)) )
-                else:
-                    frame_number.append(None)
-
-    return (map_coords, frame_number)
