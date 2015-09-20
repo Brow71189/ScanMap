@@ -29,10 +29,12 @@ with warnings.catch_warnings():
 #from nion.ui import Binding
 #document_controller.ui is object of nion.ui.UserInterface.QtUserInterface
 
-try:
-    import maptools.mapper as mapper
-except:
-    from .maptools import mapper
+#try:
+#    import maptools.mapper as mapper
+#except:
+#    from .maptools import mapper
+
+from .maptools import mapper
 
 _ = gettext.gettext
 
@@ -233,15 +235,16 @@ class ScanMapPanelDelegate(object):
             
             if not None in coord_dict.values() and not None in (FOV, Size, Offset, Time, Rotation, Number_of_images):
                 self.event = threading.Event()
-                self.thread = threading.Thread(target=mapper.SuperScan_mapping, args=(coord_dict,), kwargs={'do_autofocus': do_autofocus, 'imsize': FOV, 'offset': Offset,\
-                            'rotation': Rotation, 'number_of_images': Number_of_images, 'impix': Size, 'pixeltime': Time, 'use_z_drive': use_z_drive, \
-                            'auto_offset': auto_offset, 'auto_rotation': auto_rotation, 'autofocus_pattern': 'testing', 'document_controller': document_controller, \
-                            'event': self.event, 'acquire_overview': acquire_overview, 'blank_beam': blank_beam, 'compensate_stage_error': compensate_stage_error, \
-                            'superscan': self.superscan, 'as2': self.as2})
+                frame_parameters = {'size_pixels': Size, 'fov': FOV, 'pixeltime': Time, 'rotation': Rotation}
+                switches = {'auto_offset': auto_offset, 'auto_rotation': auto_rotation, 'do_autotuning': do_autofocus,
+                            'blank_beam': blank_beam, 'acquire_overview': acquire_overview,
+                            'compensate_stage_error': compensate_stage_error}
+                mapping = mapper.Mapping(frame_parameters=frame_parameters, switches=switches, coord_dict=coord_dict,
+                                         superscan=self.superscan, as2=self.as2, number_of_images=Number_of_images,
+                                         document_controller=document_controller, savepath='Z:/ScanMap/',
+                                         offset=Offset, event=self.event)
+                self.thread = threading.Thread(target=mapping.SuperScan_mapping)
                 self.thread.start()
-#                mapper.SuperScan_mapping(coord_dict, do_autofocus=do_autofocus, imsize = FOV, offset = Offset, rotation = Rotation, number_of_images = Number_of_images,\
-#                        impix = Size, pixeltime = Time, use_z_drive=use_z_drive, auto_offset=auto_offset, auto_rotation=auto_rotation, autofocus_pattern='testing', \
-#                        acquire_overview=acquire_overview)
             else:
                 logging.warn('You didn\'t specify all necessary parameters.')
 
@@ -249,7 +252,6 @@ class ScanMapPanelDelegate(object):
             #self.stop_tuning()
             logging.info('Aborting after current frame is finished. (May take a short while until actual abort)')
             self.event.set()
-            self.thread.join()
             
         fields_row = ui.create_row_widget()
         

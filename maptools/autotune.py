@@ -153,7 +153,7 @@ class Imaging(object):
             detectors = self.detectors
 
         if frame_parameters is not None:
-            parameters = self.superscan.get_default_frame_parameters()
+            parameters = self.superscan.get_frame_parameters()
 
             if frame_parameters.get('size_pixels') is not None:
                 parameters['size'] = list(frame_parameters['size_pixels'])
