@@ -68,9 +68,10 @@ def rotation_radius(image, imsize, find_distortions=True):
         center = np.array(np.shape(image))/2
         
         for peak in peaks_first:
-            peak = peak[0:2]-center
-            angles.append(at.positive_angle(np.arctan2(-peak[0], peak[1])))
-            radii.append(np.sqrt(np.sum(peak**2)))
+            if not (peak==0).all():
+                peak = peak[0:2]-center
+                angles.append(at.positive_angle(np.arctan2(-peak[0], peak[1])))
+                radii.append(np.sqrt(np.sum(peak**2)))
             
         sum_rotation = 0
         for angle in angles:
