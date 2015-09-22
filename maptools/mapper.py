@@ -42,18 +42,18 @@ class Mapping(object):
             self._savepath = None
         self.event = kwargs.get('event')
         self.foldername = 'map_' + time.strftime('%Y_%m_%d_%H_%M')
-        self.offset = kwargs.get('offset')
+        self.offset = kwargs.get('offset', 0)
         self._online = kwargs.get('online')
         
     @property
     def online(self):
         if self._online is None:
-            if self.as2 is not None or self.superscan is not None:
+            if self.as2 is not None and self.superscan is not None:
                 self._online = True
             else:
-                logging.info('Going to offline mode because no instance of as2 or superscan was provided.')
+                logging.info('Going to offline mode because no instance of as2 and superscan was provided.')
                 self._online = False
-        return self.online
+        return self._online
 
     @online.setter
     def online(self, online):
@@ -72,7 +72,7 @@ class Mapping(object):
         extra_frames = 5  # Number of extra moves at each end of a line
         oldm = 0.25  # odd line distance mover (additional offset of odd lines, in fractions of (imsize+distance))
         eldm = 0  # even line distance mover (additional offset of even lines, in fractions of (imsize+distance))
-        imsize = self.frame_parameters['fov']
+        imsize = self.frame_parameters['fov']*1e-9
         distance = self.offset*imsize
         self.num_subframes = np.array((int(np.abs(self.rightX-self.leftX)/(imsize+distance))+1, 
                                        int(np.abs(self.topY-self.botY)/(imsize+distance))+1))
@@ -82,53 +82,57 @@ class Mapping(object):
     
         # add additional lines and frames to number of subframes
         if compensate_stage_error:
-            self.num_subframes += np.array((2*extra_frames, extra_lines))
-            self.leftX -= extra_frames*(imsize+distance)
+            num_subframes = self.num_subframes + np.array((2*extra_frames, extra_lines))
+            leftX = self.leftX - extra_frames*(imsize+distance)
             for i in range(extra_lines):
                 if i % 2 == 0:  # Odd lines (have even indices because numbering starts with 0), e.g. map from left to right
-                    self.topY += imsize+oldm*distance
+                    topY = self.topY + imsize+oldm*distance
                 else:
-                    self.topY += imsize+eldm*distance
+                    topY = self.topY + imsize+eldm*distance
+        else:
+            num_subframes = self.num_subframes
+            leftX = self.leftX
+            topY = self.topY
     
         # make a list of coordinates where images will be aquired.
         # Starting point is the upper-left corner and mapping will proceed to the right. The next line will start
         # at the right and scan towards the left. The next line will again start at the left, and so on. E.g. a "snake shaped"
         # path is chosen for the mapping.
     
-        for j in range(self.num_subframes[1]):
-            for i in range(self.num_subframes[0]):
+        for j in range(num_subframes[1]):
+            for i in range(num_subframes[0]):
                 if j % 2 == 0:  # Odd lines (have even indices because numbering starts with 0), e.g. map from left to right
-                    map_coords.append(tuple((self.leftX+i*(imsize+distance), 
-                                             self.topY-j*(imsize+distance)-oldm*(imsize+distance))) +
-                                      tuple(self.interpolation((self.leftX+i*(imsize+distance),
-                                            self.topY-j*(imsize+distance)-oldm*(imsize+distance)))))
+                    map_coords.append(tuple((leftX+i*(imsize+distance), 
+                                             topY-j*(imsize+distance)-oldm*(imsize+distance))) +
+                                      tuple(self.interpolation((leftX+i*(imsize+distance),
+                                            topY-j*(imsize+distance)-oldm*(imsize+distance)))))
     
                     # Apply correct (continuous) frame numbering for all cases. If no extra positions are added, just 
                     # append the correct frame number. Elsewise append the correct frame number if a non-additional
                     # one, else None
                     if not compensate_stage_error:
-                        frame_number.append(j*self.num_subframes[0]+i)
-                    elif extra_frames <= i < self.num_subframes[0]-extra_frames and j >= extra_lines:
-                        frame_number.append((j-extra_lines)*(self.num_subframes[0]-2*extra_frames)+(i-extra_frames))
+                        frame_number.append(j*num_subframes[0]+i)
+                    elif extra_frames <= i < num_subframes[0]-extra_frames and j >= extra_lines:
+                        frame_number.append((j-extra_lines)*(num_subframes[0]-2*extra_frames)+(i-extra_frames))
                     else:
                         frame_number.append(None)
     
                 else: # Even lines, e.g. scan from right to left
-                    map_coords.append(tuple((self.leftX+(self.num_subframes[0]-(i+1))*(imsize+distance),
-                                                         self.topY-j*(imsize+distance) - eldm*(imsize+distance) ) ) +
-                                       tuple(self.interpolation((self.leftX+
-                                                                (self.num_subframes[0]-(i+1))*(imsize+distance),
-                                                                self.topY-j*(imsize+eldm*distance) -
+                    map_coords.append(tuple((leftX+(num_subframes[0]-(i+1))*(imsize+distance),
+                                            topY-j*(imsize+distance) - eldm*(imsize+distance))) +
+                                      tuple(self.interpolation((leftX+
+                                                                (num_subframes[0]-(i+1))*(imsize+distance),
+                                                                topY-j*(imsize+eldm*distance) -
                                                                 eldm*(imsize+distance)))))
     
                     # Apply correct (continuous) frame numbering for all cases. If no extra positions are added, just 
                     # append the correct frame number. Elsewise append the correct frame number if a non-additional
                     # one, else None
                     if not compensate_stage_error:
-                        frame_number.append(j*self.num_subframes[0]+(self.num_subframes[0]-(i+1)))
-                    elif extra_frames <= i < self.num_subframes[0]-extra_frames and j >= extra_lines:
-                        frame_number.append( (j-extra_lines)*(self.num_subframes[0]-2*extra_frames) +
-                                             ((self.num_subframes[0]-2*extra_frames)-(i-extra_frames+1)) )
+                        frame_number.append(j*num_subframes[0]+(num_subframes[0]-(i+1)))
+                    elif extra_frames <= i < num_subframes[0]-extra_frames and j >= extra_lines:
+                        frame_number.append( (j-extra_lines)*(num_subframes[0]-2*extra_frames) +
+                                             ((num_subframes[0]-2*extra_frames)-(i-extra_frames+1)) )
                     else:
                         frame_number.append(None)
     
@@ -170,7 +174,8 @@ class Mapping(object):
                 try:
                     tuning_result = autotune.kill_aberrations(event=event, document_controller=document_controller)
                     if event is not None and event.is_set():
-                        break
+                        #break
+                        pass
                 except DirtError:
                     logwrite('No. '+str(frame_number[counter-1]) + ': Tuning was aborted because of dirt coming in.')
                     bad_frames[name] = 'Tuning was aborted because of dirt coming in.'
@@ -332,19 +337,20 @@ class Mapping(object):
         config_file.write('# Do not edit this file or the loading process can fail.\n\n')
         config_file.write('{ switches\n')
         for key, value in self.switches.items():
-            config_file.write(str(key) + ': ' + str(value) + '\n')
-        config_file.write('}\n{ detectors\n')
+            config_file.write('\t' + str(key) + ': ' + str(value) + '\n')
+        config_file.write('}\n\n{ detectors\n')
         for key, value in self.detectors.items():
-            config_file.write(str(key) + ': ' + str(value) + '\n')
-        config_file.write('}\n{ coord_dict\n')
-        for key, value in self.detectors.items():
-            config_file.write(str(key) + ': ' + str(value) + '\n')
-        config_file.write('}\n{ frame_parameters\n')
+            config_file.write('\t' + str(key) + ': ' + str(value) + '\n')
+        config_file.write('}\n\n{ coord_dict\n')
+        for key, value in self.coord_dict.items():
+            config_file.write('\t' + str(key) + ': ' + str(value) + '\n')
+        config_file.write('}\n\n{ frame_parameters\n')
         for key, value in self.frame_parameters.items():
-            config_file.write(str(key) + ': ' + str(value) + '\n')
+            config_file.write('\t' + str(key) + ': ' + str(value) + '\n')
+        config_file.write('}\n')
         config_file.write('\n# Other parameters\n')
-        config_file.write('savepath: ' + self.savepath + '\n')
-        config_file.write('foldername: ' + self.foldername + '\n')
+        config_file.write('savepath: ' + repr(self.savepath) + '\n')
+        config_file.write('foldername: ' + repr(self.foldername) + '\n')
         config_file.write('number_of_images: ' + str(self.number_of_images) + '\n')
         config_file.write('offset: ' + str(self.offset) + '\n')
         config_file.write('\nend')
@@ -421,10 +427,17 @@ class Mapping(object):
         if kwargs.get('foldername') is not None:
             self.foldername = kwargs.get('foldername')
     
-        if np.size(self.frame_parameters['pixeltime']) > 1 and \
-           np.size(self.frame_parameters['pixeltime']) != self.number_of_images:
+        if np.size(self.frame_parameters.get('pixeltime')) > 1 and \
+           np.size(self.frame_parameters.get('pixeltime')) != self.number_of_images:
             raise ValueError('The number of given pixeltimes do not match the given number of frames that should be ' +
                              'recorded per location. You can either input one number or a list with a matching length.')
+        
+        pixeltimes = None
+        if np.size(self.frame_parameters.get('pixeltime')) > 1:
+            pixeltimes = self.frame_parameters.get('pixeltime')
+            self.frame_parameters['pixeltime'] = pixeltimes[0]
+                             
+        self.save_mapping_config()
         
         img = Imaging(frame_parameters=self.frame_parameters, detectors=self.detectors, online=self.online,
                       as2=self.as2, superscan=self.superscan, document_controller=self.document_controller)
@@ -435,28 +448,21 @@ class Mapping(object):
             self.switches['do_autotuning'] = False
             
         # Sort coordinates in case they were not in the right order
-        self.coord_dict = self.sort_quadrangle(self.coord_dict)    
+        self.coord_dict = self.sort_quadrangle()    
         # Find bounding rectangle of the four points given by the user        
-        self.leftX = np.min((self.coord_dict['top-left'][0], self.coord_dict['bottom-left'][0]))
-        self.rightX = np.max((self.coord_dict['top-right'][0], self.coord_dict['bottom-right'][0]))
-        self.topY = np.max((self.coord_dict['top-left'][1], self.coord_dict['top-right'][1]))
-        self.botY = np.min((self.coord_dict['bottom-left'][1], self.coord_dict['bottom-right'][1]))
-            
-        pixeltimes = None
-        if np.size(self.frame_parameters['pixeltime']) > 1:
-            pixeltimes = self.frame_parameters['pixeltime']
-            self.frame_parameters['pixeltime'] = pixeltimes[0]
-    
+        self.leftX = np.amin((self.coord_dict['top-left'][0], self.coord_dict['bottom-left'][0]))
+        self.rightX = np.amax((self.coord_dict['top-right'][0], self.coord_dict['bottom-right'][0]))
+        self.topY = np.amax((self.coord_dict['top-left'][1], self.coord_dict['top-right'][1]))
+        self.botY = np.amin((self.coord_dict['bottom-left'][1], self.coord_dict['bottom-right'][1]))
+
         #calculate the number of subframes in (x,y). A small distance is kept between the subframes
         #to ensure they do not overlap
 
-    
         map_coords, frame_number = self.create_map_coordinates(compensate_stage_error=
                                                                self.switches['compensate_stage_error'])
-    
         #Now go to each position in "map_coords" and take a snapshot
         #create output folder:
-        self.store = os.join(self.savepath, self.foldername)
+        self.store = os.path.join(self.savepath, self.foldername)
         if not os.path.exists(self.store):
             os.makedirs(self.store)
     
@@ -464,16 +470,17 @@ class Mapping(object):
         counter = 0
         self.missing_peaks = 0
         bad_frames = {}
+        
+        self.write_map_info_file()
     
         for frame_coord in map_coords:
             if self.event is not None and self.event.is_set():
                 break
             counter += 1
             stagex, stagey, stagez, fine_focus = frame_coord
-            img.logwrite( str(counter)+': (No. '+str(frame_number[counter-1])+') x: '+str((stagex))+', y: '+str((stagey))+
-                      ', z: '+str((stagez))+', focus: '+str((fine_focus)) )
+            img.logwrite(str(counter) + ': (No. ' + str(frame_number[counter-1]) + ') x: ' + str((stagex)) + ', y: ' + 
+                         str((stagey)) + ', z: ' + str((stagez)) + ', focus: ' + str((fine_focus)))
             #print(str(counter)+': x: '+str((stagex))+', y: '+str((stagey))+', z: '+str((stagez))+', focus: '+str((fine_focus)))
-    
             #only do hardware operations when online
             if self.online:
     
@@ -502,6 +509,8 @@ class Mapping(object):
                     time.sleep(3)
     
                 if frame_number[counter-1] is not None:
+                    name = str('%.4d_%.3f_%.3f.tif' % (frame_number[counter-1], stagex*1e6, stagey*1e6))
+                    
                     if self.switches.get('do_autotuning'):
                         if self.switches.get('blank_beam'):
                                 self.as2.set_property_as_float('C_Blank', 0)
@@ -519,7 +528,7 @@ class Mapping(object):
                             if self.switches.get('blank_beam'):
                                 self.as2.set_property_as_float('C_Blank', 1)
     
-                            tifffile.imsave(self.store+str('%.4d_%.3f_%.3f.tif' % (frame_number[counter-1],stagex*1e6,stagey*1e6)), data)
+                            tifffile.imsave(os.path.join(self.store, name), data)
                             test_map.append(frame_coord)
                         else:
                             if self.switches.get('blank_beam'):
@@ -528,8 +537,7 @@ class Mapping(object):
                                 if pixeltimes is not None:
                                     self.frame_parameters['pixeltime'] = pixeltimes[i]
                                 data = img.image_grabber(frame_parameters=self.frame_parameters)
-                                tifffile.imsave(self.store+str('%.4d_%.3f_%.3f_%.2d.tif' % (frame_number[counter-1],
-                                                               stagex*1e6,stagey*1e6, i)), data)
+                                tifffile.imsave(os.path.join(self.store, name), data)
                             if self.switches.get('blank_beam'):
                                 self.as2.set_property_as_float('C_Blank', 1)
                             test_map.append(frame_coord)
@@ -562,15 +570,13 @@ class Mapping(object):
             overview_parameters = {'size_pixels': (4096, 4096), 'center': (0,0), 'pixeltime': 4, \
                                 'fov': over_size, 'rotation': self.frame_parameters['rotation']}
             image = img.image_grabber(frame_parameters=overview_parameters)
-    
-            tifffile.imsave(self.store+'Overview_'+str(np.rint(over_size))+'_nm.tif', image)
+            tifffile.imsave(os.path.join(self.store, 'Overview_{:.0f}_nm.tif'.format(over_size)), image)
     
         if self.event is None or not self.event.is_set():
             x_map = np.zeros((self.num_subframes[1], self.num_subframes[0]))
             y_map = np.zeros((self.num_subframes[1], self.num_subframes[0]))
             z_map = np.zeros((self.num_subframes[1], self.num_subframes[0]))
             focus_map = np.zeros((self.num_subframes[1], self.num_subframes[0]))
-    
             for j in range(self.num_subframes[1]):
                 for i in range(self.num_subframes[0]):
                     if j%2 == 0: #Odd lines, e.g. map from left to right
@@ -585,10 +591,10 @@ class Mapping(object):
                         focus_map[j,(self.num_subframes[0]-(i+1))] = test_map[i+j*self.num_subframes[0]][3]
     
     
-            tifffile.imsave(self.store+str('x_map.tif'),np.asarray(x_map, dtype='float32'))
-            tifffile.imsave(self.store+str('y_map.tif'),np.asarray(y_map, dtype='float32'))
-            tifffile.imsave(self.store+str('z_map.tif'),np.asarray(z_map, dtype='float32'))
-            tifffile.imsave(self.store+str('focus_map.tif'),np.asarray(focus_map, dtype='float32'))
+            tifffile.imsave(os.path.join(self.store, 'x_map.tif'), np.asarray(x_map, dtype='float32'))
+            tifffile.imsave(os.path.join(self.store, 'y_map.tif'), np.asarray(y_map, dtype='float32'))
+            tifffile.imsave(os.path.join(self.store, 'z_map.tif'), np.asarray(z_map, dtype='float32'))
+            tifffile.imsave(os.path.join(self.store, 'focus_map.tif'), np.asarray(focus_map, dtype='float32'))
     
         img.logwrite('Done.\n')
 
@@ -600,24 +606,24 @@ class Mapping(object):
                 else:
                     return 'OFF'
         
-            config_file = open(self.store+'map_configurations.txt', 'w')
+            config_file = open(os.path.join(self.store, 'map_configurations.txt'), 'w')
             config_file.write('#This file contains all parameters used for the mapping.\n\n')
             config_file.write('#Map parameters:\n')
-            map_paras = {'Autofocus': translator(self.switches['do_autotuning']),
-                         'Auto Rotation': translator(self.switches['auto_rotation']),
-                         'Auto Offset': translator(self.switches['auto_offset']),
-                         'Z Drive': translator(self.switches['use_z_drive']),
-                         'Acquire_Overview': translator(self.switches['acquire_overview']),
+            map_paras = {'Autofocus': translator(self.switches.get('do_autotuning')),
+                         'Auto Rotation': translator(self.switches.get('auto_rotation')),
+                         'Auto Offset': translator(self.switches.get('auto_offset')),
+                         'Z Drive': translator(self.switches.get('use_z_drive')),
+                         'Acquire_Overview': translator(self.switches.get('acquire_overview')),
                          'Number of frames': str(self.num_subframes[0])+'x'+str(self.num_subframes[1])}
             for key, value in map_paras.items():
                 config_file.write('{0:18}{1:}\n'.format(key+':', value))
             
             config_file.write('\n#Scan parameters:\n')
-            scan_paras = {'SuperScan FOV value': str(self.frame_parameters['fov']) + ' nm',
-                          'Image size': str(self.frame_parameters['size_pixels'])+' px',
-                          'Pixel time': str(self.frame_parameters['pixeltime'])+' us',
+            scan_paras = {'SuperScan FOV value': str(self.frame_parameters.get('fov')) + ' nm',
+                          'Image size': str(self.frame_parameters.get('size_pixels'))+' px',
+                          'Pixel time': str(self.frame_parameters.get('pixeltime'))+' us',
                           'Offset between images': str(self.offset)+' x image size',
-                          'Scan rotation': str('%.2f' % (self.frame_parameters['rotation'])) +' deg',
+                          'Scan rotation': str(self.frame_parameters.get('rotation')) +' deg',
                           'Detectors': str(self.detectors)}
             for key, value in scan_paras.items():
                 config_file.write('{0:25}{1:}\n'.format(key+':', value))

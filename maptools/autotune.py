@@ -35,18 +35,18 @@ with warnings.catch_warnings():
 #    except:
 #        logging.warn('Could not import Vienna tools!')
 
-try:
-    from . import autoalign
-except:
-    try:
-        import autoalign
-    except:
-        pass
+#try:
+from . import autoalign
+#except:
+#    try:
+#        import autoalign
+#    except:
+#        pass
 
 
 #global variable to store aberrations when simulating them (see function image_grabber() for details)
 #global_aberrations = {'EHTFocus': 0, 'C12_a': 5, 'C12_b': 0, 'C21_a': 801.0, 'C21_b': 0, 'C23_a': -500, 'C23_b': 0}
-global_aberrations = {'EHTFocus': 2, 'C12_a': 3, 'C12_b': -1, 'C21_a': 894, 'C21_b': 211.0, 'C23_a': -174, 'C23_b': 142.0}
+global_aberrations = {'EHTFocus': 2, 'C12_a': 0, 'C12_b': -3, 'C21_a': 0, 'C21_b': 0, 'C23_a': 85, 'C23_b': 0}
 
 
 
@@ -65,7 +65,7 @@ class Imaging(object):
         self._online = kwargs.get('online')
         self.dirt_threshold = kwargs.get('dirt_threshold')
         self._mask = kwargs.get('mask')
-        self.frame_parameters = kwargs.get('frame_parameters', {})
+        self._frame_parameters = kwargs.get('frame_parameters', {})
         self.record_parameters = kwargs.get('record_parameters')
         self.detectors = kwargs.get('detectors', {'HAADF': False, 'MAADF': True})
         self.aberrations = kwargs.get('aberrations', {})
@@ -103,7 +103,7 @@ class Imaging(object):
             else:
                 logging.info('Going to offline mode because no instance of as2 or superscan was provided.')
                 self._online = False
-        return self.online
+        return self._online
 
     @online.setter
     def online(self, online):
@@ -119,6 +119,20 @@ class Imaging(object):
     @mask.setter
     def mask(self, mask):
         self._mask = mask
+        
+    @property
+    def frame_parameters(self):
+        return self._frame_parameters
+    
+    @frame_parameters.setter
+    def frame_parameters(self, frame_parameters):
+        for key in frame_parameters.keys():
+            self._frame_parameters[key] = frame_parameters[key]
+        self.delta_graphene = None
+        
+    @frame_parameters.deleter
+    def frame_parameters(self):
+        self._frame_parameters = {}
 
     def create_record_parameters(self, frame_parameters=None, detectors=None):
         """
@@ -201,7 +215,7 @@ class Imaging(object):
             median_blur_diam += 1
 
         #self.mask = np.rint(uniform_filter(self.mask, median_blur_diam)).astype('uint8')
-        return np.rint(uniform_filter(self.mask, median_blur_diam)).astype('uint8')
+        return np.rint(uniform_filter(mask, median_blur_diam)).astype('uint8')
 
     def distribute_intensity(self, x, y):
         """
@@ -242,7 +256,7 @@ class Imaging(object):
         dirt_end = None
         # go through list of thresholds and determine the amount of dirt with this threshold
         for threshold in search_range:
-            mask_size = np.sum(self.dirt_detector(**kwargs)) / np.prod(self.shape)
+            mask_size = np.sum(self.dirt_detector(dirt_threshold = threshold, **kwargs)) / np.prod(self.shape)
             # remember value where the mask started to shrink
             if mask_size < 0.99 and dirt_start is None:
                 dirt_start = threshold
@@ -276,7 +290,8 @@ class Imaging(object):
         #increase size of initially generated image by 20% to avoid missing atoms at the edges (image will be cropped
         #to actual size before returning it)
         image = np.zeros((int(impix*1.2), int(impix*1.2)))
-        rotation_matrix = np.array( ( (np.cos(2.0/3.0*np.pi), np.sin(2.0/3.0*np.pi)), (-np.sin(2.0/3.0*np.pi), np.cos(2.0/3.0*np.pi)) ) )
+        rotation_matrix = np.array( ( (np.cos(2.0/3.0*np.pi), np.sin(2.0/3.0*np.pi)), (-np.sin(2.0/3.0*np.pi),
+                                       np.cos(2.0/3.0*np.pi)) ) )
         #define basis vectors of unit cell, a1 and a2
         basis_length = 0.142 * np.sqrt(3) * impix/float(imsize)
         a1 = np.array((np.cos(rotation), np.sin(rotation))) * basis_length
@@ -313,7 +328,8 @@ class Imaging(object):
                 else:
                     success = False
 
-                if (cellposition+a2/3.0+a1*(2.0/3.0) < impix*1.2).all() and (cellposition+a2/3.0+a1*(2.0/3.0) >= 0).all():
+                if (cellposition+a2/3.0+a1*(2.0/3.0) < impix*1.2).all() and \
+                   (cellposition+a2/3.0+a1*(2.0/3.0) >= 0).all():
                     success = True
                     y, x = cellposition + a2/3.0 + a1*(2.0/3.0)
                     pixelvalues = self.distribute_intensity(x, y)
@@ -394,11 +410,17 @@ class Imaging(object):
             self.frame_parameters = kwargs.get('frame_parameters')
         if kwargs.get('detectors') is not None:
             self.detectors = kwargs.get('detectors')
+        if kwargs.get('imsize') is not None:
+            self.imsize = kwargs['imsize']
+        if kwargs.get('shape') is not None:
+            self.shape = kwargs['shape']
+        if kwargs.get('impix') is not None:
+            self.shape = (kwargs['impix'], kwargs['impix'])
 
-        if self.frame_parameters.get('imsize') is not None:
-            self.imsize = self.frame_parameters.get('imsize')
-        if self.frame_parameters.get('impix') is not None:
-            self.shape = self.frame_parameters.get('impix')
+        if self.frame_parameters.get('fov') is not None:
+            self.imsize = self.frame_parameters.get('fov')
+        if self.frame_parameters.get('size_pixels') is not None:
+            self.shape = self.frame_parameters.get('size_pixels')
 
         # Set parameters for dealing with aberrration settings and apply correct defaults
         relative_aberrations = kwargs.get('relative_aberrations', True)
@@ -406,18 +428,6 @@ class Imaging(object):
         # Keys to check for aberrations in aberrations dictionary
         keys = ['EHTFocus', 'C12_a', 'C12_b', 'C21_a', 'C21_b', 'C23_a', 'C23_b']
         return_image = None
-
-#                #if aberrations should not be reset, change global_aberrations
-#                    if not kwargs.get('reset_aberrations'):
-#                        global_aberrations[key] = aberrations[i]
-#                else:
-#                    aberrations[i] = global_aberrations[keys[i]]
-
-#
-#        if relative_aberrations:
-#                        self.aberrations[key] += kwargs['aberrations'].get(key, 0)
-#                    else:
-#                        self.aberrations[key] = kwargs['aberrations'].get(key, 0)
         # Check if all required parameters are there
         if self.online:
             controls = {'EHTFocus': 'EHTFocus', 'C12_a': 'C12.a', 'C12_b': 'C12.b', 'C21_a': 'C21.a',
@@ -468,18 +478,17 @@ class Imaging(object):
             if self.delta_graphene is None:
                 assert self.shape is not None, \
                        'You have to input the shape for the generated image in order to use the offline mode.'
-                self.delta_graphene = self.graphene_generator()
 
             # Update aberrations dictionary with the values passed to this function
             if kwargs.get('aberrations') is not None:
                 for key in keys:
-                    if kwargs['aberrations'].get(key):
-                        # Relative aberrations is here relative to global_aberrations, in online mode its relative to
-                        # the values already set in as2
-                        if relative_aberrations:
-                            self.aberrations[key] = global_aberrations[key] + kwargs['aberrations'].get(key)
-                        else:
-                            self.aberrations[key] = kwargs['aberrations'].get(key)
+                    # Relative aberrations is here relative to global_aberrations, in online mode its relative to
+                    # the values already set in as2
+                    if relative_aberrations:
+                        self.aberrations[key] = global_aberrations.get(key, 0) + kwargs['aberrations'].get(key, 0)
+                    else:
+                        self.aberrations[key] = kwargs['aberrations'].get(key, global_aberrations.get(key, 0))
+                
             # Write current values to global aberrations if they should be kept (which is similar to applying them to
             # the hardware in online mode)
             if not reset_aberrations:
@@ -492,6 +501,14 @@ class Imaging(object):
                 # of the image size (in pixels)
                 kernelsize = 2
                 kernelpixel = int(self.shape[0]/kernelsize)
+                
+                if self.delta_graphene is None:
+                    impix = self.shape[0]+kernelpixel-1
+                    imsize = impix/self.shape[0]*self.imsize
+                    rotation = self.frame_parameters.get('rotation', 0)
+                    multiplicator = self.frame_parameters.get('pixeltime', 0)*100+1
+                    self.delta_graphene = (self.graphene_generator(imsize, impix, rotation)+0.002)*multiplicator
+
                 frequencies = np.matrix(np.fft.fftshift(np.fft.fftfreq(kernelpixel, self.imsize/self.shape[0])))
                 x = np.array(np.tile(frequencies, np.size(frequencies)).reshape((kernelpixel,kernelpixel)))
                 y = np.array(np.tile(frequencies.T, np.size(frequencies)).reshape((kernelpixel,kernelpixel)))
@@ -500,27 +517,25 @@ class Imaging(object):
                 # formula taken from "Advanced Computing in Electron Microscopy",
                 # Earl J. Kirkland, 2nd edition, 2010, p. 18
                 # wavelength for 60 keV electrons: 4.87e-3 nm
-                raw_kernel = (
-                              (-self.aberrations.get('EHTFocus', 0) * (x**2 + y**2) +
+                raw_kernel = (-self.aberrations.get('EHTFocus', 0) * (x**2 + y**2) +
 
-                               np.sqrt(self.aberrations.get('C12_a', 0)**2 + self.aberrations.get('C12_b', 0)**2) *
-                               (x**2 + y**2) * np.cos(2 * (np.arctan2(y,x) -
-                                                      np.arctan2(self.aberrations.get('C12_b', 0),
-                                                                 self.aberrations.get('C12_a', 0)))) +
-                               (2.0/3.0) *
-                               np.sqrt(self.aberrations.get('C21_a', 0)**2 + self.aberrations.get('C21_b', 0)**2) *
-                               4.87e-3 *
-                               np.sqrt(x**2 + y**2)**3 * np.cos(np.arctan2(y,x) -
-                                                                np.arctan2(self.aberrations.get('C21_b', 0),
-                                                                           self.aberrations.get('C21_a', 0)[3])) +
-                               (2.0/3.0) *
-                               np.sqrt(self.aberrations.get('C23_a', 0)**2 + self.aberrations.get('C23_a', 0)**2) *
-                               4.87e-3 *
-                               np.sqrt(x**2 + y**2)**3 * np.cos(3 * (np.arctan2(y,x) -
-                                                                np.arctan2(self.aberrations.get('C23_b', 0),
-                                                                           self.aberrations.get('C23_b', 0))))) *
-                               np.pi * 4.87e-3
-                              )
+                              np.sqrt(self.aberrations.get('C12_a', 0)**2 + self.aberrations.get('C12_b', 0)**2) *
+                              (x**2 + y**2) * np.cos(2 * (np.arctan2(y,x) -
+                                                     np.arctan2(self.aberrations.get('C12_b', 0),
+                                                                self.aberrations.get('C12_a', 0)))) +
+                              (2.0/3.0) *
+                              np.sqrt(self.aberrations.get('C21_a', 0)**2 + self.aberrations.get('C21_b', 0)**2) *
+                              4.87e-3 *
+                              np.sqrt(x**2 + y**2)**3 * np.cos(np.arctan2(y,x) -
+                                                               np.arctan2(self.aberrations.get('C21_b', 0),
+                                                                          self.aberrations.get('C21_a', 0))) +
+                              (2.0/3.0) *
+                              np.sqrt(self.aberrations.get('C23_a', 0)**2 + self.aberrations.get('C23_a', 0)**2) *
+                              4.87e-3 *
+                              np.sqrt(x**2 + y**2)**3 * np.cos(3 * (np.arctan2(y,x) -
+                                                               np.arctan2(self.aberrations.get('C23_b', 0),
+                                                                          self.aberrations.get('C23_b', 0))))) * \
+                              np.pi * 4.87e-3
 
                 kernel = np.cos(raw_kernel)+1j*np.sin(raw_kernel)
                 aperture = np.zeros(kernel.shape)
@@ -534,14 +549,14 @@ class Imaging(object):
                 kernel = np.abs(np.fft.fftshift(np.fft.ifft2(np.fft.fftshift(kernel))))**2
                 kernel /= np.sum(kernel)
                 #im = cv2.filter2D(im, -1, kernel)
-                im = fftconvolve(self.delta_graphene, kernel, mode='same')
+                im = fftconvolve(self.delta_graphene, kernel, mode='valid')
                 im = np.random.poisson(lam=im.flatten(), size=np.size(im)).astype(im.dtype)
 
                 if debug_mode:
                     return_image = (im.reshape(self.shape).astype('float32'), kernel)
                 else:
                     return_image = im.reshape(self.shape).astype('float32')
-
+        print(self.aberrations)
         return return_image
 
     def logwrite(self, msg, level='info'):
@@ -571,7 +586,7 @@ class Peaking(Imaging):
         self._fft = kwargs.get('fft')
         self.peaks = kwargs.get('peaks')
         self._center = kwargs.get('center')
-        self.integration_radius = kwargs.get('integration_radius')
+        self.integration_radius = kwargs.get('integration_radius', 0)
 
     @Imaging.image.setter
     def image(self, image):
@@ -585,8 +600,8 @@ class Peaking(Imaging):
     @property
     def center(self):
         if self._center is None:
-            self._center = tuple((np.array(self.shape)/2).astype(np.int))
-        return self._center
+            self._center = (np.array(self.shape)/2).astype(np.int)
+        return np.array(self._center).astype(np.int)
 
     @center.setter
     def center(self, center):
@@ -594,9 +609,14 @@ class Peaking(Imaging):
 
     @property
     def fft(self):
-        if self._fft == None:
+        if self._fft is None:
             assert self.image is not None, 'Can not calculate the fft because no image is given.'
             self._fft = np.fft.fftshift(np.fft.fft2(self.image))
+        return self._fft
+            
+    @fft.setter
+    def fft(self, fft):
+        self._fft = fft
 
     def find_peaks(self, half_line_thickness=3, position_tolerance=5, second_order=False, debug_mode=False, **kwargs):
         """
@@ -617,6 +637,8 @@ class Peaking(Imaging):
             self.image = kwargs['image']
         if kwargs.get('imsize') is not None:
             self.imsize = kwargs['imsize']
+        if kwargs.get('integration_radius') is not None:
+            self.integration_radius = kwargs['integration_radius']
 
         fft = np.abs(self.fft)
         fft_raw = fft.copy()
@@ -678,8 +700,10 @@ class Peaking(Imaging):
         while success is False:
             counter += 1
             if counter > np.sqrt(self.shape[0]):
-                raise RuntimeError('No peaks could be found in the FFT of im.')
-                #break
+                if debug_mode:
+                    break
+                else:
+                    raise RuntimeError('No peaks could be found in the FFT of im.')
             if second_order:
                 peaks = np.zeros((2,6,4))
             else:
@@ -765,7 +789,7 @@ class Peaking(Imaging):
                                                               self.integration_radius+1])))
                         position_tolerance = org_pos_tol
                     success = True
-                except Exception as detail:
+                except IndexError as detail:
                     fft[first_peak[0] - position_tolerance:first_peak[0] + position_tolerance+1,
                         first_peak[1] - position_tolerance:first_peak[1]+position_tolerance+1] = 3
                     print(str(detail))
@@ -786,7 +810,7 @@ class Peaking(Imaging):
         else:
             return peaks
 
-    def fourier_filter(self, filter_radius=7, **kwargs):
+    def fourier_filter(self, filter_radius=10, **kwargs):
         # check if peaks are already saved and if second order is there
         if len(np.shape(self.peaks)) < 2:
             self.peaks = self.find_peaks(second_order=True, **kwargs)
@@ -815,7 +839,7 @@ class Tuning(Peaking):
         self.average_frames = kwargs.get('average_frames')
         self.aberrations_tracklist = []
 
-    def kill_aberrations(self, **kwargs):
+    def kill_aberrations(self, dirt_detection=True, **kwargs):
         # Check input for arguments that override class variables
         if kwargs.get('steps') is not None:
             self.steps = kwargs['steps']
@@ -823,15 +847,16 @@ class Tuning(Peaking):
             self.keys = kwargs['keys']
         if kwargs.get('frame_parameters') is not None:
             self.frame_parameters = kwargs['frame_parameters']
+        else:
+            self.frame_parameters = {'size_pixels': (512, 512), 'center': (0,0), 'pixeltime': 8, 'fov': 4,
+                                     'rotation': 0}
 
         # Apply default values if one required parameter is not set
         if self.steps is None:
             self.steps = {'EHTFocus': 2, 'C12_a': 2, 'C12_b': 2, 'C21_a': 300, 'C21_b': 300, 'C23_a': 75, 'C23_b': 75}
         if self.keys is None:
             self.keys = ['EHTFocus', 'C12_a', 'C12_b', 'C21_a', 'C21_b', 'C23_a', 'C23_b']
-        if self.frame_parameters is None:
-            self.frame_parameters = {'size_pixels': (512, 512), 'center': (0,0), 'pixeltime': 8, 'fov': 4,
-                                     'rotation': 0}
+            
 
         total_tunings = []
         counter = 0
@@ -839,7 +864,10 @@ class Tuning(Peaking):
         self.imsize = self.frame_parameters['fov']
 
         self.image = self.image_grabber(aberrations={})
-        self.mask = self.dirt_detector()
+        self.mask = self.dirt_detector() if dirt_detection else None
+        
+        # append current corrector configuration to aberrations_tracklist
+        self.aberrations_tracklist.append(self.aberrations.copy())
 
         try:
             current = self.tuning_merit()
@@ -880,18 +908,18 @@ class Tuning(Peaking):
                 self.logwrite('Working on: '+ key)
                 step_multiplicator=1
                 while step_multiplicator < 8:
-                    changes = 0.0
+                    #changes = 0.0
                     aberrations = {key: self.steps[key]*step_multiplicator}
-                    changes += self.steps[key]*step_multiplicator
+                    #changes += self.steps[key]*step_multiplicator
                     self.image = self.image_grabber(aberrations=aberrations)
-                    self.mask = self.dirt_detector()
+                    self.mask = self.dirt_detector() if dirt_detection else None
                     try:
                         plus = self.tuning_merit()
                     except RuntimeError:
                         plus = 1e5
                     except DirtError:
                         if self.online:
-                            self.aberrations = self.aberrations_tracklist[-1]
+                            self.aberrations = self.aberrations_tracklist[-1].copy()
                             self.image_grabber(acquire_image=False)
 
                         self.logwrite('Tuning ended because of too high dirt coverage.', level='warn')
@@ -899,16 +927,16 @@ class Tuning(Peaking):
 
                     #passing 2xstepsize to image_grabber to get from +1 to -1
                     aberrations = {key: -2.0*self.steps[key]*step_multiplicator}
-                    changes += -2.0*self.steps[key]*step_multiplicator
+                    #changes += -2.0*self.steps[key]*step_multiplicator
                     self.image = self.image_grabber(aberrations=aberrations)
-                    self.mask = self.dirt_detector()
+                    self.mask = self.dirt_detector() if dirt_detection else None
                     try:
                         minus = self.tuning_merit()
                     except RuntimeError:
                         minus = 1e5
                     except DirtError:
                         if self.online:
-                            self.aberrations = self.aberrations_tracklist[-1]
+                            self.aberrations = self.aberrations_tracklist[-1].copy()
                             self.image_grabber(acquire_image=False)
 
                         self.logwrite('Tuning ended because of too high dirt coverage.', level='warn')
@@ -928,12 +956,12 @@ class Tuning(Peaking):
                         self.steps[key] *= step_multiplicator
                         #Setting aberrations to values of 'plus' which where the best so far
                         aberrations = {key: 2.0*self.steps[key]*step_multiplicator}
-                        changes += 2.0*self.steps[key]*step_multiplicator
+                        #changes += 2.0*self.steps[key]*step_multiplicator
                         #update hardware
                         self.image_grabber(acquire_image=False, aberrations=aberrations)
                         break
                     else:
-                        self.aberrations = self.aberrations_tracklist[-1]
+                        self.aberrations = self.aberrations_tracklist[-1].copy()
                         self.image_grabber(acquire_image=False)
                         self.logwrite('Doubling the stepsize of '+key+'.')
                         step_multiplicator *= 2
@@ -941,6 +969,8 @@ class Tuning(Peaking):
                 # break or continue
                 else:
                     self.logwrite('Could not find a direction to improve '+key+'. Going to next aberration.')
+                    self.aberrations = self.aberrations_tracklist[-1].copy()
+                    self.image_grabber(acquire_image=False)
                     #reduce stepsize for next iteration
                     self.steps[key] *= 0.5
                     continue
@@ -949,20 +979,20 @@ class Tuning(Peaking):
                 while True:
                     small_counter+=1
                     aberrations = {key: direction*self.steps[key]}
-                    changes += direction*self.steps[key]
+                    #changes += direction*self.steps[key]
                     self.image = self.image_grabber(aberrations=aberrations)
-                    self.mask = self.dirt_detector()
+                    self.mask = self.dirt_detector() if dirt_detection else None
                     try:
                         next_frame = self.tuning_merit()
                     except RuntimeError:
                         aberrations = {key: -direction*self.steps[key]}
-                        changes -= direction*self.steps[key]
+                        #changes -= direction*self.steps[key]
                         #update hardware
                         self.image_grabber(acquire_image=False, aberrations=aberrations)
                         break
                     except DirtError:
                         if self.online:
-                            self.aberrations = self.aberrations_tracklist[-1]
+                            self.aberrations = self.aberrations_tracklist[-1].copy()
                             self.image_grabber(acquire_image=False)
 
                         self.logwrite('Tuning ended because of too high dirt coverage.', level='warn')
@@ -970,7 +1000,7 @@ class Tuning(Peaking):
 
                     if next_frame >= current:
                         aberrations = {key: -direction*self.steps[key]}
-                        changes -= direction*self.steps[key]
+                        #changes -= direction*self.steps[key]
                         #update hardware
                         self.image_grabber(acquire_image=False, aberrations=aberrations)
                         #part_tunings.append(merit(current))
@@ -982,14 +1012,14 @@ class Tuning(Peaking):
                 #only keep changes if they improve the overall tuning
                 if len(total_tunings) > 0:
                     if current > np.amin(total_tunings):
-                        self.aberrations = self.aberrations_tracklist[-1]
+                        self.aberrations = self.aberrations_tracklist[-1].copy()
                         self.image = self.image_grabber()
-                        self.mask = self.dirt_detector()
+                        self.mask = self.dirt_detector() if dirt_detection else None
                         try:
                             current  = self.tuning_merit()
                         except DirtError:
                             if self.online:
-                                self.aberrations = self.aberrations_tracklist[-1]
+                                self.aberrations = self.aberrations_tracklist[-1].copy()
                                 self.image_grabber(acquire_image=False)
                             self.logwrite('Tuning ended because of too high dirt coverage.', level='warn')
                             raise
@@ -999,7 +1029,7 @@ class Tuning(Peaking):
                 #reduce stepsize for next iteration
                 self.steps[key] *= 0.5
                 # append current corrector configuration to aberrations_tracklist
-                self.aberrations_tracklist.append(self.aberrations)
+                self.aberrations_tracklist.append(self.aberrations.copy())
 
             if len(part_tunings) > 0:
                 self.logwrite('Appending best value of this run to total_tunings: '+str(np.amin(part_tunings)))
@@ -1037,7 +1067,6 @@ class Tuning(Peaking):
 
         return np.array(intensities)
 
-
     def measure_symmetry(self, filtered_image):
         point_mirrored = np.flipud(np.fliplr(filtered_image))
         return autoalign.find_shift(filtered_image, point_mirrored, ratio=0.142/self.imsize/2)
@@ -1066,6 +1095,7 @@ class Tuning(Peaking):
 
         print('sum intensities: ' + str(np.sum(intensities)) + '\tvar intensities: ' +
               str(np.std(intensities)/np.sum(intensities)) + '\tsymmetry: ' + str(symmetry))
+        
         return 1.0/(np.sum(intensities)/1e6 + np.sum(symmetry))
 
 
