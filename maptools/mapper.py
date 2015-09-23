@@ -68,10 +68,6 @@ class Mapping(object):
         self._savepath = os.path.normpath(savepath)
         
     def create_map_coordinates(self, compensate_stage_error=False):
-        extra_lines = 2  # Number of lines to add at the beginning of the map
-        extra_frames = 5  # Number of extra moves at each end of a line
-        oldm = 0.25  # odd line distance mover (additional offset of odd lines, in fractions of (imsize+distance))
-        eldm = 0  # even line distance mover (additional offset of even lines, in fractions of (imsize+distance))
         imsize = self.frame_parameters['fov']*1e-9
         distance = self.offset*imsize
         self.num_subframes = np.array((int(np.abs(self.rightX-self.leftX)/(imsize+distance))+1, 
@@ -82,18 +78,23 @@ class Mapping(object):
     
         # add additional lines and frames to number of subframes
         if compensate_stage_error:
+            extra_lines = 2  # Number of lines to add at the beginning of the map
+            extra_frames = 5  # Number of extra moves at each end of a line
+            oldm = 0.25  # odd line distance mover (additional offset of odd lines, in fractions of (imsize+distance))
+            eldm = 0  # even line distance mover (additional offset of even lines, in fractions of (imsize+distance))
             num_subframes = self.num_subframes + np.array((2*extra_frames, extra_lines))
             leftX = self.leftX - extra_frames*(imsize+distance)
             for i in range(extra_lines):
                 if i % 2 == 0:  # Odd lines (have even indices because numbering starts with 0), e.g. map from left to right
-                    topY = self.topY + imsize+oldm*distance
+                    topY = self.topY + imsize + oldm*distance
                 else:
-                    topY = self.topY + imsize+eldm*distance
+                    topY = self.topY + imsize + eldm*distance
         else:
             num_subframes = self.num_subframes
             leftX = self.leftX
             topY = self.topY
-    
+            oldm = 0
+            eldm = 0
         # make a list of coordinates where images will be aquired.
         # Starting point is the upper-left corner and mapping will proceed to the right. The next line will start
         # at the right and scan towards the left. The next line will again start at the left, and so on. E.g. a "snake shaped"
@@ -103,9 +104,9 @@ class Mapping(object):
             for i in range(num_subframes[0]):
                 if j % 2 == 0:  # Odd lines (have even indices because numbering starts with 0), e.g. map from left to right
                     map_coords.append(tuple((leftX+i*(imsize+distance), 
-                                             topY-j*(imsize+distance)-oldm*(imsize+distance))) +
-                                      tuple(self.interpolation((leftX+i*(imsize+distance),
-                                            topY-j*(imsize+distance)-oldm*(imsize+distance)))))
+                                             topY-j*(imsize+distance) - oldm*(imsize+distance))) +
+                                      tuple(self.interpolation((leftX + i*(imsize+distance),
+                                            topY-j*(imsize+distance) - oldm*(imsize+distance)))))
     
                     # Apply correct (continuous) frame numbering for all cases. If no extra positions are added, just 
                     # append the correct frame number. Elsewise append the correct frame number if a non-additional
@@ -118,12 +119,11 @@ class Mapping(object):
                         frame_number.append(None)
     
                 else: # Even lines, e.g. scan from right to left
-                    map_coords.append(tuple((leftX+(num_subframes[0]-(i+1))*(imsize+distance),
-                                            topY-j*(imsize+distance) - eldm*(imsize+distance))) +
-                                      tuple(self.interpolation((leftX+
-                                                                (num_subframes[0]-(i+1))*(imsize+distance),
-                                                                topY-j*(imsize+eldm*distance) -
-                                                                eldm*(imsize+distance)))))
+                    map_coords.append(tuple((leftX + (num_subframes[0] - (i+1))*(imsize + distance),
+                                             topY-j*(imsize + distance) - eldm*(imsize + distance))) +
+                                      tuple(self.interpolation(
+                                            (leftX + (num_subframes[0] - (i+1))*(imsize + distance),
+                                             topY-j*(imsize + distance) - eldm*(imsize + distance)))))
     
                     # Apply correct (continuous) frame numbering for all cases. If no extra positions are added, just 
                     # append the correct frame number. Elsewise append the correct frame number if a non-additional
@@ -279,29 +279,32 @@ class Mapping(object):
         return result
                 
     def load_mapping_config(self, path):
-        config_file = open(os.path.normpath(path))
-        counter = 0
+        #config_file = open(os.path.normpath(path))
+        #counter = 0
         # make sure function is not caught in an endless loop if 'end' is missing at the end
-        while counter < 1e3:
-            counter += 1
-            line = config_file.readline().strip()
+        #while counter < 1e3:
+        with open(os.path.normpath(path)) as config_file:
+            for line in config_file:
+            #counter += 1
+            #line = config_file.readline().strip()
+                line = line.strip()
             
-            if line == 'end':
-                break
-            elif line.startswith('#'):
-                continue
-            elif line.startswith('{'):
-                line = line[1:].strip()
-                self.fill_dicts(line, config_file)
-            elif len(line.split(':')) == 2:
-                line = line.split(':')
-                if hasattr(self, line[0].strip()):
-                    setattr(self, line[0].strip(), eval(line[1].strip()))
-                continue
-            else:
-                continue
+            #if line == 'end':
+            #    break
+                if line.startswith('#'):
+                    continue
+                elif line.startswith('{'):
+                    line = line[1:].strip()
+                    self.fill_dicts(line, config_file)
+                elif len(line.split(':')) == 2:
+                    line = line.split(':')
+                    if hasattr(self, line[0].strip()):
+                        setattr(self, line[0].strip(), eval(line[1].strip()))
+                    continue
+                else:
+                    continue
         
-        config_file.close()
+        #config_file.close()
             
     def fill_dicts(self, line, file):
         if hasattr(self, line):
@@ -314,6 +317,8 @@ class Mapping(object):
                 subline = file.readline().strip()
                 if subline.startswith('}'):
                     break
+                elif subline.startswith('#'):
+                    continue
                 elif subline.endswith('}'):
                     subline = subline[:-1]
                     subline = subline.split(':')
@@ -328,34 +333,36 @@ class Mapping(object):
             path = os.path.join(self.savepath, self.foldername)
         if not os.path.exists(path):
             os.makedirs(path)
-        path = os.path.join(path, 'configs_' + self.foldername + '.txt')
+        path = os.path.join(path, 'configs_map.txt')
         
-        config_file = open(path, mode='w+')
+        #config_file = open(path, mode='w+')
+        with open(path, mode='w+') as config_file:
         
-        config_file.write('# Configurations for ' + self.foldername + '.\n')
-        config_file.write('# This file can be loaded to resume the mapping process with the exact same parameters.\n')
-        config_file.write('# Do not edit this file or the loading process can fail.\n\n')
-        config_file.write('{ switches\n')
-        for key, value in self.switches.items():
-            config_file.write('\t' + str(key) + ': ' + str(value) + '\n')
-        config_file.write('}\n\n{ detectors\n')
-        for key, value in self.detectors.items():
-            config_file.write('\t' + str(key) + ': ' + str(value) + '\n')
-        config_file.write('}\n\n{ coord_dict\n')
-        for key, value in self.coord_dict.items():
-            config_file.write('\t' + str(key) + ': ' + str(value) + '\n')
-        config_file.write('}\n\n{ frame_parameters\n')
-        for key, value in self.frame_parameters.items():
-            config_file.write('\t' + str(key) + ': ' + str(value) + '\n')
-        config_file.write('}\n')
-        config_file.write('\n# Other parameters\n')
-        config_file.write('savepath: ' + repr(self.savepath) + '\n')
-        config_file.write('foldername: ' + repr(self.foldername) + '\n')
-        config_file.write('number_of_images: ' + str(self.number_of_images) + '\n')
-        config_file.write('offset: ' + str(self.offset) + '\n')
-        config_file.write('\nend')
+            config_file.write('# Configurations for ' + self.foldername + '.\n')
+            config_file.write('# This file can be loaded to resume the mapping process with the exact same parameters.\n')
+            config_file.write('# Only edit this file if you know what you do.')
+            config_file.write('Otherwise the loading process can fail.\n\n')
+            config_file.write('{ switches\n')
+            for key, value in self.switches.items():
+                config_file.write('\t' + str(key) + ': ' + str(value) + '\n')
+            config_file.write('}\n\n{ detectors\n')
+            for key, value in self.detectors.items():
+                config_file.write('\t' + str(key) + ': ' + str(value) + '\n')
+            config_file.write('}\n\n{ coord_dict\n')
+            for key, value in self.coord_dict.items():
+                config_file.write('\t' + str(key) + ': ' + str(value) + '\n')
+            config_file.write('}\n\n{ frame_parameters\n')
+            for key, value in self.frame_parameters.items():
+                config_file.write('\t' + str(key) + ': ' + str(value) + '\n')
+            config_file.write('}\n')
+            config_file.write('\n# Other parameters\n')
+            config_file.write('savepath: ' + repr(self.savepath) + '\n')
+    #        config_file.write('foldername: ' + repr(self.foldername) + '\n')
+            config_file.write('number_of_images: ' + str(self.number_of_images) + '\n')
+            config_file.write('offset: ' + str(self.offset) + '\n')
+            #config_file.write('\nend')
         
-        config_file.close()
+        #config_file.close()
 
     def sort_quadrangle(self):
         """
