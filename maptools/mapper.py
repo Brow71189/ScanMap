@@ -138,93 +138,89 @@ class Mapping(object):
     
         return (map_coords, frame_number)
     
-    def handle_autotuning(self):
-        #tests in each frame after aquisition if all 6 reflections in the fft are still there (only for frames where less than 50% of the area are
-        #covered with dirt). If not all reflections are visible, autofocus is applied and the result is added as offset to the interpolated focus values.
-        #The dirt coverage is calculated by considering all pixels intensities that are higher than 0.02 as dirt
-        tuning = Tuning()
-        data=tuning.image_grabber()
-    
-        name = str('%.4d_%.3f_%.3f.tif' % (frame_number[counter-1],stagex*1e6,stagey*1e6))
-        dirt_mask = autotune.dirt_detector(data, threshold=0.01, median_blur_diam=39, gaussian_blur_radius=3)
+    def handle_autotuning(self, number_frame):
+        # tests in each frame after aquisition if all 6 reflections in the fft are still there (only for frames where 
+        # less than 50% of the area are covered with dirt). If not all reflections are visible, autofocus is applied
+        # and the result is added as offset to the interpolated focus values. The dirt coverage is calculated by
+        # considering all pixels intensities that are higher than 0.02 as dirt
+        Tuner = Tuning(event=self.event, document_controller=self.document_controller, as2=self.as2, 
+                       superscan=self.superscan)        
+        message = ''
+        data = Tuner.image_grabber(frame_parameters=self.frame_parameters)
+        #name = str('%.4d_%.3f_%.3f.tif' % (frame_number[counter-1],stagex*1e6,stagey*1e6))
+        dirt_mask = Tuner.dirt_detector(image=data)
         #calculate the fraction of 'bad' pixels and save frame if fraction is >0.5, but add note to "bad_frames" file
         if np.sum(dirt_mask)/(np.shape(data)[0]*np.shape(data)[1]) > 0.5:
-            tifffile.imsave(store+name, data)
-            test_map.append(frame_coord)
-            bad_frames[name] = 'Over 50% dirt coverage.'
-            logwrite('Over 50% dirt coverage in ' + name)
+            message += 'Over 50% dirt coverage. '
+            Tuner.logwrite('Over 50% dirt coverage in No. ' + number_frame)
         else:
             try:
-                first_order, second_order = autotune.find_peaks(data, imsize*1e9, position_tolerance=9, second_order=True)
+                first_order, second_order = Tuner.find_peaks(image=data, imsize=self.frame_parameters['fov'],
+                                                             second_order=True)
                 number_peaks = np.count_nonzero(first_order[:,-1])+np.count_nonzero(second_order[:,-1])
-            except:
+            except RuntimeError:
                 first_order = second_order = 0
                 number_peaks = 0
     
             if number_peaks == 12:
                 missing_peaks = 0
             elif number_peaks < 10:
-                bad_frames[name] = 'Missing '+str(12 - number_peaks)+' peaks.'
-                logwrite('No. '+str(frame_number[counter-1]) + ': Missing '+str(12 - number_peaks)+' peaks.')
+                message += 'Missing '+str(12 - number_peaks)+' peaks. '
+                Tuner.logwrite('No. '+str(number_frame) + ': Missing ' + str(12 - number_peaks) + ' peaks.')
                 missing_peaks += 12 - number_peaks
     
             if missing_peaks > 12:
-                logwrite('No. '+str(frame_number[counter-1]) + ': Retune because '+str(missing_peaks)+' peaks miss in total.')
-                bad_frames[name] = 'Retune because '+str(missing_peaks)+' peaks miss in total.'
+                Tuner.logwrite('No. '+str(number_frame) + ': Retune because '+str(missing_peaks) +
+                               ' peaks miss in total.')
+                message += 'Retune because '+str(missing_peaks)+' peaks miss in total. '
                 try:
-                    tuning_result = autotune.kill_aberrations(event=event, document_controller=document_controller)
-                    if event is not None and event.is_set():
-                        #break
-                        pass
+                    Tuner.kill_aberrations()
+                    if self.event is not None and self.event.is_set():
+                        return data, message
                 except DirtError:
-                    logwrite('No. '+str(frame_number[counter-1]) + ': Tuning was aborted because of dirt coming in.')
-                    bad_frames[name] = 'Tuning was aborted because of dirt coming in.'
-                    tifffile.imsave(store+name, data)
-                    test_map.append(frame_coord)
+                    Tuner.logwrite('No. '+str(number_frame) + ': Tuning was aborted because of dirt coming in.')
+                    message += 'Tuning was aborted because of dirt coming in. '
                 else:
-                    logwrite('No. '+str(frame_number[counter-1]) + ': New tuning: '+str(tuning_result))
-                    bad_frames[name] = 'New tuning: '+str(tuning_result)
+                    Tuner.logwrite('No. '+str(number_frame) + ': New tuning: '+str(Tuner.aberrations))
+                    message += 'New tuning: '+ str(Tuner.aberrations) + '. '
     
-                    data_new = autotune.image_grabber()
+                    data_new = Tuner.image_grabber(frame_parameters = self.frame_parameters)
                     try:
-                        first_order_new, second_order_new = autotune.find_peaks(data, imsize*1e9, position_tolerance=9, second_order=True)
-                        number_peaks_new = np.count_nonzero(first_order_new[:,-1])+np.count_nonzero(second_order_new[:,-1])
+                        first_order_new, second_order_new = Tuner.find_peaks(iamge=data_new,
+                                                                             imsize=self.frame_parameters['fov'],
+                                                                             second_order=True)
+                        number_peaks_new = np.count_nonzero(first_order_new[:,-1]) + \
+                                           np.count_nonzero(second_order_new[:,-1])
                     except RuntimeError:
-                        bad_frames[name] = 'Dismissed result because it did not improve tuning: '+str(tuning_result)
-                        logwrite('No. '+str(frame_number[counter-1]) + ': Dismissed result because it did not improve tuning: '+str(tuning_result))
-                        tifffile.imsave(store+name, data)
-                        test_map.append(frame_coord)
+                        message += 'Dismissed result because it did not improve tuning: ' + \
+                                   str(Tuner.aberrations) + '. '
+                        Tuner.logwrite('No. '+str(number_frame) + \
+                                       ': Dismissed result because it did not improve tuning: '+str(Tuner.aberrations))
                         #reset aberrations to values before tuning
-                        kwargs = {'relative_aberrations': True}
-                        for key, value in tuning_result.items():
-                            kwargs[key] = -value
-                        autotune.image_grabber(acquire_image=False, **kwargs)
-    
+                        Tuner.image_grabber(acquire_image=False, relative_aberrations=False,
+                                            aberrations=Tuner.aberrations_tracklist[0])
+                        missing_peakss = 0
+                    
                     else:
                         if number_peaks_new > number_peaks:
-                            tifffile.imsave(store+name, data_new)
+                            data = data_new
                             #add new focus as offset to all coordinates
-                            for i in range(len(map_coords)):
-                                map_coords[i] = np.array(map_coords[i])
-                                map_coords[i][3] += tuning_result['EHTFocus']*1e-9
-                                map_coords[i] = tuple(map_coords[i])
-                            test_map.append(map_coords[counter-1])
+                            for i in range(len(self.map_coords)):
+                                temp_coord = np.array(self.map_coords[i])
+                                temp_coord[i][3] += Tuner.aberrations['EHTFocus']*1e-9
+                                self.map_coords[i] = tuple(temp_coord[i])
                             missing_peaks = 0
                         else:
-                            bad_frames[name] = 'Dismissed result because it did not improve tuning: '+str(tuning_result)
-                            logwrite('No. '+str(frame_number[counter-1]) + ': Dismissed result because it did not improve tuning: '+str(tuning_result))
-                            tifffile.imsave(store+name, data)
-                            test_map.append(frame_coord)
+                            message = 'Dismissed result because it did not improve tuning: '+str(Tuner.aberrations)
+                            Tuner.logwrite('No. '+str(number_frame) + \
+                                           ': Dismissed result because it did not improve tuning: ' + \
+                                           str(Tuner.aberrations))
                             #reset aberrations to values before tuning
-                            kwargs = {'relative_aberrations': True}
-                            for key, value in tuning_result.items():
-                                kwargs[key] = -value
-                            autotune.image_grabber(acquire_image=False, **kwargs)
+                            Tuner.image_grabber(acquire_image=False, relative_aberrations=False,
+                                            aberrations=Tuner.aberrations_tracklist[0])
                             missing_peaks=0
-    
-            else:
-                tifffile.imsave(store+name, data)
-                test_map.append(frame_coord)        
+        
+        return (data, message)
 
     def interpolation(self, target):
         """
@@ -522,7 +518,7 @@ class Mapping(object):
                         if self.switches.get('blank_beam'):
                                 self.as2.set_property_as_float('C_Blank', 0)
 
-                        self.handle_autotuning()
+                        data, message = self.handle_autotuning(frame_number[counter-1])
 
                         if self.switches.get('blank_beam'):
                                 self.as2.set_property_as_float('C_Blank', 1)
@@ -536,7 +532,6 @@ class Mapping(object):
                                 self.as2.set_property_as_float('C_Blank', 1)
     
                             tifffile.imsave(os.path.join(self.store, name), data)
-                            test_map.append(frame_coord)
                         else:
                             if self.switches.get('blank_beam'):
                                 self.as2.set_property_as_float('C_Blank', 0)
@@ -547,8 +542,8 @@ class Mapping(object):
                                 tifffile.imsave(os.path.join(self.store, name), data)
                             if self.switches.get('blank_beam'):
                                 self.as2.set_property_as_float('C_Blank', 1)
-                            test_map.append(frame_coord)
-    
+                    
+                    test_map.append(frame_coord)    
             else:
                 if frame_number[counter-1] is not None:
                     test_map.append(frame_coord)
