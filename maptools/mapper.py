@@ -199,7 +199,7 @@ class Mapping(object):
                         #reset aberrations to values before tuning
                         Tuner.image_grabber(acquire_image=False, relative_aberrations=False,
                                             aberrations=Tuner.aberrations_tracklist[0])
-                        missing_peakss = 0
+                        missing_peaks = 0
                     
                     else:
                         if number_peaks_new > number_peaks:
@@ -207,7 +207,7 @@ class Mapping(object):
                             #add new focus as offset to all coordinates
                             for i in range(len(self.map_coords)):
                                 temp_coord = np.array(self.map_coords[i])
-                                temp_coord[i][3] += Tuner.aberrations['EHTFocus']*1e-9
+                                temp_coord[i][3] += Tuner.aberrations['EHTFocus'] * 1e-9
                                 self.map_coords[i] = tuple(temp_coord[i])
                             missing_peaks = 0
                         else:

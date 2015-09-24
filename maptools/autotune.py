@@ -439,17 +439,17 @@ class Imaging(object):
             if kwargs.get('aberrations') is not None:
                 for key in keys:
                     if relative_aberrations:
-                        self.aberrations[key] = vt.as2_get_control(self.as2, controls[key]) + \
+                        self.aberrations[key] = vt.as2_get_control(self.as2, controls[key]) * 1e9 + \
                                                 kwargs['aberrations'].get(key, 0)
                     else:
-                        self.aberrations[key] = kwargs['aberrations'].get(key,
-                                                                          vt.as2_get_control(self.as2, controls[key]))
+                        self.aberrations[key] = \
+                            kwargs['aberrations'].get(key, vt.as2_get_control(self.as2, controls[key]) * 1e9)
 
                     if reset_aberrations:
-                        originals[key] = vt.as2_get_control(self.as2, controls[key])
+                        originals[key] = vt.as2_get_control(self.as2, controls[key]) * 1e9
             # Apply corrector values to the Hardware
             for key in self.aberrations.keys():
-                vt.as2_set_control(controls[key], self.aberrations[key])
+                vt.as2_set_control(controls[key], self.aberrations[key] * 1e-9)
 
             if acquire_image:
                 assert self.superscan is not None, \
@@ -465,7 +465,7 @@ class Imaging(object):
                     return_image = im[0].data
             # reset all corrector values to the original ones
             for key in originals.keys():
-                vt.as2_set_control(controls[key], originals[key])
+                vt.as2_set_control(controls[key], originals[key] * 1e-9)
                 self.aberrations[key] = originals[key]
 
         # e.g. offline mode
