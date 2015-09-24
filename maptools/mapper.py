@@ -148,9 +148,9 @@ class Mapping(object):
         message = ''
         data = Tuner.image_grabber(frame_parameters=self.frame_parameters)
         #name = str('%.4d_%.3f_%.3f.tif' % (frame_number[counter-1],stagex*1e6,stagey*1e6))
-        dirt_mask = Tuner.dirt_detector(image=data)
+        Tuner.dirt_mask = Tuner.dirt_detector(image=data)
         #calculate the fraction of 'bad' pixels and save frame if fraction is >0.5, but add note to "bad_frames" file
-        if np.sum(dirt_mask)/(np.shape(data)[0]*np.shape(data)[1]) > 0.5:
+        if np.sum(Tuner.dirt_mask)/(np.shape(data)[0]*np.shape(data)[1]) > 0.5:
             message += 'Over 50% dirt coverage. '
             Tuner.logwrite('Over 50% dirt coverage in No. ' + number_frame)
         else:
@@ -173,10 +173,16 @@ class Mapping(object):
                 Tuner.logwrite('No. '+str(number_frame) + ': Retune because '+str(missing_peaks) +
                                ' peaks miss in total.')
                 message += 'Retune because '+str(missing_peaks)+' peaks miss in total. '
+                
+                # find place in the image with least dirt to do tuning there
+                clean_spot, size = Tuner.find_biggest_clean_spot()
+                clean_spot_nm = clean_spot * self.frame_parameters['fov'] / self.frame_parameters['size_pixels']
+                tune_frame_parameters = {'size_pixels': (512, 512), 'center': (0,0), 'pixeltime': 8, 'fov': 4,
+                                         'rotation': 0, 'center': clean_spot_nm}
                 try:
-                    Tuner.kill_aberrations()
+                    Tuner.kill_aberrations(frame_parameters=tune_frame_parameters)
                     if self.event is not None and self.event.is_set():
-                        return data, message
+                        return (data, message)
                 except DirtError:
                     Tuner.logwrite('No. '+str(number_frame) + ': Tuning was aborted because of dirt coming in.')
                     message += 'Tuning was aborted because of dirt coming in. '

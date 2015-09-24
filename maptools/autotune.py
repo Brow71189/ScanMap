@@ -13,7 +13,7 @@ import warnings
 
 import numpy as np
 import scipy.optimize
-from scipy.ndimage import gaussian_filter, uniform_filter
+from scipy.ndimage import gaussian_filter, uniform_filter, distance_transform_cdt
 from scipy.signal import fftconvolve
 #import cv2
 
@@ -151,6 +151,7 @@ class Imaging(object):
             - pixeltime: Time per pixel (us)
             - fov: Field-of-view of the acquired frame (nm)
             - rotation: Scan rotation (deg)
+            - center: Center of the scan (y, x, nm)
 
         detectors : optional, dictionary
             By default, only MAADF is used. Dictionary has to be in the form:
@@ -179,6 +180,8 @@ class Imaging(object):
                 parameters['fov_nm'] = frame_parameters['fov']
             if frame_parameters.get('rotation') is not None:
                 parameters['rotation_rad'] = frame_parameters['rotation']
+            if frame_parameters.get('center') is not None:
+                parameters['center_nm'] = frame_parameters['center']
         else:
             parameters = None
 
@@ -194,6 +197,14 @@ class Imaging(object):
     def dirt_detector(self, median_blur_diam=59, gaussian_blur_radius=3, **kwargs):
         """
         Returns a mask with the same shape as "image" that is 1 where there is dirt and 0 otherwise
+        Possible keyword arguments are (all optional):
+            - image : ndarray
+                image data where dirt should be found. If not given, the image stored in the instance variable of
+                Imaging class is used.
+            - dirt_threshold : float
+                threshold which lies in between the brightness of the dirt and the brightness of the underlying
+                graphene. If not given, the number stored in the instance variable of Imaging class is used.
+                If this is also not set, the threshold is determined automatically.
         """
         # check for optional input arguments that can update instance variables
         if kwargs.get('image') is not None:
@@ -231,9 +242,20 @@ class Imaging(object):
 
         return result
 
-    def find_biggest_clean_spot(self, image):
-        pass
+    def find_biggest_clean_spot(self, **kwargs):
+        """
+        Applies a distance transform to the dirt mask of an image and returns the position and height of the maximum
+        in the distance transform. All keyword arguments are directly passed to dirt_detector.
+        """
+        if self.mask is None:
+            self.mask = self.dirt_detector(**kwargs)
+        
+        dist_mask = distance_transform_cdt(self.mask*-1+1)
+        
+        biggest_spot = np.unravel_index(np.argmax(dist_mask), np.shape(self.mask))
+        max_distance = np.amax(dist_mask)
 
+        return (biggest_spot, max_distance)
 
     def find_dirt_threshold(self, **kwargs):
         """
@@ -250,7 +272,7 @@ class Imaging(object):
             self.image = kwargs.pop('image')
 
         # set up the search range
-        search_range = np.mgrid[0:2*np.mean(self.image):30j]
+        search_range = np.mgrid[0:3*np.mean(self.image):30j]
         mask_sizes = []
         dirt_start = None
         dirt_end = None
@@ -268,7 +290,7 @@ class Imaging(object):
             mask_sizes.append(mask_size)
 
         # determine if there was really dirt present and return an appropriate threshold
-        if dirt_end-dirt_start < 3*(search_range[1] - search_range[0]):
+        if dirt_end-dirt_start < 3*search_range[1]:
         # if distance between maximum and minimum mask size is very small, no dirt is present
         # set threshold to a value 25% over dirt_end
             threshold = dirt_end * 1.25
@@ -280,9 +302,9 @@ class Imaging(object):
         #self.dirt_threshold = threshold
 
         if debug_mode:
-            return (self.dirt_threshold, search_range, np.array(mask_sizes), dirt_start, dirt_end)
+            return (threshold, search_range, np.array(mask_sizes), dirt_start, dirt_end)
         else:
-            return self.dirt_threshold
+            return threshold
 
     def graphene_generator(self, imsize, impix, rotation):
         rotation = rotation*np.pi/180
