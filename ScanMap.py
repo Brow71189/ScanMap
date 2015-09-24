@@ -4,6 +4,7 @@ import logging
 import numpy as np
 import threading
 import warnings
+import os
 
 try:
     from importlib import reload
@@ -38,19 +39,9 @@ from .maptools import mapper
 
 _ = gettext.gettext
 
-coord_dict = {'top-left': None, 'top-right': None, 'bottom-right': None, 'bottom-left': None}
-do_autofocus = False
-use_z_drive = False
-auto_offset=False
-auto_rotation=False
-acquire_overview = True
-compensate_stage_error = False
-blank_beam = False
-FOV = Size = Offset = Time = Rotation = None
-Number_of_images = 1
-
 class ScanMapPanelDelegate(object):
-
+    
+    
     def __init__(self, api):
         self.__api = api
         self.panel_id = 'ScanMap-Panel'
@@ -59,6 +50,14 @@ class ScanMapPanelDelegate(object):
         self.panel_position = 'right'
         self.superscan = None
         self.as2 = None
+        self.coord_dict = {'top-left': None, 'top-right': None, 'bottom-right': None, 'bottom-left': None}
+        self.switches = {}
+        self.frame_parameters = {'size_pixels': None, 'pixeltime': None, 'fov': None, 'rotation': 0}
+        self.offset = 0
+        self.number_of_images = 1
+        self.savepath = None
+        self._checkboxes = {'do_autotuning': False, 'use_z_drive': False, 'auto_offset': False, 'auto_rotation': False,
+                            'compensate_stage_error': False, 'acquire_overview': True, 'blank_beam': False}
     
     def create_panel_widget(self, ui, document_controller):
         
@@ -67,82 +66,95 @@ class ScanMapPanelDelegate(object):
         
         column = ui.create_column_widget()        
         
-        def FOV_finished(text):
-            global FOV
+        def fov_finished(text):
             if len(text) > 0:
                 try:
-                    FOV = float(text)
-                    logging.info('Setting FOV to: ' + str(FOV) + ' nm.')
+                    fov = float(text)
+                    self.frame_parameters['fov'] = fov
+                    logging.info('Setting FOV to: ' + str(fov) + ' nm.')
                 except ValueError:
                     logging.warn(text + ' is not a valid FOV. Please input a floating point number.')
-                    FOV_line_edit.select_all()
+                    fov_line_edit.select_all()
                     
                 self.total_number_frames()
             
-        def Size_finished(text):
-            global Size
+        def size_finished(text):
             if len(text) > 0:
                 try:
-                    Size = int(text)
-                    logging.info('Setting Image Size to: ' + str(Size))
+                    size = int(text)
+                    self.frame_parameters['size_pixels'] = size
+                    logging.info('Setting Image Size to: ' + str(size))
                 except ValueError:
                     logging.warn(text + ' is not a valid size. Please input an integer number.')
-                    Size_line_edit.select_all()
+                    size_line_edit.select_all()
                     
                 self.total_number_frames()
             
-        def Offset_finished(text):
-            global Offset
+        def offset_finished(text):
             if len(text) > 0:
                 try:
-                    Offset = float(text)
-                    logging.info('Setting Offset to: ' + str(Offset))
+                    offset = float(text)
+                    self.offset = offset
+                    logging.info('Setting Offset to: ' + str(offset))
                 except ValueError:
                     logging.warn(text + ' is not a valid Offset. Please input a floating point number.')
-                    Offset_line_edit.select_all()
+                    offset_line_edit.select_all()
                     
                 self.total_number_frames()
         
-        def Time_finished(text):
-            global Time
+        def time_finished(text):
             if len(text) > 0:
                 try:
-                    Time = float(text)
-                    logging.info('Setting pixeltime to: ' + str(Time) + ' us.')
+                    time = float(text)
+                    self.frame_parameters['pixeltime'] = time
+                    logging.info('Setting pixeltime to: ' + str(time) + ' us.')
                 except (TypeError, ValueError):
                     try:
-                        Time = [float(s) for s in text.split(',')]
-                        logging.info('Pixel times will be (in this order): ' + str(Time) + ' us.')
+                        time = [float(s) for s in text.split(',')]
+                        self.frame_parameters['pixeltime'] = time
+                        logging.info('Pixel times will be (in this order): ' + str(time) + ' us.')
                     except ValueError:
                         logging.warn(text + ' is not a valid Time. Please input a floating point number or a comma-seperated list of floats')
-                        Time_line_edit.select_all()
+                        time_line_edit.select_all()
                 
                 self.total_number_frames()                
             
-        def Rotation_finished(text):
-            global Rotation
+        def rotation_finished(text):
             if len(text) > 0:
                 try:
-                    Rotation = float(text)
-                    logging.info('Setting frame rotation to: ' + str(Rotation))
+                    rotation = float(text)
+                    self.frame_parameters['rotation'] = rotation
+                    logging.info('Setting frame rotation to: ' + str(rotation))
                 except ValueError:
                     logging.warn(text + ' is not a valid Frame Rotation. Please input a floating point number.')
-                    Rotation_line_edit.select_all()
+                    rotation_line_edit.select_all()
                 
-        def Number_of_images(text):
-            global Number_of_images
+        def number_of_images_finished(text):
             if len(text) > 0:
                 try:
-                    Number_of_images = int(text)
-                    if Number_of_images > 1:
-                        logging.info(str(Number_of_images)+ ' images will be recorded at each location.')
+                    self.number_of_images = int(text)
+                    if self.number_of_images > 1:
+                        logging.info(str(self.number_of_images)+ ' images will be recorded at each location.')
                     else:
                         logging.info('One image will be recorded at each location.')
                 except ValueError:
                     logging.warn(text + ' is not a valid number. Please input an integer number.')
-                    Number_line_edit.select_all()
+                    number_line_edit.select_all()
                     
                 self.total_number_frames()
+                
+        def saving_finished(text):
+            if len(text)>0:
+                if os.path.isabs(text):
+                    self.savepath = text
+                else:
+                    logging.warn(text+' is not an absolute path. Please enter a complete pathname starting from root.')
+            else:
+                self.savepath = None
+                
+        def checkbox_changed(check_state):
+            for key, value in self._checkboxes.items():
+                self.switches[key] = value.checked
         
         def tl_button_clicked():
             self.save_coords('top-left')
@@ -164,89 +176,46 @@ class ScanMapPanelDelegate(object):
             self.drive_coords('bottom-left')
         def drive_br_button_clicked():
             self.drive_coords('bottom-right')
+       
         def done_button_clicked():
-            global FOV, Offset, Size, Time, Rotation, do_autofocus, use_z_drive, auto_offset, auto_rotation 
-            global Number_of_images, acquire_overview, compensate_stage_error, blank_beam
-            
+            saving_finished(savepath_line_edit.text)
+            checkbox_changed('obligatory string argument')
             self.total_number_frames()
-            
-            if z_drive_checkbox.check_state == 'checked':
-                logging.info('Using z drive in addition to Fine Focus for focus adjustment.')
-                use_z_drive = True
-            else:
-                logging.info('Using only Fine focus for focus adjustment')
-                use_z_drive = False
-                
-            if autofocus_checkbox.check_state == 'checked':
-                logging.info('Autofocus: ON')
-                do_autofocus = True
-            else:
-                logging.info('Autofocus: OFF')
-                do_autofocus = False
-            
-            if auto_rotation_checkbox.check_state == 'checked':
-                logging.info('Auto Rotation: ON')
-                auto_rotation= True
-            else:
-                logging.info('Auto Rotation: OFF')
-                auto_rotation = False
-            
-            if auto_offset_checkbox.check_state == 'checked':
-                logging.info('Auto Offset: ON')
-                auto_offset = True
-            else:
-                logging.info('Auto Offset: OFF')
-                auto_offset = False
-            
-            if overview_checkbox.check_state == 'checked':
-                logging.info('Acquiring an overview image at the end of the mapping process.')
-                acquire_overview = True
-            else:
-                acquire_overview = False
-            
-            if correct_stage_errors_checkbox.check_state == 'checked':
-                logging.info('Correcting the stage movement for errors.')
-                compensate_stage_error = True
-            else:
-                compensate_stage_error = False
-            
-            if blank_checkbox.check_state == 'checked':
-                logging.info('Beam blanker: ON')
-                blank_beam = True
-            else:
-                blank_beam = False
-                
-            logging.info('FOV: ' + str(FOV)+' nm')
-            logging.info('Offset: ' + str(Offset)+' x image size')
-            logging.info('Frame Rotation: ' + str(Rotation)+' deg')
-            logging.info('Size: ' + str(Size)+' px')
-            logging.info('Time: ' + str(Time)+' us')
-            logging.info('Number of images per location: ' + str(Number_of_images))
-            
-#            try:
-#                reload(vt)
-#            except:
-#                logging.warn('Couldn\'t reload ViennaTools!')
             
             try:
                 reload(mapper)
             except:
                 logging.warn('Couldn\'t reload mapper')
+                
+            if None in self.frame_parameters.values():
+                logging.warn('You must specify all scan parameters (e.g. FOV, framesize, rotation, pixeltime) ' +
+                             'before starting the map.')
+                return
+            if None in self.coord_dict.values():
+                logging.warn('You must save all four corners before starting the map.')
+                return
+            if self.savepath is None:
+                logging.warn('You must input a valid savepath to start the map.')
+                return
             
-            if not None in coord_dict.values() and not None in (FOV, Size, Offset, Time, Rotation, Number_of_images):
-                self.event = threading.Event()
-                frame_parameters = {'size_pixels': Size, 'fov': FOV, 'pixeltime': Time, 'rotation': Rotation}
-                switches = {'auto_offset': auto_offset, 'auto_rotation': auto_rotation, 'do_autotuning': do_autofocus,
-                            'blank_beam': blank_beam, 'acquire_overview': acquire_overview,
-                            'compensate_stage_error': compensate_stage_error}
-                mapping = mapper.Mapping(frame_parameters=frame_parameters, switches=switches, coord_dict=coord_dict,
-                                         superscan=self.superscan, as2=self.as2, number_of_images=Number_of_images,
-                                         document_controller=document_controller, savepath='Z:/ScanMap/',
-                                         offset=Offset, event=self.event)
-                self.thread = threading.Thread(target=mapping.SuperScan_mapping)
-                self.thread.start()
-            else:
-                logging.warn('You didn\'t specify all necessary parameters.')
+            Mapper = mapper.Mapping(superscan=self.superscan, as2=self.as2, document_controller=document_controller,
+                                    coord_dict=self.coord_dict, switches=self.switches)
+                                    
+            Mapper.number_of_images = self.number_of_images
+            Mapper.offset = self.offset
+            Mapper.savepath = self.savepath
+            
+            logging.info('FOV: ' + str(self.frame_parameters['fov'])+' nm')
+            logging.info('Offset: ' + str(self.offset)+' x image size')
+            logging.info('Frame Rotation: ' + str(self.frame_parameters['rotation'])+' deg')
+            logging.info('Size: ' + str(self.frame_parameters['size_pixels'])+' px')
+            logging.info('Time: ' + str(self.frame_parameters['pixeltime'])+' us')
+            logging.info('Number of images per location: ' + str(self.number_of_images))
+            
+            self.event = threading.Event()
+            Mapper.event = self.event
+            self.thread = threading.Thread(target=Mapper.SuperScan_mapping)
+            self.thread.start()
 
         def abort_button_clicked():
             #self.stop_tuning()
@@ -270,6 +239,7 @@ class ScanMapPanelDelegate(object):
         checkbox_row1 = ui.create_row_widget()
         checkbox_row2 = ui.create_row_widget()
         checkbox_row3 = ui.create_row_widget()
+        savepath_row = ui.create_row_widget()
         done_button_row = ui.create_row_widget()
 
         column.add_spacing(20)        
@@ -303,6 +273,8 @@ class ScanMapPanelDelegate(object):
         column.add(checkbox_row2)
         column.add_spacing(5)
         column.add(checkbox_row3)
+        column.add_spacing(5)
+        column.add(savepath_row)
         column.add_spacing(20)
         column.add(done_button_row)
         column.add_stretch()
@@ -325,40 +297,47 @@ class ScanMapPanelDelegate(object):
         #                   checkbox_row1                   #
         #                   checkbox_row2                   #
         #                   checkbox_row3                   #
+        #                    savepath_row                   #
         #                   done_button_row                 #
         #####################################################
         
         left_edit_row1.add(ui.create_label_widget(_("FOV per Frame (nm): ")))
-        FOV_line_edit = ui.create_line_edit_widget()
-        FOV_line_edit.on_editing_finished = FOV_finished
-        left_edit_row1.add(FOV_line_edit)
+        fov_line_edit = ui.create_line_edit_widget()
+        fov_line_edit.on_editing_finished = fov_finished
+        left_edit_row1.add(fov_line_edit)
         
         right_edit_row1.add(ui.create_label_widget(_("Framesize (px): ")))
-        Size_line_edit = ui.create_line_edit_widget()
-        Size_line_edit.on_editing_finished = Size_finished
-        right_edit_row1.add(Size_line_edit)
+        size_line_edit = ui.create_line_edit_widget()
+        size_line_edit.on_editing_finished = size_finished
+        right_edit_row1.add(size_line_edit)
         
         left_edit_row2.add(ui.create_label_widget(_("Scan roation (deg): ")))
-        Rotation_line_edit = ui.create_line_edit_widget()
-        Rotation_line_edit.on_editing_finished = Rotation_finished
-        left_edit_row2.add(Rotation_line_edit)
+        rotation_line_edit = ui.create_line_edit_widget()
+        rotation_line_edit.on_editing_finished = rotation_finished
+        left_edit_row2.add(rotation_line_edit)
         
         right_edit_row2.add(ui.create_label_widget(_("Offset (images): ")))
-        Offset_line_edit = ui.create_line_edit_widget()
-        Offset_line_edit.on_editing_finished = Offset_finished
-        right_edit_row2.add(Offset_line_edit)
+        offset_line_edit = ui.create_line_edit_widget()
+        offset_line_edit.on_editing_finished = offset_finished
+        right_edit_row2.add(offset_line_edit)
         
         left_edit_row3.add(ui.create_label_widget(_("Pixeltime (us): ")))
-        Time_line_edit = ui.create_line_edit_widget()
-        Time_line_edit.placeholder_text = 'Number or comma-separated list of numbers'
-        Time_line_edit.on_editing_finished = Time_finished
-        left_edit_row3.add(Time_line_edit)
+        time_line_edit = ui.create_line_edit_widget()
+        time_line_edit.placeholder_text = 'Number or comma-separated list of numbers'
+        time_line_edit.on_editing_finished = time_finished
+        left_edit_row3.add(time_line_edit)
         
         right_edit_row3.add(ui.create_label_widget(_("Images per location: ")))
-        Number_line_edit = ui.create_line_edit_widget()
-        Number_line_edit.placeholder_text = 'Defaults to 1'
-        Number_line_edit.on_editing_finished = Number_of_images
-        right_edit_row3.add(Number_line_edit)
+        number_line_edit = ui.create_line_edit_widget()
+        number_line_edit.placeholder_text = 'Defaults to 1'
+        number_line_edit.on_editing_finished = number_of_images_finished
+        right_edit_row3.add(number_line_edit)
+        
+        savepath_row.add(ui.create_label_widget(_("Savepath: ")))
+        savepath_line_edit = ui.create_line_edit_widget()
+        savepath_line_edit.text = "Z:/ScanMap/"
+        savepath_line_edit.on_editing_finished = saving_finished
+        savepath_row.add(savepath_line_edit)
 
         tl_button = ui.create_push_button_widget(_("Top\nLeft"))
         tr_button = ui.create_push_button_widget(_("Top\nRight"))
@@ -372,14 +351,21 @@ class ScanMapPanelDelegate(object):
         abort_button = ui.create_push_button_widget(_("Abort"))
    
         z_drive_checkbox = ui.create_check_box_widget(_("Use Z Drive"))
-        autofocus_checkbox = ui.create_check_box_widget(_("Autofocus"))
+        z_drive_checkbox.on_check_state_changed = checkbox_changed
+        autotuning_checkbox = ui.create_check_box_widget(_("Autotuning"))
+        autotuning_checkbox.on_check_state_changed = checkbox_changed
         auto_offset_checkbox = ui.create_check_box_widget(_("Auto Offset"))
+        auto_offset_checkbox.on_check_state_changed = checkbox_changed
         auto_rotation_checkbox = ui.create_check_box_widget(_("Auto Rotation"))
+        auto_rotation_checkbox.on_check_state_changed = checkbox_changed
         overview_checkbox = ui.create_check_box_widget(_("Acquire Overview"))
         overview_checkbox.check_state = 'checked'
+        overview_checkbox.on_check_state_changed = checkbox_changed
         blank_checkbox = ui.create_check_box_widget(_("Blank beam between acquisitions"))
+        blank_checkbox.on_check_state_changed = checkbox_changed
         correct_stage_errors_checkbox = ui.create_check_box_widget(_("Compensate Stage Movement Errors"))
-            
+        correct_stage_errors_checkbox.on_check_state_changed = checkbox_changed
+        
         tl_button.on_clicked = tl_button_clicked
         tr_button.on_clicked = tr_button_clicked
         bl_button.on_clicked = bl_button_clicked
@@ -407,7 +393,7 @@ class ScanMapPanelDelegate(object):
         right_buttons_row2.add_spacing(3)
         right_buttons_row2.add(drive_br)
         
-        checkbox_row1.add(autofocus_checkbox)
+        checkbox_row1.add(autotuning_checkbox)
         checkbox_row1.add_spacing(4)
         checkbox_row1.add(auto_rotation_checkbox)        
         checkbox_row1.add_spacing(4)
@@ -428,15 +414,22 @@ class ScanMapPanelDelegate(object):
         done_button_row.add_spacing(15)
         done_button_row.add(abort_button)
         
+        self._checkboxes['use_z_drive'] = z_drive_checkbox
+        self._checkboxes['do_autotuning'] = autotuning_checkbox
+        self._checkboxes['auto_offset'] = auto_offset_checkbox
+        self._checkboxes['auto_rotation'] = auto_rotation_checkbox
+        self._checkboxes['acquire_overview'] = overview_checkbox
+        self._checkboxes['blank_beam'] = blank_checkbox
+        self._checkboxes['compensate_stage_error'] = correct_stage_errors_checkbox
+        
         return column
         
     def save_coords(self, position):
-        global coord_dict
         try:
             reload(vt)
         except:
             logging.warn('Could not reload ViennaTools!')
-        coord_dict[position] = (vt.as2_get_control(self.as2, 'StageOutX'), vt.as2_get_control(self.as2, 'StageOutY'), 
+        self.coord_dict[position] = (vt.as2_get_control(self.as2, 'StageOutX'), vt.as2_get_control(self.as2, 'StageOutY'), 
                                 vt.as2_get_control(self.as2, 'StageOutZ'), vt.as2_get_control(self.as2, 'EHTFocus'))
         logging.info('Saved x: ' +
                      str(vt.as2_get_control(self.as2, 'StageOutX')) + ', y: ' +
@@ -445,39 +438,41 @@ class ScanMapPanelDelegate(object):
                      str(vt.as2_get_control(self.as2, 'EHTFocus')) + ' as ' + position + ' corner.')
 
     def drive_coords(self, position):
-        global coord_dict
-        if coord_dict[position] is None:
+        if self.coord_dict[position] is None:
             logging.warn('You haven\'t set the '+position+' corner yet.')
         else:
-            logging.info('Going to '+str(position)+' corner: x: '+str(coord_dict[position][0])+', y: '+str(coord_dict[position][1])+', z: '+str(coord_dict[position][2])+', focus: '+str(coord_dict[position][3]))
-            vt.as2_set_control(self.as2, 'StageOutX', coord_dict[position][0])
-            vt.as2_set_control(self.as2, 'StageOutY', coord_dict[position][1])
-            vt.as2_set_control(self.as2, 'StageOutZ', coord_dict[position][2])
-            vt.as2_set_control(self.as2, 'EHTFocus', coord_dict[position][3])
+            logging.info('Going to '+str(position)+' corner: x: '+str(self.coord_dict[position][0])+', y: '+str(self.coord_dict[position][1])+', z: '+str(self.coord_dict[position][2])+', focus: '+str(self.coord_dict[position][3]))
+            vt.as2_set_control(self.as2, 'StageOutX', self.coord_dict[position][0])
+            vt.as2_set_control(self.as2, 'StageOutY', self.coord_dict[position][1])
+            vt.as2_set_control(self.as2, 'EHTFocus', self.coord_dict[position][3])
+            if self.switches['use_z_drive']:          
+                vt.as2_set_control(self.as2, 'StageOutZ', self.coord_dict[position][2])
             
     def total_number_frames(self):
-        global Offset, FOV, Size, Time, coord_dict, Number_of_images
-        
-        if not None in coord_dict.values() and not None in (Offset, FOV, Size, Time):
+        if not None in self.coord_dict.values() and not None in self.frame_parameters.values():
             corners = ('top-left', 'top-right', 'bottom-right', 'bottom-left')
             coords = []
             for corner in corners:
-                coords.append(coord_dict[corner])
-            coord_dict_sorted = mapper.sort_quadrangle(coords)
+                coords.append(self.coord_dict[corner])
+            self.coord_dict_sorted = mapper.sort_quadrangle(coords)
             coords = []
             for corner in corners:
-                coords.append(coord_dict_sorted[corner])
-            imsize = FOV*1e-9
-            distance = Offset*imsize    
+                coords.append(self.coord_dict_sorted[corner])
+            imsize = self.frame_parameters['fov']*1e-9
+            distance = self.offset*imsize    
             leftX = np.min((coords[0][0],coords[3][0]))
             rightX = np.max((coords[1][0],coords[2][0]))
             topY = np.max((coords[0][1],coords[1][1]))
             botY = np.min((coords[2][1],coords[3][1]))
             num_subframes = ( int(np.abs(rightX-leftX)/(imsize+distance))+1, int(np.abs(topY-botY)/(imsize+distance))+1 )
             
-            logging.info('With the current settings, %dx%d frames (%d in total) will be taken.' % (num_subframes[0], num_subframes[1], num_subframes[0]*num_subframes[1]))
-            logging.info('A total area of %.4f um2 will be scanned.' % (num_subframes[0]*num_subframes[1]*(FOV*1e-3)**2))
-            logging.info('Approximate mapping time: %.0f s' %(num_subframes[0]*num_subframes[1]*(Size**2*np.sum(Time)*1e-6 + 3.5)))
+            logging.info('With the current settings, %dx%d frames (%d in total) will be taken.'
+                         % (num_subframes[0], num_subframes[1], num_subframes[0]*num_subframes[1]))
+            logging.info('A total area of %.4f um2 will be scanned.'
+                         % (num_subframes[0]*num_subframes[1]*(self.frame_parameters['fov']*1e-3)**2))
+            logging.info('Approximate mapping time: %.0f s' 
+                         % (num_subframes[0]*num_subframes[1]*(self.frame_parameters['size_pixels']**2
+                            *np.sum(self.frame_parameters['pixeltime'])*1e-6 + 4)))
     
 
 class ScanMapExtension(object):
