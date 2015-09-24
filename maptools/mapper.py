@@ -195,7 +195,8 @@ class Mapping(object):
                         message += 'Dismissed result because it did not improve tuning: ' + \
                                    str(Tuner.aberrations) + '. '
                         Tuner.logwrite('No. '+str(number_frame) + \
-                                       ': Dismissed result because it did not improve tuning: '+str(Tuner.aberrations))
+                                       ': Dismissed result because it did not improve tuning: ' + \
+                                       str(Tuner.aberrations))
                         #reset aberrations to values before tuning
                         Tuner.image_grabber(acquire_image=False, relative_aberrations=False,
                                             aberrations=Tuner.aberrations_tracklist[0])
@@ -211,8 +212,9 @@ class Mapping(object):
                                 self.map_coords[i] = tuple(temp_coord[i])
                             missing_peaks = 0
                         else:
-                            message = 'Dismissed result because it did not improve tuning: '+str(Tuner.aberrations)
-                            Tuner.logwrite('No. '+str(number_frame) + \
+                            message += 'Dismissed result because it did not improve tuning: ' + \
+                                       str(Tuner.aberrations) + '. '
+                            Tuner.logwrite('No. ' + str(number_frame) + \
                                            ': Dismissed result because it did not improve tuning: ' + \
                                            str(Tuner.aberrations))
                             #reset aberrations to values before tuning
