@@ -28,6 +28,7 @@ integration_radius = 1
 dirt_threshold = None
 save_images = False
 savepath = None
+merit = 'peaks'
 
 class SuperScanTunerPanelDelegate(object):
     def __init__(self, api):
@@ -120,10 +121,15 @@ class SuperScanTunerPanelDelegate(object):
                     logging.warn(text+' is not an absolute path. Please enter a complete pathname starting from root.')
             else:
                 savepath = None
-
+                
+        def merit_combo_box_changed(item):
+            global merit
+            merit = str(item)
+            logging.info('Using ' + str(item) + ' merit for tuning.')
+            
         def start_button_clicked():
             global focus_step, astig2f_step, astig3f_step, coma_step, average_frames, integration_radius
-            global dirt_threshold, save_images, savepath
+            global dirt_threshold, save_images, savepath, merit
 
 
             superscan = self.__api.get_hardware_source_by_id('scan_controller', '1')
@@ -178,7 +184,8 @@ class SuperScanTunerPanelDelegate(object):
                                     integration_radius=integration_radius, keys=keys, as2=as2, superscan=superscan,
                                     document_controller=document_controller)
 
-            self.thread = threading.Thread(target=Tuner.kill_aberrations, kwargs={'dirt_detection': dirt_detection})
+            self.thread = threading.Thread(target=Tuner.kill_aberrations, kwargs={'dirt_detection': dirt_detection,
+                                                                                  'merit': merit})
             #self.thread = threading.Thread(target=do_something, args=(self.event, document_controller))
 #            self.thread = threading.Thread(target=autotune.kill_aberrations,
 #                                           kwargs={'steps': steps,
@@ -193,9 +200,8 @@ class SuperScanTunerPanelDelegate(object):
 #                                                   'superscan': superscan,
 #                                                   'as2': as2})
 
-            self.thread.start()
-
             logging.info('Started tuning.')
+            self.thread.start()
 
             start_button.visible = False
             abort_button.visible = True
@@ -317,6 +323,13 @@ class SuperScanTunerPanelDelegate(object):
         button_row.add(abort_button)
 
         abort_button.visible = False
+        
+        combo_box_row = ui.create_row_widget()
+        combo_box = ui.create_combo_box_widget()
+        combo_box.items = ['peaks', 'symmetry', 'combined']
+        combo_box.on_current_item_changed = merit_combo_box_changed
+        combo_box_row.add(ui.create_label_widget('Merit used for tuning: '))
+        combo_box_row.add(combo_box)
 
         column.add_spacing(15)
         column.add(descriptor_row1)
@@ -335,6 +348,8 @@ class SuperScanTunerPanelDelegate(object):
         column.add_spacing(15)
         column.add(checkbox_row2)
         column.add(parameters_row5)
+        column.add_spacing(15)
+        column.add(combo_box_row)
         column.add_spacing(25)
         column.add(button_row)
         column.add_stretch()
