@@ -46,7 +46,7 @@ from . import autoalign
 
 #global variable to store aberrations when simulating them (see function image_grabber() for details)
 #global_aberrations = {'EHTFocus': 0, 'C12_a': 5, 'C12_b': 0, 'C21_a': 801.0, 'C21_b': 0, 'C23_a': -500, 'C23_b': 0}
-global_aberrations = {'EHTFocus': 2, 'C12_a': 0, 'C12_b': -3, 'C21_a': 0, 'C21_b': 0, 'C23_a': 85, 'C23_b': 0}
+global_aberrations = {'EHTFocus': 2, 'C12_a': 0, 'C12_b': -3, 'C21_a': 0, 'C21_b': 0, 'C23_a': 185, 'C23_b': 0}
 
 
 
@@ -916,7 +916,7 @@ class Tuning(Peaking):
                 #setting the stepsize to new value
                 self.steps[key] *= step_multiplicator
                 # save best tuning
-                #self.merit_history[merit].append(current)
+                self.merit_history[merit].append(current)
                 # Save new configuration
                 #self.aberrations_tracklist.append(self.aberrations.copy())
                 break
@@ -932,7 +932,7 @@ class Tuning(Peaking):
                 #update hardware
                 self.image_grabber(acquire_image=False, aberrations=aberrations)
                 # save best tuning
-                #self.merit_history[merit].append(current)
+                self.merit_history[merit].append(current)
                 # Save new configuration                
                 #self.aberrations_tracklist.append(self.aberrations.copy())
                 break
@@ -953,7 +953,7 @@ class Tuning(Peaking):
         self.logwrite('Latest ' + merit + ' merit: ' + str(current))
         return direction
 
-    def kill_aberrations(self, dirt_detection=True, **kwargs):
+    def kill_aberrations(self, dirt_detection=True, merit = 'peaks', **kwargs):
         # Check input for arguments that override class variables
         if kwargs.get('steps') is not None:
             self.steps = kwargs['steps']
@@ -970,11 +970,15 @@ class Tuning(Peaking):
             self.steps = {'EHTFocus': 1, 'C12_a': 1, 'C12_b': 1, 'C21_a': 150, 'C21_b': 150, 'C23_a': 75, 'C23_b': 75}
         if self.keys is None:
             self.keys = ['EHTFocus', 'C12_a', 'C21_a', 'C23_a', 'C12_b', 'C21_b', 'C23_b']
-            
+        
+        step_originals = self.steps.copy()
+        self.aberrations_tracklist = []
+        self.merit_history = {}
+        for key in self._merits.keys():
+            self.merit_history[key] = []            
 
         #total_tunings = []
         counter = 0
-        merit = 'combined'
 
         self.imsize = self.frame_parameters['fov']
         
@@ -1027,7 +1031,7 @@ class Tuning(Peaking):
 
                 self.logwrite('Working on: '+ key)
 
-                direction = self.find_direction(key, dirt_detection=dirt_detection)
+                direction = self.find_direction(key, dirt_detection=dirt_detection, merit=merit)
                 
                 if direction == 0:
                     self.logwrite('Could not find a direction to improve ' + key + '. Going to next aberration.')
@@ -1083,9 +1087,6 @@ class Tuning(Peaking):
                             #current  = self.tuning_merit()
                             current = self._merits[merit]()
                         except DirtError:
-                            if self.online:
-                                self.aberrations = self.aberrations_tracklist[-1].copy()
-                                self.image_grabber(acquire_image=False)
                             self.logwrite('Tuning ended because of too high dirt coverage.', level='warn')
                             raise
                         except:
@@ -1094,12 +1095,12 @@ class Tuning(Peaking):
                     else:
                         self.logwrite('Found new best tuning with ' + merit  + ' merit: '  + str(current) + 
                                       ' by changing ' + key + ' to ' + str(self.aberrations[key]) + '.')
-                        self.merit_history[merit].append(current)
+                        self.merit_history[merit][-1] = current
                         self.aberrations_tracklist.append(self.aberrations.copy())
                 else:
                     self.logwrite('Found new best tuning with ' + merit  + ' merit: '  + str(current) + 
                                   ' by changing ' + key + ' to ' + str(self.aberrations[key]) + '.')
-                    self.merit_history[merit].append(current)
+                    self.merit_history[merit][-1] = current
                     self.aberrations_tracklist.append(self.aberrations.copy())
                 #reduce stepsize for next iteration
                 #self.steps[key] *= 0.5
@@ -1128,11 +1129,15 @@ class Tuning(Peaking):
 #                pass
 #        else:
 #            image_grabber(acquire_image=False, **kwargs)
+        self.steps = step_originals.copy()
 
     def peak_intensity_merit(self):
         # Check if peaks are already stored and if second order is there
         if len(np.shape(self.peaks)) < 2:
-            self.peaks = self.find_peaks(second_order=True)
+            try:
+                self.peaks = self.find_peaks(second_order=True)
+            except RuntimeError:
+                return 1000
         peaks_first, peaks_second = self.peaks
         intensities = []
         for peak in peaks_first:
@@ -1140,25 +1145,24 @@ class Tuning(Peaking):
         for peak in peaks_second:
             intensities.append(peak[3])
 
-        return np.array(intensities)
+        return 1/np.sum(np.array(intensities))*1e4
 
     def measure_symmetry(self, filtered_image):
         point_mirrored = np.flipud(np.fliplr(filtered_image))
         return autoalign.find_shift(filtered_image, point_mirrored, ratio=0.142/self.imsize/2)
 
     def symmetry_merit(self):
-        if self.mask is None:
-            mean = np.mean(self.image)
-        else:
-            mean = np.mean(self.image[self.mask==0])
+        try:
+            ffil = self.fourier_filter()
+        except RuntimeError:
+            return 1000
 
-        ffil = self.fourier_filter()
-
-        if self.mask is None:
-            return (self.measure_symmetry(ffil)[1], np.var(ffil)/mean**2*100)
-        else:
-            return (self.measure_symmetry(ffil)[1]*(1.0-np.sum(self.mask)/np.size(self.mask)),
-                    np.var(ffil[self.mask==0]/mean**2*50))
+        #if self.mask is None:
+        print((self.measure_symmetry(ffil)[1], np.std(ffil)))
+        return 1/np.sum(self.measure_symmetry(ffil)[1], np.std(ffil))
+        #else:
+        #    return 1/np.prod(self.measure_symmetry(ffil)[1]*(1.0-np.sum(self.mask)/mean),
+        #            np.std(ffil[self.mask==0])/mean)
 
     def tuning_merit(self, abort_tuning_threshold=0.5):
         if self.mask is not None:
@@ -1168,10 +1172,10 @@ class Tuning(Peaking):
         intensities = self.peak_intensity_merit()
         symmetry = self.symmetry_merit()
 
-        print('sum intensities: ' + str(np.sum(intensities)) + '\tvar intensities: ' +
-              str(np.std(intensities)/np.sum(intensities)) + '\tsymmetry: ' + str(symmetry))
+#        print('sum intensities: ' + str(np.sum(intensities)/1e3) + '\tvar intensities: ' +
+#              str(np.std(intensities)/np.sum(intensities)) + '\tsymmetry: ' + str(symmetry))
         
-        return 1.0/(np.sum(intensities)/1e6 + np.sum(symmetry))
+        return np.sum(intensities, symmetry)
 
 
 def draw_circle(image, center, radius, color=-1, thickness=-1):
