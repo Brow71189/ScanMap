@@ -443,6 +443,9 @@ class Mapping(object):
             raise ValueError('The number of given pixeltimes do not match the given number of frames that should be ' +
                              'recorded per location. You can either input one number or a list with a matching length.')
         
+        #if np.size(self.frame_parameters['size_pixels']) < 2:
+        #    self.frame_parameters['size_pixels'] = (self.frame_parameters['size_pixels'], self.frame_parameters['size_pixels'])
+        
         pixeltimes = None
         if np.size(self.frame_parameters.get('pixeltime')) > 1:
             pixeltimes = self.frame_parameters.get('pixeltime')
@@ -525,6 +528,7 @@ class Mapping(object):
                     if self.switches.get('do_autotuning'):
                         if self.switches.get('blank_beam'):
                                 self.as2.set_property_as_float('C_Blank', 0)
+                                time.sleep(0.5)
 
                         data, message = self.handle_autotuning(frame_number[counter-1])
 
@@ -535,6 +539,7 @@ class Mapping(object):
                         if self.number_of_images < 2:
                             if self.switches.get('blank_beam'):
                                 self.as2.set_property_as_float('C_Blank', 0)
+                                time.sleep(0.5)
                             data = img.image_grabber()
                             if self.switches.get('blank_beam'):
                                 self.as2.set_property_as_float('C_Blank', 1)
@@ -543,6 +548,7 @@ class Mapping(object):
                         else:
                             if self.switches.get('blank_beam'):
                                 self.as2.set_property_as_float('C_Blank', 0)
+                                time.sleep(0.5)
                             for i in range(self.number_of_images):
                                 if pixeltimes is not None:
                                     self.frame_parameters['pixeltime'] = pixeltimes[i]
@@ -561,6 +567,9 @@ class Mapping(object):
             bad_frames_file.write('#This file contains the filenames of \"bad\" frames and the cause for the listing.\n\n')
             for key, value in bad_frames.items():
                 bad_frames_file.write('{0:30}{1:}\n'.format(key+':', value))
+                
+        if self.switches.get('blank_beam'):
+            self.as2.set_property_as_float('C_Blank', 0)
     
         #acquire overview image if desired
         if self.online and self.switches['acquire_overview']:

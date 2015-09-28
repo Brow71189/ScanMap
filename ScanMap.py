@@ -82,7 +82,7 @@ class ScanMapPanelDelegate(object):
             if len(text) > 0:
                 try:
                     size = int(text)
-                    self.frame_parameters['size_pixels'] = size
+                    self.frame_parameters['size_pixels'] = (size, size)
                     logging.info('Setting Image Size to: ' + str(size))
                 except ValueError:
                     logging.warn(text + ' is not a valid size. Please input an integer number.')
@@ -199,11 +199,12 @@ class ScanMapPanelDelegate(object):
                 return
             
             Mapper = mapper.Mapping(superscan=self.superscan, as2=self.as2, document_controller=document_controller,
-                                    coord_dict=self.coord_dict, switches=self.switches)
+                                    coord_dict=self.coord_dict.copy(), switches=self.switches.copy())
                                     
             Mapper.number_of_images = self.number_of_images
             Mapper.offset = self.offset
             Mapper.savepath = self.savepath
+            Mapper.frame_parameters = self.frame_parameters.copy()
             
             logging.info('FOV: ' + str(self.frame_parameters['fov'])+' nm')
             logging.info('Offset: ' + str(self.offset)+' x image size')
@@ -454,7 +455,8 @@ class ScanMapPanelDelegate(object):
             coords = []
             for corner in corners:
                 coords.append(self.coord_dict[corner])
-            self.coord_dict_sorted = mapper.sort_quadrangle(coords)
+            Mpr = mapper.Mapping(coord_dict=self.coord_dict.copy())
+            self.coord_dict_sorted = Mpr.sort_quadrangle()
             coords = []
             for corner in corners:
                 coords.append(self.coord_dict_sorted[corner])
@@ -471,7 +473,7 @@ class ScanMapPanelDelegate(object):
             logging.info('A total area of %.4f um2 will be scanned.'
                          % (num_subframes[0]*num_subframes[1]*(self.frame_parameters['fov']*1e-3)**2))
             logging.info('Approximate mapping time: %.0f s' 
-                         % (num_subframes[0]*num_subframes[1]*(self.frame_parameters['size_pixels']**2
+                         % (num_subframes[0]*num_subframes[1]*(self.frame_parameters['size_pixels'][0]**2
                             *np.sum(self.frame_parameters['pixeltime'])*1e-6 + 4)))
     
 

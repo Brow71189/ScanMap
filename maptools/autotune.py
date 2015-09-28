@@ -27,7 +27,7 @@ from scipy.signal import fftconvolve
 with warnings.catch_warnings():
     warnings.simplefilter('ignore')
     import ViennaTools.ViennaTools as vt
-#    from ViennaTools import tifffile
+    from ViennaTools import tifffile
 #except:
 #    try:
 #        import ViennaTools as vt
@@ -217,10 +217,10 @@ class Imaging(object):
 
         #apply Gaussian Blur to improve dirt detection
         if gaussian_blur_radius > 0:
-            self.image = gaussian_filter(self.image, gaussian_blur_radius)
+            image = gaussian_filter(self.image, gaussian_blur_radius)
         #create mask
         mask = np.zeros(self.shape)
-        mask[self.image > self.dirt_threshold] = 1
+        mask[image > self.dirt_threshold] = 1
         #apply median blur to mask to remove noise influence
         if median_blur_diam % 2 == 0:
             median_blur_diam += 1
@@ -272,22 +272,24 @@ class Imaging(object):
             self.image = kwargs.pop('image')
 
         # set up the search range
-        search_range = np.mgrid[0:3*np.mean(self.image):30j]
+        search_range = np.mgrid[0:np.mean(self.image):30j]
         mask_sizes = []
         dirt_start = None
         dirt_end = None
+        while dirt_end is None :
+            search_range *= 2
         # go through list of thresholds and determine the amount of dirt with this threshold
-        for threshold in search_range:
-            mask_size = np.sum(self.dirt_detector(dirt_threshold = threshold, **kwargs)) / np.prod(self.shape)
-            # remember value where the mask started to shrink
-            if mask_size < 0.99 and dirt_start is None:
-                dirt_start = threshold
-            # remember value where the mask is almost zero and end search
-            if mask_size < 0.01:
-                dirt_end = threshold
-                break
-
-            mask_sizes.append(mask_size)
+            for threshold in search_range:
+                mask_size = np.sum(self.dirt_detector(dirt_threshold = threshold, **kwargs)) / np.prod(self.shape)
+                # remember value where the mask started to shrink
+                if mask_size < 0.99 and dirt_start is None:
+                    dirt_start = threshold
+                # remember value where the mask is almost zero and end search
+                if mask_size < 0.01:
+                    dirt_end = threshold
+                    break
+    
+                mask_sizes.append(mask_size)
 
         # determine if there was really dirt present and return an appropriate threshold
         if dirt_end-dirt_start < 3*search_range[1]:
@@ -471,12 +473,12 @@ class Imaging(object):
                         originals[key] = vt.as2_get_control(self.as2, controls[key]) * 1e9
             # Apply corrector values to the Hardware
             for key in self.aberrations.keys():
-                vt.as2_set_control(controls[key], self.aberrations[key] * 1e-9)
+                vt.as2_set_control(self.as2, controls[key], self.aberrations[key] * 1e-9)
 
             if acquire_image:
                 assert self.superscan is not None, \
                        'You have to provide an instance of superscan to perform superscan-related operations.'
-                self.record_parameters = self.create_record_parameters(self.superscan, self.frame_parameters,
+                self.record_parameters = self.create_record_parameters(self.frame_parameters,
                                                                        self.detectors)
                 im = self.superscan.record(**self.record_parameters)
                 if len(im) > 1:
@@ -1136,7 +1138,8 @@ class Tuning(Peaking):
         if len(np.shape(self.peaks)) < 2:
             try:
                 self.peaks = self.find_peaks(second_order=True)
-            except RuntimeError:
+            except RuntimeError as detail:
+                print(str(detail))
                 return 1000
         peaks_first, peaks_second = self.peaks
         intensities = []
@@ -1144,8 +1147,10 @@ class Tuning(Peaking):
             intensities.append(peak[3])
         for peak in peaks_second:
             intensities.append(peak[3])
-
-        return 1/np.sum(np.array(intensities))*1e4
+        self.logwrite('intensity sum: ' + str(np.sum(intensities)) + '\tintensity first var/mean: ' + 
+                      str(np.std(intensities[:6])/np.mean(intensities[:6])) + '\tintensity second var/mean: ' + 
+                      str(np.std(intensities[6:])/np.mean(intensities[6:])))
+        return 1/(np.sum(np.array(intensities))) * 1e4 + np.std(intensities[:6])/np.mean(intensities[:6]) + np.std(intensities[6:])/np.mean(intensities[6:])
 
     def measure_symmetry(self, filtered_image):
         point_mirrored = np.flipud(np.fliplr(filtered_image))
@@ -1154,7 +1159,8 @@ class Tuning(Peaking):
     def symmetry_merit(self):
         try:
             ffil = self.fourier_filter()
-        except RuntimeError:
+        except RuntimeError as detail:
+            print(str(detail))            
             return 1000
 
         #if self.mask is None:
