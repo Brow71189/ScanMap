@@ -854,8 +854,8 @@ class Peaking(Imaging):
 class Tuning(Peaking):
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
-        self._merits = {'peaks': self.peak_intensity_merit, 'symmetry': self.symmetry_merit,
-                        'combined': self.tuning_merit}
+        self._merits = {'peaks': self.astig_2f, 'symmetry': self.astig_3f, 'combined': self.combined, 
+                        'astig_2f': self.astig_2f, 'astig_3f': self.astig_3f, 'coma': self.coma}
         self.steps = kwargs.get('steps')
         self.keys = kwargs.get('keys')
         self.event = kwargs.get('event')
@@ -866,8 +866,12 @@ class Tuning(Peaking):
         self.merit_history = {}
         for key in self._merits.keys():
             self.merit_history[key] = []
+            
+    @property
+    def merits(self):
+        return self._merits
         
-    def find_direction(self, key, dirt_detection=True, merit='combined'):
+    def find_direction(self, key, dirt_detection=True, merit='astig_2f', merit_tolerance=0.01):
         step_multiplicators = [1, 0.5, 2]
         step_multiplicator = None
         
@@ -883,7 +887,7 @@ class Tuning(Peaking):
             self.mask = self.dirt_detector() if dirt_detection else None
             try:
                 #plus = self.tuning_merit()
-                plus = self._merits[merit]()
+                plus = self.merits[merit]()
             except RuntimeError:
                 plus = 1e5
             except DirtError:
@@ -912,7 +916,7 @@ class Tuning(Peaking):
                 self.logwrite('Tuning ended because of too high dirt coverage.', level='warn')
                 raise
     
-            if minus < plus and minus < current:
+            if minus < plus and minus < current*(1+merit_tolerance):
                 direction = -1
                 current = minus
                 #setting the stepsize to new value
@@ -923,7 +927,7 @@ class Tuning(Peaking):
                 #self.aberrations_tracklist.append(self.aberrations.copy())
                 break
     
-            elif plus < minus and plus < current:
+            elif plus < minus and plus < current*(1+merit_tolerance):
                 direction = 1
                 current = plus
                 #setting the stepsize to new value
@@ -955,7 +959,7 @@ class Tuning(Peaking):
         self.logwrite('Latest ' + merit + ' merit: ' + str(current))
         return direction
 
-    def kill_aberrations(self, dirt_detection=True, merit = 'peaks', **kwargs):
+    def kill_aberrations(self, dirt_detection=True, merit = 'astig_2f', **kwargs):
         # Check input for arguments that override class variables
         if kwargs.get('steps') is not None:
             self.steps = kwargs['steps']
@@ -1133,7 +1137,7 @@ class Tuning(Peaking):
 #            image_grabber(acquire_image=False, **kwargs)
         self.steps = step_originals.copy()
 
-    def peak_intensity_merit(self):
+    def astig_2f(self):
         # Check if peaks are already stored and if second order is there
         if len(np.shape(self.peaks)) < 2:
             try:
@@ -1150,13 +1154,10 @@ class Tuning(Peaking):
         self.logwrite('intensity sum: ' + str(np.sum(intensities)) + '\tintensity first var/mean: ' + 
                       str(np.std(intensities[:6])/np.mean(intensities[:6])) + '\tintensity second var/mean: ' + 
                       str(np.std(intensities[6:])/np.mean(intensities[6:])))
-        return 1/(np.sum(np.array(intensities))) * 1e4 + np.std(intensities[:6])/np.mean(intensities[:6]) + np.std(intensities[6:])/np.mean(intensities[6:])
-
-    def measure_symmetry(self, filtered_image):
-        point_mirrored = np.flipud(np.fliplr(filtered_image))
-        return autoalign.find_shift(filtered_image, point_mirrored, ratio=0.142/self.imsize/2)
-
-    def symmetry_merit(self):
+        return 1/(np.sum(np.array(intensities))) * 1e4 + np.std(intensities[:6])/np.mean(intensities[:6]) + \
+               np.std(intensities[6:])/np.mean(intensities[6:])
+               
+    def astig_3f(self):
         try:
             ffil = self.fourier_filter()
         except RuntimeError as detail:
@@ -1169,8 +1170,31 @@ class Tuning(Peaking):
         #else:
         #    return 1/np.prod(self.measure_symmetry(ffil)[1]*(1.0-np.sum(self.mask)/mean),
         #            np.std(ffil[self.mask==0])/mean)
+               
+    def coma(self):
+        # Check if peaks are already stored and if second order is there
+        if len(np.shape(self.peaks)) < 2:
+            try:
+                self.peaks = self.find_peaks(second_order=True)
+            except RuntimeError as detail:
+                print(str(detail))
+                return 1000
+        peaks_first, peaks_second = self.peaks
+        intensities = []
+        for peak in peaks_first:
+            intensities.append(peak[3])
+        for peak in peaks_second:
+            intensities.append(peak[3])
+        self.logwrite('intensity sum: ' + str(np.sum(intensities)) + '\tintensity first var/mean: ' + 
+                      str(np.std(intensities[:6])/np.mean(intensities[:6])) + '\tintensity second var/mean: ' + 
+                      str(np.std(intensities[6:])/np.mean(intensities[6:])))
+        return 1/(np.sum(np.array(intensities))) * 1e4
 
-    def tuning_merit(self, abort_tuning_threshold=0.5):
+    def measure_symmetry(self, filtered_image):
+        point_mirrored = np.flipud(np.fliplr(filtered_image))
+        return autoalign.find_shift(filtered_image, point_mirrored, ratio=0.142/self.imsize/2)
+
+    def combined(self, abort_tuning_threshold=0.5):
         if self.mask is not None:
             if np.sum(self.mask) > abort_tuning_threshold*np.prod(self.shape):
                 raise DirtError('Cannot tune on images with more than {:.0%} dirt.'.format(abort_tuning_threshold))

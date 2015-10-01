@@ -326,7 +326,7 @@ class SuperScanTunerPanelDelegate(object):
         
         combo_box_row = ui.create_row_widget()
         combo_box = ui.create_combo_box_widget()
-        combo_box.items = ['peaks', 'symmetry', 'combined']
+        combo_box.items = ['astig_2f', 'coma', 'astig_3f', 'combined']
         combo_box.on_current_item_changed = merit_combo_box_changed
         combo_box_row.add(ui.create_label_widget('Merit used for tuning: '))
         combo_box_row.add(combo_box)
