@@ -179,7 +179,7 @@ class Imaging(object):
             if frame_parameters.get('fov') is not None:
                 parameters['fov_nm'] = frame_parameters['fov']
             if frame_parameters.get('rotation') is not None:
-                parameters['rotation_rad'] = frame_parameters['rotation']
+                parameters['rotation_rad'] = frame_parameters['rotation']/180.0*np.pi
             if frame_parameters.get('center') is not None:
                 parameters['center_nm'] = frame_parameters['center']
         else:
