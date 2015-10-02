@@ -10,30 +10,10 @@ try:
     from importlib import reload
 except:
     pass
-# third party libraries
-# None
-#try:
-#    import ViennaTools.ViennaTools as vt
-#except:
-#    try:
-#        import ViennaTools as vt
-#    except:
-#        logging.warn('Could not import Vienna tools!')
+
 with warnings.catch_warnings():
     warnings.simplefilter('ignore')
     import ViennaTools.ViennaTools as vt
-
-# local libraries
-#from nion.swift import Panel
-#from nion.swift import Workspace
-#from nion.swift.model import DataItem
-#from nion.ui import Binding
-#document_controller.ui is object of nion.ui.UserInterface.QtUserInterface
-
-#try:
-#    import maptools.mapper as mapper
-#except:
-#    from .maptools import mapper
 
 from .maptools import mapper
 
@@ -176,6 +156,34 @@ class ScanMapPanelDelegate(object):
             self.drive_coords('bottom-left')
         def drive_br_button_clicked():
             self.drive_coords('bottom-right')
+            
+        def save_button_clicked():
+            Mapper = mapper.Mapping()            
+            Mapper.coord_dict=self.coord_dict.copy()
+            Mapper.switches=self.switches.copy()
+            Mapper.number_of_images = self.number_of_images
+            Mapper.offset = self.offset
+            Mapper.savepath = self.savepath
+            Mapper.frame_parameters = self.frame_parameters.copy()
+            
+            Mapper.save_mapping_config()
+            logging.info('Saved config file to: ' + os.path.join(Mapper.savepath, Mapper.foldername, 'configs_map.txt'))
+        
+        def load_button_clicked():
+            if not os.path.isfile(self.savepath):
+                logging.warn('Please type the path to the config file into the \'savepath\' field to load configs.')
+            else:
+                Mapper = mapper.Mapping()
+                Mapper.load_mapping_config(self.savepath)
+                self.coord_dict = Mapper.coord_dict.copy()
+                self.switches = Mapper.switches.copy()
+                self.number_of_images = Mapper.number_of_images
+                self.offset = Mapper.offset
+                self.savepath = Mapper.savepath
+                self.frame_parameters = Mapper.frame_parameters.copy()
+                
+                sync_gui()
+                logging.info('Loaded all mapping configs successfully.')
        
         def done_button_clicked():
             saving_finished(savepath_line_edit.text)
@@ -223,6 +231,18 @@ class ScanMapPanelDelegate(object):
             logging.info('Aborting after current frame is finished. (May take a short while until actual abort)')
             self.event.set()
             
+        def sync_gui():
+            for key, value in self._checkboxes.items():
+                value.checked = self.switches.get(key, False)
+                
+            fov_line_edit.text = str(self.frame_parameters.get('fov'))
+            size_line_edit.text = str(self.frame_parameters.get('size_pixels')[0])
+            rotation_line_edit.text = str(self.frame_parameters.get('rotation'))
+            offset_line_edit.text = str(self.offset)
+            time_line_edit.text = str(self.frame_parameters.get('pixeltime'))
+            number_line_edit.text = str(self.number_of_images)
+            savepath_line_edit.text = str(self.savepath)
+            
         fields_row = ui.create_row_widget()
         
         left_fields_column = ui.create_column_widget()
@@ -241,6 +261,7 @@ class ScanMapPanelDelegate(object):
         checkbox_row2 = ui.create_row_widget()
         checkbox_row3 = ui.create_row_widget()
         savepath_row = ui.create_row_widget()
+        save_button_row = ui.create_row_widget()
         done_button_row = ui.create_row_widget()
 
         column.add_spacing(20)        
@@ -276,6 +297,8 @@ class ScanMapPanelDelegate(object):
         column.add(checkbox_row3)
         column.add_spacing(5)
         column.add(savepath_row)
+        column.add_spacing(5)
+        column.add(save_button_row)
         column.add_spacing(20)
         column.add(done_button_row)
         column.add_stretch()
@@ -348,6 +371,8 @@ class ScanMapPanelDelegate(object):
         drive_tr = ui.create_push_button_widget(_("Top\nRight"))
         drive_bl = ui.create_push_button_widget(_("Bottom\nLeft"))
         drive_br = ui.create_push_button_widget(_("Bottom\nRight"))
+        save_button = ui.create_push_button_widget(_("Save Configs"))
+        load_button = ui.create_push_button_widget(_("Load Configs"))
         done_button = ui.create_push_button_widget(_("Done"))
         abort_button = ui.create_push_button_widget(_("Abort"))
    
@@ -375,6 +400,8 @@ class ScanMapPanelDelegate(object):
         drive_tr.on_clicked = drive_tr_button_clicked
         drive_bl.on_clicked = drive_bl_button_clicked
         drive_br.on_clicked = drive_br_button_clicked
+        save_button.on_clicked = save_button_clicked
+        load_button.on_clicked = load_button_clicked
         done_button.on_clicked = done_button_clicked
         abort_button.on_clicked = abort_button_clicked
         
@@ -410,6 +437,10 @@ class ScanMapPanelDelegate(object):
 
         checkbox_row3.add(correct_stage_errors_checkbox)
         checkbox_row3.add_stretch()
+        
+        save_button_row.add(save_button)
+        save_button_row.add_spacing(15)
+        save_button_row.add(load_button)
                 
         done_button_row.add(done_button)
         done_button_row.add_spacing(15)
@@ -422,7 +453,7 @@ class ScanMapPanelDelegate(object):
         self._checkboxes['acquire_overview'] = overview_checkbox
         self._checkboxes['blank_beam'] = blank_checkbox
         self._checkboxes['compensate_stage_error'] = correct_stage_errors_checkbox
-        
+
         return column
         
     def save_coords(self, position):
