@@ -32,7 +32,7 @@ class VarianceFilterOperationDelegate(object):
         self.operation_name = _("Variance Filter")
         self.operation_prefix = _("Variance Filter of ")
         self.operation_description = [
-            {"name": _("Radius"), "property": "radius", "type": "scalar", "default": 0.3},
+            {"name": _("Radius"), "property": "radius", "type": "scalar", "default": 0.1},
         ]
 
     def can_apply_to_data(self, data_and_metadata):
@@ -55,7 +55,7 @@ class VarianceFilterOperationDelegate(object):
 
         # grab our parameters. ideally this could just access the member variables directly,
         # but it doesn't work that way (yet).
-        radius = parameters.get("radius")
+        radius = parameters.get("radius")*100
         #sigma2 = parameters.get("sigma2")
         #weight2 = parameters.get("weight2")
         
@@ -70,7 +70,6 @@ class VarianceFilterOperationDelegate(object):
 
         intensity_calibration = data_and_metadata.intensity_calibration
         dimensional_calibrations = data_and_metadata.dimensional_calibrations
-        print(intensity_calibration)
         metadata = data_and_metadata.metadata
         return api.create_data_and_metadata_from_data(data_copy, intensity_calibration, dimensional_calibrations, metadata)
 
