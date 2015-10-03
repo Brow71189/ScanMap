@@ -13,8 +13,9 @@ import gettext
 import math
 
 # third party libraries
-import numpy
+import numpy as np
 import scipy.fftpack
+from scipy.ndimage import uniform_filter
 
 # local libraries
 # None
@@ -57,34 +58,21 @@ class VarianceFilterOperationDelegate(object):
         radius = parameters.get("radius")
         #sigma2 = parameters.get("sigma2")
         #weight2 = parameters.get("weight2")
-
-        # first calculate the FFT
-        fft_data = scipy.fftpack.fftshift(scipy.fftpack.fft2(data_copy))
-
-        # next, set up xx, yy arrays to be linear indexes for x and y coordinates ranging
-        # from -width/2 to width/2 and -height/2 to height/2.
-        yy_min = int(math.floor(-data.shape[0] / 2))
-        yy_max = int(math.floor(data.shape[0] / 2))
-        xx_min = int(math.floor(-data.shape[1] / 2))
-        xx_max = int(math.floor(data.shape[1] / 2))
-        xx, yy = numpy.meshgrid(numpy.linspace(yy_min, yy_max, data.shape[0]),
-                                numpy.linspace(xx_min, xx_max, data.shape[1]))
-
-        # calculate the pixel distance from the center
-        rr = numpy.sqrt(numpy.square(xx) + numpy.square(yy)) / (data.shape[0] * 0.5)
-
-        # finally, apply a filter to the Fourier space data.
-        filter = numpy.exp(-0.5 * numpy.square(rr / sigma1)) - (1.0 - weight2) * numpy.exp(
-            -0.5 * numpy.square(rr / sigma2))
-        filtered_fft_data = fft_data * filter
-
-        # and then do invert FFT and take the real value.
-        result = scipy.fftpack.ifft2(scipy.fftpack.ifftshift(filtered_fft_data)).real
+        
+        # Apply mean filter to the data
+        data_copy = uniform_filter(data_copy, size=radius)
+        
+        # Calculate squared differences from original
+        data_copy = np.square(data_copy - data)
+        
+        # Apply mean filter to the result
+        data_copy = uniform_filter(data_copy, size=radius)
 
         intensity_calibration = data_and_metadata.intensity_calibration
         dimensional_calibrations = data_and_metadata.dimensional_calibrations
+        print(intensity_calibration)
         metadata = data_and_metadata.metadata
-        return api.create_data_and_metadata_from_data(result, intensity_calibration, dimensional_calibrations, metadata)
+        return api.create_data_and_metadata_from_data(data_copy, intensity_calibration, dimensional_calibrations, metadata)
 
 
 class VarianceExtension(object):
