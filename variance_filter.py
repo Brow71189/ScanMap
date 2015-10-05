@@ -63,15 +63,15 @@ class VarianceFilterOperationDelegate(object):
         data_copy = uniform_filter(data_copy, size=radius)
         
         # Calculate squared differences from original
-        data_copy = np.square(data_copy - data)
+        result = np.square(data_copy - data)
         
         # Apply mean filter to the result
-        data_copy = uniform_filter(data_copy, size=radius)
+        result = uniform_filter(result, size=radius)/data_copy
 
         intensity_calibration = data_and_metadata.intensity_calibration
         dimensional_calibrations = data_and_metadata.dimensional_calibrations
         metadata = data_and_metadata.metadata
-        return api.create_data_and_metadata_from_data(data_copy, intensity_calibration, dimensional_calibrations, metadata)
+        return api.create_data_and_metadata_from_data(result, intensity_calibration, dimensional_calibrations, metadata)
 
 
 class VarianceExtension(object):
