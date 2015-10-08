@@ -15,7 +15,7 @@ import math
 # third party libraries
 import numpy as np
 import scipy.fftpack
-from scipy.ndimage import uniform_filter
+from scipy.ndimage import uniform_filter, fourier_gaussian
 
 # local libraries
 # None
@@ -66,7 +66,7 @@ class VarianceFilterOperationDelegate(object):
         result = np.square(data_copy - data)
         
         # Apply mean filter to the result
-        result = uniform_filter(result, size=radius)/data_copy
+        result = fourier_gaussian(result, radius)/data_copy
 
         intensity_calibration = data_and_metadata.intensity_calibration
         dimensional_calibrations = data_and_metadata.dimensional_calibrations
