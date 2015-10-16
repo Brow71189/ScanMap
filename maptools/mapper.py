@@ -75,6 +75,7 @@ class Mapping(object):
     
         map_coords = []
         frame_number = []
+        
     
         # add additional lines and frames to number of subframes
         if compensate_stage_error:
@@ -177,7 +178,7 @@ class Mapping(object):
                 # find place in the image with least dirt to do tuning there
                 clean_spot, size = Tuner.find_biggest_clean_spot()
                 clean_spot_nm = clean_spot * self.frame_parameters['fov'] / self.frame_parameters['size_pixels']
-                tune_frame_parameters = {'size_pixels': (512, 512), 'center': (0,0), 'pixeltime': 8, 'fov': 4,
+                tune_frame_parameters = {'size_pixels': (512, 512), 'pixeltime': 8, 'fov': 4,
                                          'rotation': 0, 'center': clean_spot_nm}
                 try:
                     Tuner.kill_aberrations(frame_parameters=tune_frame_parameters)

@@ -480,7 +480,9 @@ class Imaging(object):
                        'You have to provide an instance of superscan to perform superscan-related operations.'
                 self.record_parameters = self.create_record_parameters(self.frame_parameters,
                                                                        self.detectors)
-                im = self.superscan.record(**self.record_parameters)
+                self.superscan.set_frame_parameters(**self.record_parameters)
+                #im = self.superscan.record(**self.record_parameters)
+                im = self.superscan.grab_next_to_start()
                 if len(im) > 1:
                     return_image = []
                     for entry in im:
@@ -866,12 +868,15 @@ class Tuning(Peaking):
         self.merit_history = {}
         for key in self._merits.keys():
             self.merit_history[key] = []
+        self.run_history = {}
+        for key in self._merits.keys():
+            self.run_history[key] = []
             
     @property
     def merits(self):
         return self._merits
         
-    def find_direction(self, key, dirt_detection=True, merit='astig_2f', merit_tolerance=0.01):
+    def find_direction(self, key, dirt_detection=True, merit='astig_2f', merit_tolerance=0.02):
         step_multiplicators = [1, 0.5, 2]
         step_multiplicator = None
         
@@ -1002,6 +1007,7 @@ class Tuning(Peaking):
             raise
             
         self.merit_history[merit].append(current)
+        self.run_history[merit].append(current)
         
         # append current corrector configuration to aberrations_tracklist 
         self.aberrations_tracklist.append(self.aberrations.copy())
@@ -1013,16 +1019,16 @@ class Tuning(Peaking):
             if self.event is not None and self.event.is_set():
                 break
             start_time = time.time()
-            if counter > 0 and len(self.merit_history[merit]) < counter+1:
+            if counter > 0 and len(self.run_history[merit]) < counter+1:
                 self.logwrite('Finished tuning because no improvements could be found anymore.')
                 break
 
-            if len(self.merit_history[merit]) > 1:
+            if len(self.run_history[merit]) > 1:
                 self.logwrite('Improved tuning by ' +
                               str(np.abs((self.merit_history[merit][-2] - self.merit_history[merit][-1]) /
                                   ((self.merit_history[merit][-2]+self.merit_history[merit][-1])*0.5)*100)) + '%.')
 
-            if len(self.merit_history[merit]) > 2:
+            if len(self.run_history[merit]) > 1:
                 if np.abs((self.merit_history[merit][-2] - self.merit_history[merit][-1]) / 
                           ((self.merit_history[merit][-2] + self.merit_history[merit][-1])*0.5)) < 0.02:
                     self.logwrite('Finished tuning successfully after %d runs.' %(counter))
@@ -1101,12 +1107,12 @@ class Tuning(Peaking):
                     else:
                         self.logwrite('Found new best tuning with ' + merit  + ' merit: '  + str(current) + 
                                       ' by changing ' + key + ' to ' + str(self.aberrations[key]) + '.')
-                        self.merit_history[merit][-1] = current
+                        self.merit_history[merit].append(current)
                         self.aberrations_tracklist.append(self.aberrations.copy())
                 else:
                     self.logwrite('Found new best tuning with ' + merit  + ' merit: '  + str(current) + 
                                   ' by changing ' + key + ' to ' + str(self.aberrations[key]) + '.')
-                    self.merit_history[merit][-1] = current
+                    self.merit_history[merit].append(current)
                     self.aberrations_tracklist.append(self.aberrations.copy())
                 #reduce stepsize for next iteration
                 #self.steps[key] *= 0.5
@@ -1117,6 +1123,7 @@ class Tuning(Peaking):
 #                self.logwrite('Appending best value of this run to total_tunings: '+str(np.amin(part_tunings)))
 #                self.merit_history[merit].append(np.amin(part_tunings))
 #                #total_lens.append(np.amax(part_lens))
+            self.run_history[merit].append(self.merit_history[merit][-1])
             self.logwrite('Finished run number '+str(counter+1)+' in '+str(time.time()-start_time)+' s.')
             counter += 1
 
