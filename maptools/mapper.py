@@ -493,8 +493,9 @@ class Mapping(object):
                 break
             counter += 1
             stagex, stagey, stagez, fine_focus = frame_coord
-            img.logwrite(str(counter) + ': (No. ' + str(frame_number[counter-1]) + ') x: ' + str((stagex)) + ', y: ' + 
-                         str((stagey)) + ', z: ' + str((stagez)) + ', focus: ' + str((fine_focus)))
+            img.logwrite(str(counter) + '/' + str(len(map_coords)) + ': (No. ' +
+                         str(frame_number[counter-1]) + ') x: ' +str((stagex)) + ', y: ' + str((stagey)) + ', z: ' +
+                         str((stagez)) + ', focus: ' + str((fine_focus)))
             #print(str(counter)+': x: '+str((stagex))+', y: '+str((stagey))+', z: '+str((stagez))+', focus: '+str((fine_focus)))
             #only do hardware operations when online
             if self.online:
@@ -505,8 +506,8 @@ class Mapping(object):
                 if self.switches.get('blank_beam'):
                     self.as2.set_property_as_float('C_Blank', 1)
     
-                if self.superscan.is_playing:
-                    self.superscan.abort_playing()
+                #if self.superscan.is_playing:
+                #    self.superscan.abort_playing()
     
                 vt.as2_set_control(self.as2, 'StageOutX', stagex)
                 vt.as2_set_control(self.as2, 'StageOutY', stagey)
@@ -521,7 +522,7 @@ class Mapping(object):
                 elif frame_number[counter-1] is None:
                     time.sleep(1)
                 else:
-                    time.sleep(3)
+                    time.sleep(2)
     
                 if frame_number[counter-1] is not None:
                     name = str('%.4d_%.3f_%.3f.tif' % (frame_number[counter-1], stagex*1e6, stagey*1e6))
@@ -529,7 +530,7 @@ class Mapping(object):
                     if self.switches.get('do_autotuning'):
                         if self.switches.get('blank_beam'):
                                 self.as2.set_property_as_float('C_Blank', 0)
-                                time.sleep(0.5)
+                                time.sleep(0.7)
 
                         data, message = self.handle_autotuning(frame_number[counter-1])
 
@@ -615,7 +616,8 @@ class Mapping(object):
             tifffile.imsave(os.path.join(self.store, 'y_map.tif'), np.asarray(y_map, dtype='float32'))
             tifffile.imsave(os.path.join(self.store, 'z_map.tif'), np.asarray(z_map, dtype='float32'))
             tifffile.imsave(os.path.join(self.store, 'focus_map.tif'), np.asarray(focus_map, dtype='float32'))
-    
+        
+        self.superscan.stop_playing()
         img.logwrite('Done.\n')
 
     def write_map_info_file(self):
