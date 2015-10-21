@@ -14,10 +14,10 @@ import time
 import tifffile
 import scipy.optimize
 
-#try:
-#   from maptools import autotune as at
-#except:
-from .maptools import autotune as at
+try:
+   from maptools import autotune as at
+except:
+    from .maptools import autotune as at
 
 def ellipse(polar_angle, a, b, rotation):
     """
@@ -58,8 +58,8 @@ def rotation_radius(Peak, find_distortions=True):
         Angle (in rad) between x-axis and the first reflection in counter-clockwise direction
     """
     try:
-        peaks_first, peaks_second = Peak.find_peaks(half_line_thickness=2, position_tolerance = 10, integration_radius = 1,
-                                                    second_order=True)
+        peaks_first, peaks_second = Peak.find_peaks(half_line_thickness=2, position_tolerance = 10,
+                                                    integration_radius = 1, second_order=True)
     except:
         raise
     else:
@@ -67,10 +67,11 @@ def rotation_radius(Peak, find_distortions=True):
         angles = []
         radii = []
         #center = np.array(np.shape(image))/2
+        center = np.array(Peak.center)
         
         for peak in peaks_first:
-            if not (peak==0).all():
-                peak = peak[0:2] - np.array(Peak.center)
+            if not (peak == 0).all():
+                peak = peak[0:2]-center
                 angles.append(at.positive_angle(np.arctan2(-peak[0], peak[1])))
                 radii.append(np.sqrt(np.sum(peak**2)))
             
@@ -81,11 +82,12 @@ def rotation_radius(Peak, find_distortions=True):
             sum_rotation += angle%(np.pi/3)
         
         if find_distortions:
-            return (sum_rotation/float(len(angles)), np.mean(radii), np.count_nonzero(peaks_first[:,-1])+np.count_nonzero(peaks_second[:,-1]), \
-                    np.sum(peaks_first[:,-1])+np.sum(peaks_second[:,-1])) + fit_ellipse(angles, radii)
+            return (sum_rotation/float(len(angles)), np.mean(radii), np.count_nonzero(peaks_first[:,-1]) + 
+                    np.count_nonzero(peaks_second[:,-1]), np.sum(peaks_first[:,-1]) + 
+                    np.sum(peaks_second[:,-1])) + fit_ellipse(angles, radii)
         else:
-            return (sum_rotation/float(len(angles)), np.mean(radii), np.count_nonzero(peaks_first[:,-1])+np.count_nonzero(peaks_second[:,-1]), \
-                    np.sum(peaks_first[:,-1])+np.sum(peaks_second[:,-1]))
+            return (sum_rotation/float(len(angles)), np.mean(radii), np.count_nonzero(peaks_first[:,-1]) + 
+                    np.count_nonzero(peaks_second[:,-1]), np.sum(peaks_first[:,-1])+np.sum(peaks_second[:,-1]))
     
 def calculate_counts(image, threshold=1e-9):
     """
@@ -130,8 +132,9 @@ def counts(path):
     im = cv2.imread(path, -1)
     return calculate_counts(im)
 
-def subframes_preprocessing(filename, dirname, imsize, counts_threshold=1e-9, dirt_threshold=0.02, median_blur_diameter=39,
-                            gaussian_blur_radius=3, maximum_dirt_coverage=0.5, dirt_border=100, save_fft=True):
+def subframes_preprocessing(filename, dirname, imsize, counts_threshold=1e-9, dirt_threshold=0.02,
+                            median_blur_diameter=39, gaussian_blur_radius=3, maximum_dirt_coverage=0.5,
+                            dirt_border=100, save_fft=True):
     """
     Returns tuple of the form:
             (filename, success, dirt coverage, counts divisor, angle of lattice rotation, mean peak radius)
@@ -147,7 +150,9 @@ def subframes_preprocessing(filename, dirname, imsize, counts_threshold=1e-9, di
     
     Peak = at.Peaking(image=image, imsize=imsize)
     #get mask to filter dirt and check if image is covered by more than "maximum_dirt_coverage"
-    mask = Peak.dirt_detector(dirt_threshold=dirt_threshold, median_blur_diam=median_blur_diameter, gaussian_blur_radius=gaussian_blur_radius)
+    mask = Peak.dirt_detector(dirt_threshold=dirt_threshold, median_blur_diam=median_blur_diameter,
+                              gaussian_blur_radius=gaussian_blur_radius)
+
     dirt_coverage = float(np.sum(mask))/(np.shape(image)[0]*np.shape(image)[1])
     if dirt_coverage > maximum_dirt_coverage:
         success = False
@@ -188,8 +193,8 @@ def subframes_preprocessing(filename, dirname, imsize, counts_threshold=1e-9, di
             fft = np.log(np.abs(np.fft.fftshift(np.fft.fft2(image_org)))).astype('float32')
             center = np.array(np.shape(image))/2
             ell = np.ones(np.shape(fft), dtype='float32')
-            cv2.ellipse(ell, (tuple(center), (ellipse_a*2, ellipse_b*2), -angle*180/np.pi), 4)
-            cv2.ellipse(ell, (tuple(center), (ellipse_a*2*np.sqrt(3), ellipse_b*2*np.sqrt(3)), -angle*180/np.pi), 4)            
+            cv2.ellipse(ell, (tuple(center), (ellipse_a*2, ellipse_b*2), -angle*180/np.pi), 2)
+            cv2.ellipse(ell, (tuple(center), (ellipse_a*2*np.sqrt(3), ellipse_b*2*np.sqrt(3)), -angle*180/np.pi), 2)            
             fft *= ell
             savesize = int(2.0*imsize/0.213)
             tifffile.imsave(dirname+'fft_'+dirname.split('/')[-2]+'/'+filename, fft[center[0]-savesize:center[0]+savesize+1, center[1]-savesize:center[1]+savesize+1])
@@ -202,11 +207,12 @@ if __name__ == '__main__':
     
     overall_starttime = time.time()
 
-    dirpath = '/home/mittelberger/Documents/jk-randomwalk/divac-seq3-lowdose'
+    dirpath = '/3tb/maps_data/map_2015_10_19_17_49'
     #dirpath = '/3tb/Dark_noise/'
-    imsize = 4
-    dirt_threshold = 1
-    dirt_border = 0
+    imsize = 20
+    dirt_threshold = 0.0043
+    dirt_border = 10
+    maximum_dirt_coverage=0.6
 
     if not dirpath.endswith('/'):
         dirpath += '/'
@@ -223,7 +229,7 @@ if __name__ == '__main__':
     
     pool = Pool()
     res = [pool.apply_async(subframes_preprocessing, (filename, dirpath, imsize), {'dirt_threshold': dirt_threshold, 'dirt_border':dirt_border, \
-            'median_blur_diameter': 59, 'gaussian_blur_radius': 5,'save_fft': True, 'maximum_dirt_coverage': 0.5}) for filename in matched_dirlist]
+            'median_blur_diameter': 59, 'gaussian_blur_radius': 5,'save_fft': True, 'maximum_dirt_coverage': maximum_dirt_coverage}) for filename in matched_dirlist]
     res_list = [p.get() for p in res]
     pool.close()
     pool.terminate()
