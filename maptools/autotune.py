@@ -192,7 +192,7 @@ class Imaging(object):
 
         #self.record_parameters = {'frame_parameters': parameters, 'channels_enabled': channels_enabled}
         #return self.record_parameters
-        return {'frame_parameters': parameters, 'channels_enabled': channels_enabled}
+        return {'frame_parameters': parameters}#, 'channels_enabled': channels_enabled}
 
     def dirt_detector(self, median_blur_diam=59, gaussian_blur_radius=3, **kwargs):
         """
@@ -876,7 +876,7 @@ class Tuning(Peaking):
     def merits(self):
         return self._merits
         
-    def find_direction(self, key, dirt_detection=True, merit='astig_2f', merit_tolerance=0.02):
+    def find_direction(self, key, dirt_detection=True, merit='astig_2f', merit_tolerance=0.1):
         step_multiplicators = [1, 0.5, 2]
         step_multiplicator = None
         
@@ -1015,7 +1015,7 @@ class Tuning(Peaking):
         #total_tunings.append(current)
         self.logwrite('Appending start value: ' + str(current))
 
-        while counter < 11:
+        while counter < 3:
             if self.event is not None and self.event.is_set():
                 break
             start_time = time.time()
@@ -1025,12 +1025,12 @@ class Tuning(Peaking):
 
             if len(self.run_history[merit]) > 1:
                 self.logwrite('Improved tuning by ' +
-                              str(np.abs((self.merit_history[merit][-2] - self.merit_history[merit][-1]) /
-                                  ((self.merit_history[merit][-2]+self.merit_history[merit][-1])*0.5)*100)) + '%.')
+                              str(np.abs((self.run_history[merit][-2] - self.run_history[merit][-1]) /
+                                  ((self.run_history[merit][-2]+self.run_history[merit][-1])*0.5)*100)) + '%.')
 
             if len(self.run_history[merit]) > 1:
-                if np.abs((self.merit_history[merit][-2] - self.merit_history[merit][-1]) / 
-                          ((self.merit_history[merit][-2] + self.merit_history[merit][-1])*0.5)) < 0.02:
+                if np.abs((self.run_history[merit][-2] - self.run_history[merit][-1]) / 
+                          ((self.run_history[merit][-2] + self.run_history[merit][-1])*0.5)) < 0.02:
                     self.logwrite('Finished tuning successfully after %d runs.' %(counter))
                     break
 
@@ -1092,7 +1092,6 @@ class Tuning(Peaking):
                 #only keep changes if they improve the overall tuning
                 if len(self.merit_history[merit]) > 0:
                     if current > np.amin(self.merit_history[merit]):
-                        self.aberrations = self.aberrations_tracklist[-1].copy()
                         self.image = self.image_grabber()
                         self.mask = self.dirt_detector() if dirt_detection else None
                         try:
@@ -1101,9 +1100,23 @@ class Tuning(Peaking):
                         except DirtError:
                             self.logwrite('Tuning ended because of too high dirt coverage.', level='warn')
                             raise
-                        except:
-                            pass
-                        self.logwrite('Dismissed changes at '+ key)
+                        if current > np.amin(self.merit_history[merit]):
+                            self.aberrations = self.aberrations_tracklist[-1].copy()
+                            self.image = self.image_grabber()
+                            self.mask = self.dirt_detector() if dirt_detection else None
+                            try:
+                                #current  = self.tuning_merit()
+                                current = self._merits[merit]()
+                            except DirtError:
+                                self.logwrite('Tuning ended because of too high dirt coverage.', level='warn')
+                                raise
+                            self.logwrite('Dismissed changes at '+ key)
+                        else:
+                            self.logwrite('Kept changes at '+ key + ' after measuring again.')
+                            self.logwrite('Found new best tuning with ' + merit  + ' merit: '  + str(current) + 
+                                      ' by changing ' + key + ' to ' + str(self.aberrations[key]) + '.')
+                            self.merit_history[merit].append(current)
+                            self.aberrations_tracklist.append(self.aberrations.copy())
                     else:
                         self.logwrite('Found new best tuning with ' + merit  + ' merit: '  + str(current) + 
                                       ' by changing ' + key + ' to ' + str(self.aberrations[key]) + '.')
@@ -1126,6 +1139,10 @@ class Tuning(Peaking):
             self.run_history[merit].append(self.merit_history[merit][-1])
             self.logwrite('Finished run number '+str(counter+1)+' in '+str(time.time()-start_time)+' s.')
             counter += 1
+        # This else belongs to the while loop. It is executed when the loop ends 'normally', e.g not through
+        # break.
+        else:
+            self.logwrite('Finished tuning because maximum number of runs was exceeded.')
 
 #        if save_images:
 #            try:
@@ -1161,8 +1178,8 @@ class Tuning(Peaking):
         self.logwrite('intensity sum: ' + str(np.sum(intensities)) + '\tintensity first var/mean: ' + 
                       str(np.std(intensities[:6])/np.mean(intensities[:6])) + '\tintensity second var/mean: ' + 
                       str(np.std(intensities[6:])/np.mean(intensities[6:])))
-        return 1/(np.sum(np.array(intensities))) * 1e4 + np.std(intensities[:6])/np.mean(intensities[:6]) + \
-               np.std(intensities[6:])/np.mean(intensities[6:])
+        
+        return 1/(np.sum(intensities)) * 1e4 + np.std(intensities[:6])/np.mean(intensities[:6])
                
     def astig_3f(self):
         try:
