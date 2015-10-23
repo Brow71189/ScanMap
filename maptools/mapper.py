@@ -44,6 +44,7 @@ class Mapping(object):
         self.foldername = 'map_' + time.strftime('%Y_%m_%d_%H_%M')
         self.offset = kwargs.get('offset', 0)
         self._online = kwargs.get('online')
+        self.autotuning_mode = kwargs.get('autotuning_mode', 'abort')
         
     @property
     def online(self):
@@ -139,24 +140,24 @@ class Mapping(object):
     
         return (map_coords, frame_number)
     
-    def handle_autotuning(self, number_frame):
+    def handle_autotuning(self, number_frame, Tuner):
         # tests in each frame after aquisition if all 6 reflections in the fft are still there (only for frames where 
         # less than 50% of the area are covered with dirt). If not all reflections are visible, autofocus is applied
         # and the result is added as offset to the interpolated focus values. The dirt coverage is calculated by
         # considering all pixels intensities that are higher than 0.02 as dirt
-        Tuner = Tuning(event=self.event, document_controller=self.document_controller, as2=self.as2, 
-                       superscan=self.superscan)        
+#        Tuner = Tuning(event=self.event, document_controller=self.document_controller, as2=self.as2, 
+#                       superscan=self.superscan)        
         message = ''
-        data = Tuner.image_grabber(frame_parameters=self.frame_parameters)
+        Tuner.image = Tuner.image_grabber(frame_parameters=self.frame_parameters)
         #name = str('%.4d_%.3f_%.3f.tif' % (frame_number[counter-1],stagex*1e6,stagey*1e6))
-        Tuner.dirt_mask = Tuner.dirt_detector(image=data)
+        Tuner.dirt_mask = Tuner.dirt_detector()
         #calculate the fraction of 'bad' pixels and save frame if fraction is >0.5, but add note to "bad_frames" file
-        if np.sum(Tuner.dirt_mask)/(np.shape(data)[0]*np.shape(data)[1]) > 0.5:
+        if np.sum(Tuner.dirt_mask)/(np.shape(Tuner.image)[0]*np.shape(Tuner.image)[1]) > 0.5:
             message += 'Over 50% dirt coverage. '
             Tuner.logwrite('Over 50% dirt coverage in No. ' + number_frame)
         else:
             try:
-                first_order, second_order = Tuner.find_peaks(image=data, imsize=self.frame_parameters['fov'],
+                first_order, second_order = Tuner.find_peaks(imsize=self.frame_parameters['fov'],
                                                              second_order=True)
                 number_peaks = np.count_nonzero(first_order[:,-1])+np.count_nonzero(second_order[:,-1])
             except RuntimeError:
@@ -441,12 +442,9 @@ class Mapping(object):
     
         if np.size(self.frame_parameters.get('pixeltime')) > 1 and \
            np.size(self.frame_parameters.get('pixeltime')) != self.number_of_images:
-            raise ValueError('The number of given pixeltimes do not match the given number of frames that should be ' +
-                             'recorded per location. You can either input one number or a list with a matching length.')
-        
-        #if np.size(self.frame_parameters['size_pixels']) < 2:
-        #    self.frame_parameters['size_pixels'] = (self.frame_parameters['size_pixels'], self.frame_parameters['size_pixels'])
-        
+            raise ValueError('The number of given pixeltimes does not match the given number of frames that should ' +
+                             'be recorded per location. You can either input one number or a list with a matching ' + 
+                             'length.')
         pixeltimes = None
         if np.size(self.frame_parameters.get('pixeltime')) > 1:
             pixeltimes = self.frame_parameters.get('pixeltime')
@@ -454,12 +452,17 @@ class Mapping(object):
                              
         self.save_mapping_config()
         
-        img = Imaging(frame_parameters=self.frame_parameters, detectors=self.detectors, online=self.online,
-                      as2=self.as2, superscan=self.superscan, document_controller=self.document_controller)
+        if self.switches.get('do_autotuning'):
+            img = Tuning(frame_parameters=self.frame_parameters.copy(), detectors=self.detectors, event=self.event,
+                         online=self.online, document_controller=self.document_controller, as2=self.as2, 
+                         superscan=self.superscan)
+        else:            
+            img = Imaging(frame_parameters=self.frame_parameters.copy(), detectors=self.detectors, online=self.online,
+                          as2=self.as2, superscan=self.superscan, document_controller=self.document_controller)
 
         if self.number_of_images > 1 and self.switches['do_autotuning'] == True:
-            img.logwrite('Acquiring an image series and using autofocus is currently not possible. Autofocus will be disabled.',
-                     level='warn')
+            img.logwrite('Acquiring an image series and using autofocus is currently not possible. ' +
+                         'Autofocus will be disabled.', level='warn')
             self.switches['do_autotuning'] = False
             
         # Sort coordinates in case they were not in the right order
@@ -470,13 +473,11 @@ class Mapping(object):
         self.topY = np.amax((self.coord_dict['top-left'][1], self.coord_dict['top-right'][1]))
         self.botY = np.amin((self.coord_dict['bottom-left'][1], self.coord_dict['bottom-right'][1]))
 
-        #calculate the number of subframes in (x,y). A small distance is kept between the subframes
-        #to ensure they do not overlap
-
+        # calculate the number of subframes in (x,y). A small distance is kept between the subframes
+        # to ensure they do not overlap
         map_coords, frame_number = self.create_map_coordinates(compensate_stage_error=
                                                                self.switches['compensate_stage_error'])
-        #Now go to each position in "map_coords" and take a snapshot
-        #create output folder:
+        # create output folder:
         self.store = os.path.join(self.savepath, self.foldername)
         if not os.path.exists(self.store):
             os.makedirs(self.store)
@@ -487,7 +488,7 @@ class Mapping(object):
         bad_frames = {}
         
         self.write_map_info_file()
-    
+        # Now go to each position in "map_coords" and take a snapshot    
         for frame_coord in map_coords:
             if self.event is not None and self.event.is_set():
                 break
@@ -496,18 +497,10 @@ class Mapping(object):
             img.logwrite(str(counter) + '/' + str(len(map_coords)) + ': (No. ' +
                          str(frame_number[counter-1]) + ') x: ' +str((stagex)) + ', y: ' + str((stagey)) + ', z: ' +
                          str((stagez)) + ', focus: ' + str((fine_focus)))
-            #print(str(counter)+': x: '+str((stagex))+', y: '+str((stagey))+', z: '+str((stagez))+', focus: '+str((fine_focus)))
-            #only do hardware operations when online
-            if self.online:
-    
-#                #stop playing and set beam to be blanked in between acqusition if desired
-#                if self.switches['blank_beam']:
-#                    self.superscan.set_property_as_str('static_probe_state', 'blanked')
+            # only do hardware operations when online
+            if self.online:    
                 if self.switches.get('blank_beam'):
                     self.as2.set_property_as_float('C_Blank', 1)
-    
-                #if self.superscan.is_playing:
-                #    self.superscan.abort_playing()
     
                 vt.as2_set_control(self.as2, 'StageOutX', stagex)
                 vt.as2_set_control(self.as2, 'StageOutY', stagey)
@@ -515,10 +508,9 @@ class Mapping(object):
                     vt.as2_set_control(self.as2, 'StageOutZ', stagez)
                 vt.as2_set_control(self.as2, 'EHTFocus', fine_focus)
     
-                #Wait until movement of stage is done (wait longer time before first frame)
-    
+                # Wait until movement of stage is done (wait longer time before first frame)
                 if counter == 1:
-                    time.sleep(10) #time in seconds
+                    time.sleep(10) # time in seconds
                 elif frame_number[counter-1] is None:
                     time.sleep(1)
                 else:
@@ -532,12 +524,12 @@ class Mapping(object):
                                 self.as2.set_property_as_float('C_Blank', 0)
                                 time.sleep(0.7)
 
-                        data, message = self.handle_autotuning(frame_number[counter-1])
+                        data, message = self.handle_autotuning(frame_number[counter-1], img)
 
                         if self.switches.get('blank_beam'):
                                 self.as2.set_property_as_float('C_Blank', 1)
                     else:
-                        #Take frame and save it to disk
+                        # Take frame and save it to disk
                         if self.number_of_images < 2:
                             if self.switches.get('blank_beam'):
                                 self.as2.set_property_as_float('C_Blank', 0)
