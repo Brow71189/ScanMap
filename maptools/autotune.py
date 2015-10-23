@@ -857,7 +857,7 @@ class Tuning(Peaking):
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
         self._merits = {'peaks': self.astig_2f, 'symmetry': self.astig_3f, 'combined': self.combined, 
-                        'astig_2f': self.astig_2f, 'astig_3f': self.astig_3f, 'coma': self.coma}
+                        'astig_2f': self.astig_2f, 'astig_3f': self.astig_3f, 'coma': self.coma, 'intensity': self.coma}
         self.steps = kwargs.get('steps')
         self.keys = kwargs.get('keys')
         self.event = kwargs.get('event')
@@ -965,6 +965,9 @@ class Tuning(Peaking):
         return direction
 
     def kill_aberrations(self, dirt_detection=True, merit = 'astig_2f', **kwargs):
+        # Backup original frame parameters
+        original_frame_parameters = self.frame_parameters.copy()        
+        
         # Check input for arguments that override class variables
         if kwargs.get('steps') is not None:
             self.steps = kwargs['steps']
@@ -973,8 +976,7 @@ class Tuning(Peaking):
         if kwargs.get('frame_parameters') is not None:
             self.frame_parameters = kwargs['frame_parameters']
         else:
-            self.frame_parameters = {'size_pixels': (512, 512), 'center': (0,0), 'pixeltime': 8, 'fov': 4,
-                                     'rotation': 0}
+            self.frame_parameters = {'size_pixels': (512, 512), 'center': (0,0), 'pixeltime': 8, 'fov': 4}
 
         # Apply default values if one required parameter is not set
         if self.steps is None:
@@ -988,7 +990,6 @@ class Tuning(Peaking):
         for key in self._merits.keys():
             self.merit_history[key] = []            
 
-        #total_tunings = []
         counter = 0
 
         self.imsize = self.frame_parameters['fov']
@@ -1003,6 +1004,7 @@ class Tuning(Peaking):
             current = 1e5
             print(str(detail))
         except DirtError:
+            self.frame_parameters = original_frame_parameters.copy()
             self.logwrite('Tuning ended because of too high dirt coverage.', level='warn')
             raise
             
@@ -1042,8 +1044,10 @@ class Tuning(Peaking):
                     break
 
                 self.logwrite('Working on: '+ key)
-
-                direction = self.find_direction(key, dirt_detection=dirt_detection, merit=merit)
+                try:
+                    direction = self.find_direction(key, dirt_detection=dirt_detection, merit=merit)
+                except DirtError:
+                    raise
                 
                 if direction == 0:
                     self.logwrite('Could not find a direction to improve ' + key + '. Going to next aberration.')
@@ -1074,7 +1078,7 @@ class Tuning(Peaking):
                         if self.online:
                             self.aberrations = self.aberrations_tracklist[-1].copy()
                             self.image_grabber(acquire_image=False)
-
+                        self.frame_parameters = original_frame_parameters.copy()
                         self.logwrite('Tuning ended because of too high dirt coverage.', level='warn')
                         raise
 
@@ -1098,6 +1102,7 @@ class Tuning(Peaking):
                             #current  = self.tuning_merit()
                             current = self._merits[merit]()
                         except DirtError:
+                            self.frame_parameters = original_frame_parameters.copy()
                             self.logwrite('Tuning ended because of too high dirt coverage.', level='warn')
                             raise
                         if current > np.amin(self.merit_history[merit]):
@@ -1108,6 +1113,7 @@ class Tuning(Peaking):
                                 #current  = self.tuning_merit()
                                 current = self._merits[merit]()
                             except DirtError:
+                                self.frame_parameters = original_frame_parameters.copy()
                                 self.logwrite('Tuning ended because of too high dirt coverage.', level='warn')
                                 raise
                             self.logwrite('Dismissed changes at '+ key)
@@ -1160,6 +1166,7 @@ class Tuning(Peaking):
 #        else:
 #            image_grabber(acquire_image=False, **kwargs)
         self.steps = step_originals.copy()
+        self.frame_parameters = original_frame_parameters.copy()
 
     def astig_2f(self):
         # Check if peaks are already stored and if second order is there
