@@ -131,16 +131,37 @@ def calculate_counts(image, threshold=1e-9):
 def counts(path):
     im = cv2.imread(path, -1)
     return calculate_counts(im)
+    
+def create_mask(Peak, graphene_threshold, light_threshold, heavy_threshold, dirt_border=0):
+    
+    if graphene_threshold > 0:
+        mask = Peak.dirt_detector(dirt_threshold=graphene_threshold)
+    else:
+        mask = np.ones(Peak.shape, dtype=np.uint8)
+    
+    if light_threshold > 0:
+        mask[Peak.dirt_detector(dirt_threshold=light_threshold)==1] = 4
+        
+    if heavy_threshold > 0:
+        heavy_dirt_mask = Peak.dirt_detector(dirt_threshold=heavy_threshold)
+        if dirt_border > 0:
+            heavy_dirt_mask = cv2.dilate(heavy_dirt_mask, np.ones((dirt_border, dirt_border)))
+            mask[heavy_dirt_mask==1] = 16
+        else:
+            mask[heavy_dirt_mask==1] = 16
+        
+    return mask
 
-def subframes_preprocessing(filename, dirname, imsize, counts_threshold=1e-9, dirt_threshold=0.02,
-                            median_blur_diameter=39, gaussian_blur_radius=3, maximum_dirt_coverage=0.5,
-                            dirt_border=100, save_fft=True):
+def subframes_preprocessing(filename, dirname, imsize, counts_threshold=1e-9, graphene_threshold=0, light_threshold=0, 
+                            heavy_threshold=0.02, median_blur_diameter=39, gaussian_blur_radius=3,
+                            maximum_dirt_coverage=0.5, dirt_border=100, save_fft=True):
     """
     Returns tuple of the form:
             (filename, success, dirt coverage, counts divisor, angle of lattice rotation, mean peak radius)
         For files with more than 50% dirt coverage, the last 3 values will be 'None' and success will be False.
         
     """
+    print('Working on: ' + filename)
     success = True
     #load image
     image = cv2.imread(dirname+filename, -1)
@@ -150,10 +171,11 @@ def subframes_preprocessing(filename, dirname, imsize, counts_threshold=1e-9, di
     
     Peak = at.Peaking(image=image, imsize=imsize)
     #get mask to filter dirt and check if image is covered by more than "maximum_dirt_coverage"
-    mask = Peak.dirt_detector(dirt_threshold=dirt_threshold, median_blur_diam=median_blur_diameter,
-                              gaussian_blur_radius=gaussian_blur_radius)
-
-    dirt_coverage = float(np.sum(mask))/(np.shape(image)[0]*np.shape(image)[1])
+#    mask = Peak.dirt_detector(dirt_threshold=dirt_threshold, median_blur_diam=median_blur_diameter,
+#                              gaussian_blur_radius=gaussian_blur_radius)
+    mask = create_mask(Peak, graphene_threshold, light_threshold, heavy_threshold, dirt_border)
+    
+    dirt_coverage = float(np.sum(mask[mask==16])/16)/(np.shape(image)[0]*np.shape(image)[1])
     if dirt_coverage > maximum_dirt_coverage:
         success = False
         return (filename, dirt_coverage, None, None, None, None, None, None,  success)
@@ -174,13 +196,15 @@ def subframes_preprocessing(filename, dirname, imsize, counts_threshold=1e-9, di
     image[image<0]=0.0
     image = np.asarray(np.rint(image/counts_divisor), dtype='uint16')
     #dilate mask if dirt_border > 0
-    if dirt_border > 0:
-        mask = cv2.dilate(mask, np.ones((dirt_border, dirt_border)))
+#    if dirt_border > 0:
+#        mask = cv2.dilate(mask, np.ones((dirt_border, dirt_border)))
     #Set pixels where dirt was detected to maximum of 16bit range
-    image[mask==1] = 65535
+    #image[mask==1] = 65535
     #save the image to disk
     if not os.path.exists(dirname+'prep_'+dirname.split('/')[-2]+'/'):
         os.makedirs(dirname+'prep_'+dirname.split('/')[-2]+'/')
+    if not os.path.exists(dirname+'mask_'+dirname.split('/')[-2]+'/'):
+        os.makedirs(dirname+'mask_'+dirname.split('/')[-2]+'/')
     if save_fft:
         if not os.path.exists(dirname+'fft_'+dirname.split('/')[-2]+'/'):
             os.makedirs(dirname+'fft_'+dirname.split('/')[-2]+'/')
@@ -189,6 +213,8 @@ def subframes_preprocessing(filename, dirname, imsize, counts_threshold=1e-9, di
         #cv2.imwrite(dirname+'subframes_preprocessing/'+filename, image)
         
         tifffile.imsave(dirname+'prep_'+dirname.split('/')[-2]+'/'+filename, image)
+        tifffile.imsave(dirname+'mask_'+dirname.split('/')[-2]+'/'+filename, mask)
+        
         if save_fft:
             fft = np.log(np.abs(np.fft.fftshift(np.fft.fft2(image_org)))).astype('float32')
             center = np.array(np.shape(image))/2
@@ -197,7 +223,8 @@ def subframes_preprocessing(filename, dirname, imsize, counts_threshold=1e-9, di
             cv2.ellipse(ell, (tuple(center), (ellipse_a*2*np.sqrt(3), ellipse_b*2*np.sqrt(3)), -angle*180/np.pi), 2)            
             fft *= ell
             savesize = int(2.0*imsize/0.213)
-            tifffile.imsave(dirname+'fft_'+dirname.split('/')[-2]+'/'+filename, fft[center[0]-savesize:center[0]+savesize+1, center[1]-savesize:center[1]+savesize+1])
+            tifffile.imsave(dirname+'fft_'+dirname.split('/')[-2]+'/'+filename,
+                            fft[center[0]-savesize:center[0]+savesize+1, center[1]-savesize:center[1]+savesize+1])
         
     
     #return image parameters
@@ -207,12 +234,16 @@ if __name__ == '__main__':
     
     overall_starttime = time.time()
 
-    dirpath = '/3tb/maps_data/map_2015_10_19_17_49'
+    dirpath = '/3tb/maps_data/map_2015_10_19_20_44'
     #dirpath = '/3tb/Dark_noise/'
     imsize = 20
-    dirt_threshold = 0.0043
-    dirt_border = 10
-    maximum_dirt_coverage=0.6
+    graphene_threshold = 0.0063
+    #graphene_threshold = 0
+    light_threshold = 0.0144
+    #light_threshold = 0
+    heavy_threshold = 0.02645
+    dirt_border = 30
+    maximum_dirt_coverage=0.5
 
     if not dirpath.endswith('/'):
         dirpath += '/'
@@ -228,8 +259,11 @@ if __name__ == '__main__':
     #starttime = time.time()
     
     pool = Pool()
-    res = [pool.apply_async(subframes_preprocessing, (filename, dirpath, imsize), {'dirt_threshold': dirt_threshold, 'dirt_border':dirt_border, \
-            'median_blur_diameter': 59, 'gaussian_blur_radius': 5,'save_fft': True, 'maximum_dirt_coverage': maximum_dirt_coverage}) for filename in matched_dirlist]
+    res = [pool.apply_async(subframes_preprocessing, (filename, dirpath, imsize),
+                            {'graphene_threshold': graphene_threshold, 'light_threshold': light_threshold,
+                             'heavy_threshold': heavy_threshold, 'dirt_border':dirt_border, 'median_blur_diameter': 67,
+                             'gaussian_blur_radius': 4, 'save_fft': True,
+                             'maximum_dirt_coverage': maximum_dirt_coverage}) for filename in matched_dirlist]
     res_list = [p.get() for p in res]
     pool.close()
     pool.terminate()
@@ -243,11 +277,14 @@ if __name__ == '__main__':
     if not os.path.exists(dirpath+'prep_'+dirpath.split('/')[-2]+'/'):
         os.makedirs(dirpath+'prep_'+dirpath.split('/')[-2]+'/')
     
-    frame_data_file = open(dirpath+'prep_'+dirpath.split('/')[-2]+'/'+'frame_init_' + dirpath.split('/')[-2] + '.txt', 'w')
+    frame_data_file = open(dirpath+'prep_'+dirpath.split('/')[-2]+'/'+'frame_init_' + dirpath.split('/')[-2] + '.txt',
+                           'w')
     
     frame_data_file.write('#This file contains informations about all frames of '+(dirpath.split('/')[-2]+'\n'))
     frame_data_file.write('#Created: ' + time.strftime('%Y/%m/%d %H:%M') + '\n')
-    frame_data_file.write('#Imagesize in nm: %.1f\tDirt threshold: %f\tDirt border: %d\n' %(imsize, dirt_threshold, dirt_border))
+    frame_data_file.write('#Imagesize in nm: {:.1f}\tgraphene threshold: {:f}\t'.format(imsize,graphene_threshold))
+    frame_data_file.write('light threshold: {:f}\theavy threshold: {:f}\t'.format(light_threshold, heavy_threshold))
+    frame_data_file.write('Dirt border: {:n}\tmaximum dirt coverage: {:f}\n'.format(dirt_border, maximum_dirt_coverage))
     frame_data_file.write('#Meanings of the values are:\n')
     frame_data_file.write('#filename\tdirt\tnumpeak\ttuning\ttilt\tella\tellb\tellphi\n\n')
     
