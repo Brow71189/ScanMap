@@ -45,7 +45,7 @@ class Positionfinder(object):
         self.overview = kwargs.get('overview')
         self.framelist = kwargs.get('framelist', [])
         self.number_frames = kwargs.get('number_frames')
-        self.scaledframes = [] # has the form (framenumber, scaled image)
+        self.scaledframes = [] # list of scaled images
         self.size_overview = kwargs.get('size_overview')
         self.size_frames = kwargs.get('size_frames')
         self.framepath = kwargs.get('framepath')
@@ -326,7 +326,7 @@ class Positionfinder(object):
 #        plt.gci()
 #        plt.plot(leftxrange, lefty, 'r-')
     
-        corners = self.corners.copy()
+        corners = list(self.corners.copy())
         corners.append(self.corners[0])
         corners = np.array(corners)
         #plt.gci()
@@ -448,16 +448,19 @@ class Positionfinder(object):
                             else:
                                 right2 = -1
                             
-                            if right2 > -1:
+                            if right2 > -1 and right > -1:
                                 newposition = self.optimized_positions[j, right] - right * (
                                              (self.optimized_positions[j, right2] -
                                               self.optimized_positions[j, right]) / (right2 - right))
-                            else:
+                            elif right > -1:
                                 newposition = (self.get_correct_position((j,-1)) +
                                                1/right*self.optimized_positions[j, right]) / (1/right + 1)
+                            else:
+                                newposition = self.get_correct_position((j, i))
+
                         elif i == number_frames[1]-1:
                             left2 = left
-                            # Only etrapolate when close to right border to avoid large errors
+                            # Only extrapolate when close to right border to avoid large errors
                             while left2 > number_frames[1] - 5:
                                 left2 -= 1
                                 if (self.optimized_positions[j, left2] > -1).all():
@@ -465,15 +468,16 @@ class Positionfinder(object):
                             else:
                                 left2 = -1
                             
-                            if left2 > -1:
-                                print(left, left2)
+                            if left2 > -1 and left > -1:
                                 newposition = self.optimized_positions[j, left] + (number_frames[1]-left-1) * (
                                              (self.optimized_positions[j, left] -
                                               self.optimized_positions[j, left2]) / (left - left2))
-                            else:
+                            elif left >  -1:
                                 newposition = (1/(i-left)*self.optimized_positions[j, left] +
                                                self.get_correct_position((j, number_frames[1]))) / \
                                                (1 + 1/(i-left))
+                            else:
+                                newposition = self.get_correct_position((j, i))
                         # interpolate position if frame has two neighbors
                         elif left > -1 and right > -1:
                             newposition = (1/(i-left)*self.optimized_positions[j, left] +
@@ -543,7 +547,7 @@ class Positionfinder(object):
         self.framelist.sort()
                     
     
-    def main(self, iterations=10, plot_results=True, save_plots=False, **kwargs):
+    def main(self, iterations=10, save_results=True, plot_results=True, save_plots=False, **kwargs):
         """
         kwargs takes all additional parameters for the subfunctions called here. These are in detail:
             For get_framelist:
@@ -618,13 +622,17 @@ class Positionfinder(object):
                 plots.append((plt.imshow(self.colored_optimized_positions), ))
                 print('Finished plotting.')
             
+            start_quality = np.count_nonzero(self.optimized_positions + 1)            
             for i in range(iterations):
+                print('Iteration No. ' + str((i+1)))
                 self.remove_outliers(**remove_outliers_params)
                 self.interpolate_positions()
                 self.relax_positions(**relax_positions_params)
                 if plot_results:
                     self.draw_optimized_positions()
                     plots.append((plt.imshow(self.colored_optimized_positions), ))
+                if not np.count_nonzero(self.optimized_positions + 1) > start_quality:
+                    break
         
             self.interpolate_positions()
             if plot_results:
@@ -640,59 +648,20 @@ class Positionfinder(object):
                 #plt.show()
 
         finally:
-            self.save_data()
+            if save_results:
+                self.save_data()
             
             
 if __name__=='__main__':
     
-    dirpath = '/3tb/maps_data/map_2015_10_19_17_49'
+    dirpath = '/3tb/maps_data/map_2015_06_30_14_44/all'
     
 #    overview = '/3tb/maps_data/map_2015_08_18_17_07/Overview_1576.59891322_nm.tif'
     
-    size_overview = 1587 #nm
-    size_frames = 20 #nm
+    size_overview = 1567.83 #nm
+    size_frames = 64 #nm
     #number of frames in x- and y-direction
-    number_frames = (34,32)
-    #borders of the area where the first frame is expected (in % of the overview image)
-    #has to be a tuple of the form (lower-y, higher-y, lower-x, higher-x)
-#    area_first_frame = (15,25,15,25) #%
-    #enter search area for the following images. Search is always performed around the position of the last image.
-    #tuple hast to have the form (negtive-y, positive-y, negative-x, positive-x)
-#    tolerance_within_rows = (20,20,20,20)
-#    tolerance_within_columns = (20,20,20,20)
-    #Enter the number of frames that should be included here. Type None to use all frames.
-#    number_frames_included = -1
-    #
-#    bad_correlation_threshold = 0
-    
-    
-    
-##    area_first_frame = np.array(area_first_frame)/100.0
-#    frames = os.listdir(dirpath)
-#    frames.sort()
-#    matched_frames = []
-#    for name in frames:
-#        num = None
-#        try:
-#            int(name[0:4])
-#        except:
-#            pass
-#        else:
-#            try:
-#                num = int(name[-6:-4])
-#            except:
-#                pass
-#            else:
-#                if num is 0:
-#                    matched_frames.append(name)
-#
-#    matched_frames.sort()
-#    over = np.array(cv2.imread(overview, -1))#[1023:3072, 0:2048]*3
-#    shape_over = np.shape(over)
-#    over = cv2.GaussianBlur(over, None, 1)
-    
-#    Finder = Positionfinder(overview=over, framelist=matched_frames, number_frames=number_frames,
-#                            size_overview=size_overview, size_frames=size_frames, framepath=dirpath)
+    number_frames = (20,14)
     
     Finder = Positionfinder(number_frames=number_frames, size_overview=size_overview, size_frames=size_frames,
                             framepath=dirpath)
@@ -700,9 +669,10 @@ if __name__=='__main__':
 #    Finder.data_to_load.remove('optimized_positions')
 #    Finder.data_to_load.remove('positions')
 #    Finder.data_to_load.remove('borders')
-    Finder.data_to_load = ['scaledframes', 'leftborder', 'topborder', 'rightborder', 'bottomborder', 'allborders']
-    Finder.main(iterations=10, save_plots=False, plot_results=False, border_min_correlation=0.6, optimize_searchrange=3,
-                outlier_tolerance=0.8, relax_searchrange=3, relax_min_correlation=0.6)
+    Finder.data_to_load = ['scaledframes']
+#    Finder.data_to_load = ['scaledframes', 'leftborder', 'topborder', 'rightborder', 'bottomborder', 'allborders']
+    Finder.main(iterations=100, save_plots=False, plot_results=False, border_min_correlation=0.6, optimize_searchrange=3,
+                optimize_min_correlation=0.7, outlier_tolerance=0.8, relax_searchrange=3, relax_min_correlation=0.6)
 #    Finder.get_framelist()    
 #    Finder.load_data()
 #    Finder.scale_images()
@@ -747,109 +717,3 @@ if __name__=='__main__':
 #    plt.imshow(Finder.colored_optimized_positions)
 #    
 #    Finder.save_data()
-##    l = Lock()
-##    added = Array(c_float, over.ravel(), lock=l)
-#    added = np.zeros((3,)+np.shape(over))
-#    #added = over.copy()
-#    added[2] += over
-#    color = float(np.mean(over))
-#    position_list = []
-#    correlation_list = []
-#    in_row_distance_list = []
-#    in_column_distance_list = []
-#    
-#    #find position of first frame
-#    name = matched_frames[0]
-#    im = np.array(cv2.imread(dirpath+name, -1))
-#    shape_im = np.shape(im)
-#    scale = (size_frames/float(shape_im[0])/(size_overview/float(shape_over[0])))
-#    im = cv2.resize(im, None, fx=scale, fy=scale, interpolation=cv2.INTER_AREA)
-#    #im = cv2.GaussianBlur(im, None, 3)
-#    result = cv2.matchTemplate(over[int(area_first_frame[0]*shape_over[0]):int(area_first_frame[1]*shape_over[0]),
-#                                    int(area_first_frame[2]*shape_over[1]):int(area_first_frame[3]*shape_over[1])],
-#                                    im, method=cv2.TM_CCOEFF_NORMED)
-#
-#    maxi = tuple(np.array(np.unravel_index(np.argmax(result), result.shape), dtype='int') + 
-#                 np.array((area_first_frame[0]*shape_over[0], area_first_frame[2]*shape_over[1]), dtype='int'))
-#    correlation_list.append(np.amax(result))
-#    position_list.append((int(name[0:4]), ) + maxi)
-#    added[1,maxi[0]:maxi[0]+im.shape[0], maxi[1]:maxi[1]+im.shape[1]] += im
-#    cv2.putText(added[0], str(int(name[0:4])), (maxi[1]-4,maxi[0]-2), cv2.FONT_HERSHEY_PLAIN, 2, color, thickness=2)
-#    
-#    if number_frames_included < 1:
-#        number_frames_included = None
-#        
-#    counter = 0
-#    for name in matched_frames[1:number_frames_included]:
-#        im = np.array(cv2.imread(dirpath+name, -1))#*3
-#        shape_im = np.shape(im)
-#        scale = (size_frames/float(shape_im[0])/(size_overview/float(shape_over[0])))
-#        im = cv2.resize(im, None, fx=scale, fy=scale, interpolation=cv2.INTER_AREA)
-#        if int(name[0:4])%number_frames[0] == 0 and int(name[0:4]) != 0:
-#            subarray = np.array(( position_list[counter-number_frames[0]+1][1]-int(tolerance_within_columns[0]*scale*shape_im[0]),
-#                                  position_list[counter-number_frames[0]+1][1]+int(tolerance_within_columns[1]*scale*shape_im[0]),
-#                                  position_list[counter-number_frames[0]+1][2]-int(tolerance_within_columns[2]*scale*shape_im[0]),
-#                                  position_list[counter-number_frames[0]+1][2]+int(tolerance_within_columns[3]*scale*shape_im[0]) ))
-#        else:
-#            subarray = np.array(( position_list[counter][1]-int(tolerance_within_rows[0]*scale*shape_im[0]),
-#                                  position_list[counter][1]+int(tolerance_within_rows[1]*scale*shape_im[0]),
-#                                  position_list[counter][2]-int(tolerance_within_rows[2]*scale*shape_im[0]),
-#                                  position_list[counter][2]+int(tolerance_within_rows[3]*scale*shape_im[0]) ))
-#        subarray[subarray>= shape_over[0]] = shape_over[0]-1
-#        subarray[subarray< 0] = 0
-#        result = cv2.matchTemplate(over[subarray[0]:subarray[1],subarray[2]:subarray[3]], im, method=cv2.TM_CCOEFF_NORMED)
-#        corr_max = np.amax(result)
-#        maxi = tuple(np.array(np.unravel_index(np.argmax(result), result.shape), dtype='int') + np.array((subarray[0], subarray[2]), dtype='int'))
-#        if int(name[0:4])%number_frames[0] == 0 and int(name[0:4]) != 0:
-#            in_column_distance_list.append(np.array(maxi) - np.array(position_list[counter-number_frames[0]+1][1:]))
-#        else:
-#            if corr_max < bad_correlation_threshold and len(in_row_distance_list) > 1:
-#                maxi = (position_list[counter][1] + int(np.median(np.array(in_row_distance_list)[:,0])),
-#                        position_list[counter][2] + int(np.median(np.array(in_row_distance_list)[:,1])))
-#            in_row_distance_list.append(np.array(maxi) - np.array(position_list[counter][1:]))
-#            
-#        correlation_list.append(corr_max)
-#        position_list.append((int(name[0:4]), ) + maxi)
-#        added[1,maxi[0]:maxi[0]+im.shape[0], maxi[1]:maxi[1]+im.shape[1]] += im
-#        #cv2.rectangle(added, (maxi[1],maxi[0]), (maxi[1]+im.shape[1], maxi[0]+im.shape[0]), color, thickness=2)
-#        cv2.putText(added[0], str(int(name[0:4])), (maxi[1]-4,maxi[0]-2), cv2.FONT_HERSHEY_PLAIN, 2, color, thickness=2)
-#        counter += 1
-    
-#    added2 = added.copy()
-#    added2 = np.swapaxes(added2, 0, 2)
-#    added2 = np.swapaxes(added2, 0, 1)
-#    percentile95 = np.percentile(added, 95)
-#    added2[added2>percentile95] = percentile95
-#    added2 *= 255/percentile95
-#    added2 = added2.astype('uint8')
-    
-#    correlation_array = np.ones(np.prod(np.array(number_frames)), dtype='float32')
-#    correlation_array[0:len(correlation_list)] = np.array(correlation_list, dtype='float32')
-#    correlation_array = correlation_array.reshape((number_frames[1], number_frames[0]))
-#    in_row_distance_array = np.array(in_row_distance_list, dtype='float32')
-#    in_column_distance_array = np.array(in_column_distance_list, dtype='float32')
-#    
-#    tifffile.imsave(dirpath+'positions.tif', added2)
-#    
-#    np.savez( dirpath+'positions.npz',
-#              position_list=np.array(position_list, dtype='uint16'),
-#              overview_with_frames_raw=added.astype('float32'),
-#              overview_with_frames_rgb=added2, 
-#              correlation_list=correlation_array,
-#              in_row_distance_list = in_column_distance_array,
-#              in_column_distance_list = in_column_distance_array )
-    
-
-
-
-    #cv2.imwrite(dirpath+'positions.tif', added2)
-#    p = Pool(initializer=init, initargs=(l,))
-#    
-#    res = [p.apply_async(find_position, (name, added,over, shape_over, size_frames, size_overview, color)) for name in matched_frames[0:10]]
-#    res_list = [r.get() for r in res]
-#    
-#    p.close()
-#    p.join()
-#    p.terminate()
-#    
-#    added = np.array(added).reshape(shape_over)

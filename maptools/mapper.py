@@ -346,7 +346,7 @@ class Mapping(object):
         
             config_file.write('# Configurations for ' + self.foldername + '.\n')
             config_file.write('# This file can be loaded to resume the mapping process with the exact same parameters.\n')
-            config_file.write('# Only edit this file if you know what you do.')
+            config_file.write('# Only edit this file if you know what you do. ')
             config_file.write('Otherwise the loading process can fail.\n\n')
             config_file.write('{ switches\n')
             for key, value in self.switches.items():
@@ -620,7 +620,7 @@ class Mapping(object):
                 else:
                     return 'OFF'
         
-            config_file = open(os.path.join(self.store, 'map_configurations.txt'), 'w')
+            config_file = open(os.path.join(self.store, 'map_info.txt'), 'w')
             config_file.write('#This file contains all parameters used for the mapping.\n\n')
             config_file.write('#Map parameters:\n')
             map_paras = {'Autofocus': translator(self.switches.get('do_autotuning')),
@@ -628,7 +628,8 @@ class Mapping(object):
                          'Auto Offset': translator(self.switches.get('auto_offset')),
                          'Z Drive': translator(self.switches.get('use_z_drive')),
                          'Acquire_Overview': translator(self.switches.get('acquire_overview')),
-                         'Number of frames': str(self.num_subframes[0])+'x'+str(self.num_subframes[1])}
+                         'Number of frames': str(self.num_subframes[0])+'x'+str(self.num_subframes[1]),
+                         'Compensate stage error': translator(self.switches.get('compensate_stage_error'))}
             for key, value in map_paras.items():
                 config_file.write('{0:18}{1:}\n'.format(key+':', value))
             
