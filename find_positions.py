@@ -63,12 +63,14 @@ class Positionfinder(object):
         self.optimized_positions = None
         self.data_to_save = kwargs.get('data_to_save', ['scaledframes', 'leftborder', 'topborder', 'rightborder',
                                                         'bottomborder', 'allborders', 'corners', 'border_parameters',
-                                                        'positions', 'optimized_positions'])
+                                                        'positions', 'optimized_positions', 'options'])
         self.data_to_load = kwargs.get('data_to_load', ['scaledframes', 'leftborder', 'topborder', 'rightborder',
                                                         'bottomborder', 'allborders', 'corners', 'border_parameters',
-                                                        'positions', 'optimized_positions'])
+                                                        'positions', 'optimized_positions', 'options'])
         self.loaded_data = []
         self.positions_to_relax = []
+        self.options = []
+        self.result_is_final = False
         
     
     def save_data(self):
@@ -77,8 +79,14 @@ class Positionfinder(object):
             if getattr(self, item) is None or len(getattr(self, item)) < 1:
                 self.data_to_save.remove(item)
             else:
-                savedict[item] = np.array(getattr(self, item), dtype=np.float32)
+                itemarray = np.array(getattr(self, item))
+                if itemarray.dtype.kind == 'f':
+                    savedict[item] = itemarray.astype(np.float32)
+                else:
+                    savedict[item] = itemarray
+                    
         savedict['data_to_save'] = self.data_to_save
+        savedict['result_is_final'] = self.result_is_final
         
         np.savez(os.path.join(self.framepath, 'Positionfinder_data.npz'), **savedict)
         
@@ -91,11 +99,20 @@ class Positionfinder(object):
         if os.path.isfile(os.path.join(self.framepath, 'Positionfinder_data.npz')):
             with np.load(os.path.join(self.framepath, 'Positionfinder_data.npz')) as data:
                 data_in_save = data['data_to_save']
+                try:
+                    self.result_is_final = data['result_is_final'].item()
+                except Exception as detail:
+                    print('Could not load "result_is_final". Reason: ' + str(detail))
+                    
                 for item in self.data_to_load:
                     if item in data_in_save:
                         print('Loading ' + item + ' from disk.')
-                        setattr(self, item, data[item])
-                        self.loaded_data.append(item)
+                        try:
+                            setattr(self, item, data[item])
+                        except Exception as detail:
+                            print('\nCould not load ' + item + ' from disk. Reason: ' + str(detail))
+                        else:
+                            self.loaded_data.append(item)
         print('Finished loading.')
     
     def scale_images(self):
@@ -108,15 +125,19 @@ class Positionfinder(object):
             scale = (self.size_frames/float(image.shape[0])/(self.size_overview/float(self.overview.shape[0])))
             scaledframe = cv2.resize(image, None, fx=scale, fy=scale, interpolation=cv2.INTER_AREA)
             self.scaledframes.append(scaledframe)
+            means = np.mean(scaledframe)
             
             for i in range(1, len(self.framelist)):
                 image = ndimage.imread(os.path.join(self.framepath, self.framelist[i]))
                 scaledframe = cv2.resize(image, None, fx=scale, fy=scale, interpolation=cv2.INTER_AREA)
                 self.scaledframes.append(scaledframe)
+                means += np.mean(scaledframe)
                 if i%(np.rint(len(self.framelist)/50)) == 0:
                     print('Done {:.0f} / {:.0f} ({:.1%})'.format(i, len(self.framelist), i/len(self.framelist)),
                           end='\r')
-
+            means /= len(self.scaledframes)
+#            for frame in self.scaledframes:
+#                frame /= means
 #            np.save(os.path.join(self.framepath, 'scaledframes.npy'), scaledframes)
 #            print('\nSaved scaled frames to ' + os.path.join(self.framepath, 'scaledframes.npy'))
         
@@ -130,7 +151,8 @@ class Positionfinder(object):
         result = cv2.matchTemplate(self.overview[searchrange[0][0]:searchrange[0][1],
                                                  searchrange[1][0]:searchrange[1][1]],
                                    self.scaledframes[framenumber], method=cv2.TM_CCOEFF_NORMED)
-        
+        #result -= 1
+        #result *= -1
         maxi = np.array(np.unravel_index(np.argmax(result), np.shape(result)))
         return (tuple(maxi + np.array((searchrange[0][0], searchrange[1][0]))), np.amax(result))
         
@@ -332,10 +354,30 @@ class Positionfinder(object):
         #plt.gci()
         return plt.plot(corners[:, 1], corners[:, 0], 'r-')
         
-    def lines_intersection(self, a1, b1, a2, b2):
-        x = (b2-b1)/(a1-a2)
-        y = (a1*b2 - a2*b1)/(a1-a2)
-        return np.array((y, x))
+#    def lines_intersection(self, a1, b1, a2, b2):
+#        x = (b2-b1)/(a1-a2)
+#        y = (a1*b2 - a2*b1)/(a1-a2)
+#        return np.array((y, x))
+    
+    def lines_intersection(self, p1, q1, p2, q2):
+        # Lines are represented by two support points p and q (both in (y,x)-order)
+        p1, q1, p2, q2 = np.array(p1), np.array(q1), np.array(p2), np.array(q2)
+        # Equation of a line is x = p + t*(q-p), where everthing except for the parameter t is a 2D-vector
+        # Then the intersection is given by parameter of second line, t2:
+        # First calculate numerator
+        t2 = p2[0]*(q1[1]-p1[1]) - p1[0]*(q1[1]-p1[1]) - (p2[1]-p1[1])*(q1[0]-p1[0])
+        # Then the denominator
+        t2 /= (q2[1]-p2[1])*(q1[0]-p1[0]) - (q2[0]-p2[0])*(q1[1]-p1[1])
+        # Now get the coordinates of the intersection
+        return p2 + t2*(q2-p2)
+        
+    def distance_from_line(self, k, p, q):
+        # Returns the distance of a point k from the line defined by p and q (all in (y,x)-order)
+        # line equation: x = p + t*(q-p)
+        # Parameter t where a perpendicular line through k intercepts the line defined by p and q
+        t = (np.dot(k, q) - np.dot(q, p) - np.dot(k, p) + np.dot(p, p)) / np.sum((q-p)**2)
+        # Distance is the length of the vector from k to the intercection
+        return np.sqrt(np.sum((p + t*(q-p) - k)**2))
     
     def fit_line(self, x, y, startvalues=None):
 #        popt, pcov = curve_fit(self.linear, x, y, p0=startvalues)
@@ -343,7 +385,14 @@ class Positionfinder(object):
         #slope = np.median((y[1:]-y[:-1]))/np.median((x[1:]-x[:-1]))
         #slope = np.median((y[1:]-y[:-1])/(x[1:]-x[:-1]))
         #return np.array((slope, np.median(y[1:-1]) - slope*np.median(x[1:-1])))
-        return theilslopes(y, x)[0:2]
+
+        #return theilslopes(y, x)[0:2]
+        
+        x_part = theilslopes(x)[0:2]
+        y_part = theilslopes(y)[0:2]
+        p = np.array((y_part[1], x_part[1]))
+        q = np.array((y_part[0], x_part[0])) + p
+        return (p, q)
         
     def linear(self, x, a, b):
         return a*x + b
@@ -380,10 +429,24 @@ class Positionfinder(object):
                 for i in range(number_frames[1]):
                     number = j*number_frames[1]+i
                     shape = np.shape(self.scaledframes[number])
+                    # as the positions are defined as top-left corner of the subframes, searchrange has to be extended
+                    # by one image size in positive x- and y-direction
                     searchrange = ((self.positions[j,i][0]-searchradius*shape[0],
-                                    self.positions[j,i][0]+searchradius*shape[0]),
+                                    self.positions[j,i][0]+searchradius*shape[0]+shape[0]),
                                    (self.positions[j,i][1]-searchradius*shape[1],
-                                    self.positions[j,i][1]+searchradius*shape[1]))
+                                    self.positions[j,i][1]+searchradius*shape[1]+shape[1]))
+                    searchrange = np.array(searchrange)
+                    # make sure searchrange lies completely inside the overview image
+                    searchrange[:, 0][searchrange[:, 0]<0] = 0
+                    if searchrange[0, 1]>self.overview.shape[0]-1:
+                        searchrange[0, 1] = self.overview.shape[0]
+                    if searchrange[1, 1]>self.overview.shape[1]-1:
+                        searchrange[1, 1] = self.overview.shape[1]
+                    # if searchrange is not larger than one subframe size don't try to find a position
+                    if not (searchrange[0,1]-searchrange[0,0] > shape[0] and
+                            searchrange[1,1]-searchrange[1,0] > shape[0]):
+                        continue
+                    
                     position = self.find_position(number, searchrange=searchrange)
                     if position[1] > min_correlation:
                         self.optimized_positions[j,i] = np.array(position[0])
@@ -402,9 +465,22 @@ class Positionfinder(object):
                 number = j*number_frames[1]+i
                 shape = np.shape(self.scaledframes[number])
                 searchrange = ((self.optimized_positions[j,i][0]-searchradius*shape[0],
-                                self.optimized_positions[j,i][0]+searchradius*shape[0]),
+                                self.optimized_positions[j,i][0]+searchradius*shape[0]+shape[0]),
                                (self.optimized_positions[j,i][1]-searchradius*shape[1],
-                                self.optimized_positions[j,i][1]+searchradius*shape[1]))
+                                self.optimized_positions[j,i][1]+searchradius*shape[1]+shape[1]))
+                searchrange = np.array(searchrange)
+                # make sure searchrange lies completely inside the overview image
+                searchrange[:, 0][searchrange[:, 0]<0] = 0
+                if searchrange[0, 1]>self.overview.shape[0]-1:
+                    searchrange[0, 1] = self.overview.shape[0]
+                if searchrange[1, 1]>self.overview.shape[1]-1:
+                    searchrange[1, 1] = self.overview.shape[1]
+                # if searchrange is not larger than one subframe size don't try to find a position
+                if not (searchrange[0,1]-searchrange[0,0] > shape[0] and
+                        searchrange[1,1]-searchrange[1,0] > shape[0]):
+                    self.optimized_positions[j,i] = np.array((-1, -1))
+                    continue                                
+                                
                 position = self.find_position(number, searchrange=searchrange)
                 if position[1] > min_correlation:
                     self.optimized_positions[j,i] = np.array(position[0])
@@ -508,24 +584,31 @@ class Positionfinder(object):
         for j in range(self.optimized_positions.shape[0]):
             xfitdata = self.optimized_positions[j, :, 1][self.optimized_positions[j, :, 1] > -1]
             yfitdata = self.optimized_positions[j, :, 0][self.optimized_positions[j, :, 0] > -1]
-            linefit = self.fit_line(xfitdata, yfitdata)
+            try:
+                linefit = self.fit_line(xfitdata, yfitdata)
+            except (IndexError, ValueError):
+                print('Could not fit a line to data in line {:.0f}.'.format(j))
+                continue
+                
             for i in range(self.optimized_positions.shape[1]):
                 if (self.optimized_positions[j, i] > -1).all():
-                    position = self.linear(self.optimized_positions[j, i, 1], *linefit)
+                    #position = self.linear(self.optimized_positions[j, i, 1], *linefit)
+                    distance = self.distance_from_line(self.optimized_positions[j,i], linefit[0], linefit[1])
                     #print(position)
-                    if np.abs(self.optimized_positions[j, i, 0] - position) > tolerance*self.scaledframes[0].shape[0]:
+                    #if np.abs(self.optimized_positions[j, i, 0] - position) > tolerance*self.scaledframes[0].shape[0]:
+                    if distance > tolerance*self.scaledframes[0].shape[0]:
                         self.optimized_positions[j, i] = np.array((-1, -1))
         print('\nFinished removing outliers.')
         
     def get_framelist(self, extension='tif', separator='_', name_overview='Overview', choose_frame=0):
         frames = os.listdir(self.framepath)
-        
         for name in frames:
             splitname = os.path.splitext(name)
             if splitname[1].lower().endswith(extension.lower()):
                 if self.overview is None and splitname[0].lower().startswith(name_overview.lower()):
                     self.overview = np.array(cv2.imread(os.path.join(self.framepath, name), -1))
-                    self.overview = cv2.GaussianBlur(self.overview, None, 1)
+                    self.overview = cv2.GaussianBlur(self.overview, None, 2)
+                    #self.overview /= np.mean(self.overview)
                 else:
                     splitbase = splitname[0].split(separator)
                     try:
@@ -547,7 +630,8 @@ class Positionfinder(object):
         self.framelist.sort()
                     
     
-    def main(self, iterations=10, save_results=True, plot_results=True, save_plots=False, **kwargs):
+    def main(self, iterations=10, save_results=True, plot_results=True, save_plots=False, discard_final_result=False,
+             use_saved_parameters=True, **kwargs):
         """
         kwargs takes all additional parameters for the subfunctions called here. These are in detail:
             For get_framelist:
@@ -588,22 +672,44 @@ class Positionfinder(object):
         if plot_results:
             fig = plt.figure()
             plots = []
+        
+        self.load_data()
+        if self.result_is_final and not discard_final_result:
+            print('\nFinishing after loading data because result in save was marked as final.')
+            return
+        else:
+            self.result_is_final = False
+        
+        if use_saved_parameters and len(self.options) > 0:
+            print('\nUsing saved parameters.')
             
-        for key, value in kwargs.items():
-            if key in ['extension', 'separator', 'name_overview', 'coose_frame']:
-                get_framelist_params[key] = value
-            elif key in ['border_min_correlation']:
-                find_borders_params[key] = value
-            elif key in ['optimize_min_correlation', 'optimize_searchrange']:
-                optimize_positions_params[key] = value
-            elif key in ['outlier_tolerance']:
-                remove_outliers_params[key] = value
-            elif key in ['relax_min_correlation', 'relax_searchrange']:
-                relax_positions_params[key] = value
+            get_framelist_params = self.options[0]
+            find_borders_params = self.options[1]
+            optimize_positions_params = self.options[2]
+            remove_outliers_params = self.options[3]
+            relax_positions_params = self.options[4]
+            
+        else:
+            for key, value in kwargs.items():
+                if key in ['extension', 'separator', 'name_overview', 'choose_frame']:
+                    get_framelist_params[key] = value
+                elif key in ['border_min_correlation']:
+                    find_borders_params[key] = value
+                elif key in ['optimize_min_correlation', 'optimize_searchrange']:
+                    optimize_positions_params[key] = value
+                elif key in ['outlier_tolerance']:
+                    remove_outliers_params[key] = value
+                elif key in ['relax_min_correlation', 'relax_searchrange']:
+                    relax_positions_params[key] = value
+            
+            self.options.append(get_framelist_params)
+            self.options.append(find_borders_params)
+            self.options.append(optimize_positions_params)
+            self.options.append(remove_outliers_params)
+            self.options.append(relax_positions_params)
         
         try:        
-            self.get_framelist(**get_framelist_params)    
-            self.load_data()
+            self.get_framelist(**get_framelist_params)                
             self.scale_images()
             self.find_borders(**find_borders_params)
             self.find_corners()
@@ -633,7 +739,9 @@ class Positionfinder(object):
                     plots.append((plt.imshow(self.colored_optimized_positions), ))
                 if not np.count_nonzero(self.optimized_positions + 1) > start_quality:
                     break
+                start_quality = np.count_nonzero(self.optimized_positions + 1)
         
+            self.remove_outliers(**remove_outliers_params)
             self.interpolate_positions()
             if plot_results:
                 self.draw_optimized_positions()
@@ -648,20 +756,22 @@ class Positionfinder(object):
                 #plt.show()
 
         finally:
-            if save_results:
+            if save_results and not discard_final_result:
                 self.save_data()
+            else:
+                print('\nResults were not saved. If you want to keep them, call the "save" method')
             
             
 if __name__=='__main__':
     
-    dirpath = '/3tb/maps_data/map_2015_06_30_14_44/all'
+    dirpath = '/3tb/maps_data/map_2015_04_15_13_13'
     
 #    overview = '/3tb/maps_data/map_2015_08_18_17_07/Overview_1576.59891322_nm.tif'
     
-    size_overview = 1567.83 #nm
-    size_frames = 64 #nm
+    size_overview = 1024 #nm
+    size_frames = 12 #nm
     #number of frames in x- and y-direction
-    number_frames = (20,14)
+    number_frames = (22,22)
     
     Finder = Positionfinder(number_frames=number_frames, size_overview=size_overview, size_frames=size_frames,
                             framepath=dirpath)
@@ -669,10 +779,13 @@ if __name__=='__main__':
 #    Finder.data_to_load.remove('optimized_positions')
 #    Finder.data_to_load.remove('positions')
 #    Finder.data_to_load.remove('borders')
-    Finder.data_to_load = ['scaledframes']
-#    Finder.data_to_load = ['scaledframes', 'leftborder', 'topborder', 'rightborder', 'bottomborder', 'allborders']
-    Finder.main(iterations=100, save_plots=False, plot_results=False, border_min_correlation=0.6, optimize_searchrange=3,
-                optimize_min_correlation=0.7, outlier_tolerance=0.8, relax_searchrange=3, relax_min_correlation=0.6)
+#    Finder.data_to_load = []
+#    Finder.data_to_load = ['scaledframes']
+    Finder.data_to_load = ['scaledframes', 'leftborder', 'topborder', 'rightborder', 'bottomborder', 'allborders',
+                           'options']
+    Finder.main(iterations=100, save_plots=False, plot_results=False, border_min_correlation=0.85,
+                optimize_searchrange=4, optimize_min_correlation=0.88, outlier_tolerance=10, relax_searchrange=10,
+                relax_min_correlation=0.8, choose_frame=1, discard_final_result=False)
 #    Finder.get_framelist()    
 #    Finder.load_data()
 #    Finder.scale_images()
