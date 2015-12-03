@@ -522,7 +522,10 @@ class Mapping(object):
                     if self.switches.get('do_autotuning'):
                         if self.switches.get('blank_beam'):
                                 self.as2.set_property_as_float('C_Blank', 0)
-                                time.sleep(0.7)
+                                #time.sleep(0.7)
+                                while not self.as2.get_property_as_float('C_Blank') == 0:
+                                    print('Waiting for beam to be unblanked...')
+                                    time.sleep(0.02)
 
                         data, message = self.handle_autotuning(frame_number[counter-1], img)
 
@@ -533,7 +536,11 @@ class Mapping(object):
                         if self.number_of_images < 2:
                             if self.switches.get('blank_beam'):
                                 self.as2.set_property_as_float('C_Blank', 0)
-                                time.sleep(0.5)
+                                #time.sleep(0.5)
+                                while not self.as2.get_property_as_float('C_Blank') == 0:
+                                    print('Waiting for beam to be unblanked...')
+                                    time.sleep(0.02)
+                                    
                             data = img.image_grabber()
                             if self.switches.get('blank_beam'):
                                 self.as2.set_property_as_float('C_Blank', 1)
@@ -542,7 +549,11 @@ class Mapping(object):
                         else:
                             if self.switches.get('blank_beam'):
                                 self.as2.set_property_as_float('C_Blank', 0)
-                                time.sleep(0.5)
+                                #time.sleep(0.5)
+                                while not self.as2.get_property_as_float('C_Blank') == 0:
+                                    print('Waiting for beam to be unblanked...')
+                                    time.sleep(0.02)
+                                
                             for i in range(self.number_of_images):
                                 if pixeltimes is not None:
                                     self.frame_parameters['pixeltime'] = pixeltimes[i]

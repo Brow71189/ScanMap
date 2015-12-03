@@ -432,9 +432,9 @@ class Positionfinder(object):
                     # as the positions are defined as top-left corner of the subframes, searchrange has to be extended
                     # by one image size in positive x- and y-direction
                     searchrange = ((self.positions[j,i][0]-searchradius*shape[0],
-                                    self.positions[j,i][0]+searchradius*shape[0]+shape[0]),
+                                    self.positions[j,i][0]+searchradius*shape[0]),
                                    (self.positions[j,i][1]-searchradius*shape[1],
-                                    self.positions[j,i][1]+searchradius*shape[1]+shape[1]))
+                                    self.positions[j,i][1]+searchradius*shape[1]))
                     searchrange = np.array(searchrange)
                     # make sure searchrange lies completely inside the overview image
                     searchrange[:, 0][searchrange[:, 0]<0] = 0
@@ -465,9 +465,9 @@ class Positionfinder(object):
                 number = j*number_frames[1]+i
                 shape = np.shape(self.scaledframes[number])
                 searchrange = ((self.optimized_positions[j,i][0]-searchradius*shape[0],
-                                self.optimized_positions[j,i][0]+searchradius*shape[0]+shape[0]),
+                                self.optimized_positions[j,i][0]+searchradius*shape[0]),
                                (self.optimized_positions[j,i][1]-searchradius*shape[1],
-                                self.optimized_positions[j,i][1]+searchradius*shape[1]+shape[1]))
+                                self.optimized_positions[j,i][1]+searchradius*shape[1]))
                 searchrange = np.array(searchrange)
                 # make sure searchrange lies completely inside the overview image
                 searchrange[:, 0][searchrange[:, 0]<0] = 0
@@ -702,6 +702,7 @@ class Positionfinder(object):
                 elif key in ['relax_min_correlation', 'relax_searchrange']:
                     relax_positions_params[key] = value
             
+            self.options = []
             self.options.append(get_framelist_params)
             self.options.append(find_borders_params)
             self.options.append(optimize_positions_params)
@@ -759,19 +760,19 @@ class Positionfinder(object):
             if save_results and not discard_final_result:
                 self.save_data()
             else:
-                print('\nResults were not saved. If you want to keep them, call the "save" method')
+                print('\nResults were not saved. If you want to keep them, call the "save_data" method')
             
             
 if __name__=='__main__':
     
-    dirpath = '/3tb/maps_data/map_2015_04_15_13_13'
+    dirpath = '/3tb/maps_data/map_2015_09_16_12_19'
     
 #    overview = '/3tb/maps_data/map_2015_08_18_17_07/Overview_1576.59891322_nm.tif'
     
-    size_overview = 1024 #nm
-    size_frames = 12 #nm
+    size_overview = 2466 #nm
+    size_frames = 20 #nm
     #number of frames in x- and y-direction
-    number_frames = (22,22)
+    number_frames = (52,51)
     
     Finder = Positionfinder(number_frames=number_frames, size_overview=size_overview, size_frames=size_frames,
                             framepath=dirpath)
@@ -780,12 +781,12 @@ if __name__=='__main__':
 #    Finder.data_to_load.remove('positions')
 #    Finder.data_to_load.remove('borders')
 #    Finder.data_to_load = []
-#    Finder.data_to_load = ['scaledframes']
-    Finder.data_to_load = ['scaledframes', 'leftborder', 'topborder', 'rightborder', 'bottomborder', 'allborders',
-                           'options']
-    Finder.main(iterations=100, save_plots=False, plot_results=False, border_min_correlation=0.85,
-                optimize_searchrange=4, optimize_min_correlation=0.88, outlier_tolerance=10, relax_searchrange=10,
-                relax_min_correlation=0.8, choose_frame=1, discard_final_result=False)
+    Finder.data_to_load = ['scaledframes', 'options']
+#    Finder.data_to_load = ['scaledframes', 'leftborder', 'topborder', 'rightborder', 'bottomborder', 'allborders',
+#                           'options']
+    Finder.main(iterations=100, save_plots=False, plot_results=False, border_min_correlation=0.1,
+                optimize_searchrange=3, optimize_min_correlation=0.7, outlier_tolerance=0.3, relax_searchrange=2,
+                relax_min_correlation=0.73, choose_frame=2, discard_final_result=False, use_saved_parameters=False)
 #    Finder.get_framelist()    
 #    Finder.load_data()
 #    Finder.scale_images()
