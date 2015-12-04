@@ -43,6 +43,7 @@ class Positionfinder(object):
     
     def __init__(self, **kwargs):
         self.overview = kwargs.get('overview')
+        self.overview_name = kwargs.get('overview_name')
         self.framelist = kwargs.get('framelist', [])
         self.number_frames = kwargs.get('number_frames')
         self.scaledframes = [] # list of scaled images
@@ -87,6 +88,8 @@ class Positionfinder(object):
                     
         savedict['data_to_save'] = self.data_to_save
         savedict['result_is_final'] = self.result_is_final
+        savedict['map_params'] = {'number_frames': self.number_frames, 'overview_name': self.overview_name,
+                                  'size_overview': self.size_overview, 'size_frames': self.size_frames}
         
         np.savez(os.path.join(self.framepath, 'Positionfinder_data.npz'), **savedict)
         
@@ -103,6 +106,18 @@ class Positionfinder(object):
                     self.result_is_final = data['result_is_final'].item()
                 except Exception as detail:
                     print('Could not load "result_is_final". Reason: ' + str(detail))
+                
+                try:
+                    map_params = data['map_params']
+                except Exception as detail:
+                    print('Could not load "map_params". Reason: ' + str(detail))
+                else:
+                    for key, value in map_params.item().items():
+                        setattr(self, key, value)
+   
+                    if self.overview_name is not None and self.overview is None:
+                        self.overview = np.array(cv2.imread(os.path.join(self.framepath, self.overview_name), -1))
+                        self.overview = cv2.GaussianBlur(self.overview, None, 2)
                     
                 for item in self.data_to_load:
                     if item in data_in_save:
@@ -194,7 +209,7 @@ class Positionfinder(object):
         
         print('Finished finding the borders.')
     
-    def draw_borders(self):
+    def draw_borders(self, lastval=0.9):
         added = np.zeros((3,)+np.shape(self.overview))
         added[2] = self.overview
         color = float(np.mean(self.overview))
@@ -205,17 +220,19 @@ class Positionfinder(object):
             cv2.putText(added[0], str(int(self.allborders[i][0][0])), (int(np.rint(self.allborders[i][1][1]-4)),
                         int(np.rint(self.allborders[i][1][0]-2))), cv2.FONT_HERSHEY_PLAIN, 2, color, thickness=2)
         
-        added2 = added.copy()
-        added2 = np.swapaxes(added2, 0, 2)
-        added2 = np.swapaxes(added2, 0, 1)
-        percentile95 = np.percentile(added, 95)
-        added2[added2>percentile95] = percentile95
-        added2 *= 255/percentile95
-        added2 = added2.astype('uint8')
+        added = np.swapaxes(added, 0, 2)
+        added = np.swapaxes(added, 0, 1)
+        hist = np.histogram(added[:,:,1:], bins=300)
+        integral = np.cumsum(hist[0])
+        maxint = lastval*np.amax(integral)
+        cutoff = hist[1][len(integral[integral<maxint])]
+        added[added>cutoff] = cutoff
+        added *= 255/cutoff
+        added = added.astype('uint8')
         
-        self.colored_borders = added2
+        self.colored_optimized_positions = added
         
-    def draw_positions(self):
+    def draw_positions(self, lastval=0.9):
         added = np.zeros((3,)+np.shape(self.overview))
         added[2] = self.overview
         color = float(np.mean(self.overview))
@@ -227,17 +244,19 @@ class Positionfinder(object):
             cv2.putText(added[0], str(int(i)), (int(np.rint(self.positions[coordinates][1]-4)),
                         int(np.rint(self.positions[coordinates][0]-2))), cv2.FONT_HERSHEY_PLAIN, 2, color, thickness=2)
         
-        added2 = added.copy()
-        added2 = np.swapaxes(added2, 0, 2)
-        added2 = np.swapaxes(added2, 0, 1)
-        percentile95 = np.percentile(added, 95)
-        added2[added2>percentile95] = percentile95
-        added2 *= 255/percentile95
-        added2 = added2.astype('uint8')
+        added = np.swapaxes(added, 0, 2)
+        added = np.swapaxes(added, 0, 1)
+        hist = np.histogram(added[:,:,1:], bins=300)
+        integral = np.cumsum(hist[0])
+        maxint = lastval*np.amax(integral)
+        cutoff = hist[1][len(integral[integral<maxint])]
+        added[added>cutoff] = cutoff
+        added *= 255/cutoff
+        added = added.astype('uint8')
         
-        self.colored_positions = added2
+        self.colored_optimized_positions = added
         
-    def draw_optimized_positions(self):
+    def draw_optimized_positions(self, lastval=0.9):
         added = np.zeros((3,)+np.shape(self.overview))
         added[2] = self.overview
         color = float(np.mean(self.overview))
@@ -250,15 +269,17 @@ class Positionfinder(object):
                 cv2.putText(added[0], str(int(i)), (int(np.rint(position[1]-4)), int(np.rint(position[0]-2))),
                             cv2.FONT_HERSHEY_PLAIN, 2, color, thickness=2)
         
-        added2 = added.copy()
-        added2 = np.swapaxes(added2, 0, 2)
-        added2 = np.swapaxes(added2, 0, 1)
-        percentile95 = np.percentile(added, 95)
-        added2[added2>percentile95] = percentile95
-        added2 *= 255/percentile95
-        added2 = added2.astype('uint8')
+        added = np.swapaxes(added, 0, 2)
+        added = np.swapaxes(added, 0, 1)
+        hist = np.histogram(added[:,:,1:], bins=300)
+        integral = np.cumsum(hist[0])
+        maxint = lastval*np.amax(integral)
+        cutoff = hist[1][len(integral[integral<maxint])]
+        added[added>cutoff] = cutoff
+        added *= 255/cutoff
+        added = added.astype('uint8')
         
-        self.colored_optimized_positions = added2
+        self.colored_optimized_positions = added
     
     def find_corners(self):
         # Fit lines to borders
@@ -602,10 +623,16 @@ class Positionfinder(object):
         
     def get_framelist(self, extension='tif', separator='_', name_overview='Overview', choose_frame=0):
         frames = os.listdir(self.framepath)
+
+        if self.overview_name is not None and self.overview is None:
+            self.overview = np.array(cv2.imread(os.path.join(self.framepath, self.overview_name), -1))
+            self.overview = cv2.GaussianBlur(self.overview, None, 2)
+            
         for name in frames:
             splitname = os.path.splitext(name)
             if splitname[1].lower().endswith(extension.lower()):
                 if self.overview is None and splitname[0].lower().startswith(name_overview.lower()):
+                    self.overview_name = name
                     self.overview = np.array(cv2.imread(os.path.join(self.framepath, name), -1))
                     self.overview = cv2.GaussianBlur(self.overview, None, 2)
                     #self.overview /= np.mean(self.overview)
@@ -687,7 +714,7 @@ class Positionfinder(object):
             find_borders_params = self.options[1]
             optimize_positions_params = self.options[2]
             remove_outliers_params = self.options[3]
-            relax_positions_params = self.options[4]
+            relax_positions_params = self.options[4]            
             
         else:
             for key, value in kwargs.items():
@@ -765,14 +792,14 @@ class Positionfinder(object):
             
 if __name__=='__main__':
     
-    dirpath = '/3tb/maps_data/map_2015_09_16_12_19'
+    dirpath = '/3tb/maps_data/map_2015_09_28_20_11'
     
 #    overview = '/3tb/maps_data/map_2015_08_18_17_07/Overview_1576.59891322_nm.tif'
     
-    size_overview = 2466 #nm
-    size_frames = 20 #nm
+    size_overview = 872 #nm
+    size_frames = 22 #nm
     #number of frames in x- and y-direction
-    number_frames = (52,51)
+    number_frames = (17,15)
     
     Finder = Positionfinder(number_frames=number_frames, size_overview=size_overview, size_frames=size_frames,
                             framepath=dirpath)
@@ -784,9 +811,9 @@ if __name__=='__main__':
     Finder.data_to_load = ['scaledframes', 'options']
 #    Finder.data_to_load = ['scaledframes', 'leftborder', 'topborder', 'rightborder', 'bottomborder', 'allborders',
 #                           'options']
-    Finder.main(iterations=100, save_plots=False, plot_results=False, border_min_correlation=0.1,
-                optimize_searchrange=3, optimize_min_correlation=0.7, outlier_tolerance=0.3, relax_searchrange=2,
-                relax_min_correlation=0.73, choose_frame=2, discard_final_result=False, use_saved_parameters=False)
+    Finder.main(iterations=100, save_plots=False, plot_results=False, border_min_correlation=0.7,
+                optimize_searchrange=3, optimize_min_correlation=0.8, outlier_tolerance=0.6, relax_searchrange=2,
+                relax_min_correlation=0.75, choose_frame=2, discard_final_result=False, use_saved_parameters=False)
 #    Finder.get_framelist()    
 #    Finder.load_data()
 #    Finder.scale_images()
