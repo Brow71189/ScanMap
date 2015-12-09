@@ -24,11 +24,13 @@ class Positioncollector(object):
         if self.positionsfile is None:
             # the structure is always: (y,x) on the first axis, datasets on the second axis (line or column, depending
             # on if it is x- or y-data) and the actual deviations from the ideal positions on the third axis.
-            self.firstlines = np.empty((2, 101, 101)) * np.nan
-            self.evenlines = np.empty((2, 101, 101)) * np.nan
-            self.oddlines = np.empty((2, 101, 101)) * np.nan
+            self.firstlines = np.empty((2, 0, 101))
+            self.evenlines = np.empty((2, 0, 101))
+            self.oddlines = np.empty((2, 0, 101))
             # mapnames contain name and pixelsize of the maps
-            self.mapnames = (np.empty(101) * np.nan).astype(np.dtype([('mapname', 'U256'), ('pixelsize', 'f32')]))
+            self.mapnames = (np.empty(0)).astype(np.dtype([('mapname', 'U256'), ('pixelsize', 'f32'),
+                                                           ('size_overview', 'f32'), ('size_frames', 'f32'),
+                                                           ('number_frames', '2f32')]))
         else:
             self.firstlines = self.positionsfile['firstlines']
             self.evenlines = self.positionsfile['evenlines']
@@ -46,8 +48,8 @@ class Positioncollector(object):
         if not Finder.number_frames:
             print('Number of frames not found in ' + folder + '.')
             bad_data = True
-        if not Finder.size_overview:
-            print('Size of the overview image not found in ' + folder + '.')
+        if not Finder.size_overview or not Finder.size_frames:
+            print('Size of the overview image and/or the single frames not found in ' + folder + '.')
             bad_data = True
         if Finder.overview is None:
             print('No overview image was found in ' + folder + '.')
@@ -55,7 +57,7 @@ class Positioncollector(object):
             
         if not bad_data:
             return (Finder.optimized_positions.copy(), Finder.positions.copy(), 
-                    Finder.number_frames, Finder.size_overview, Finder.overview.shape)
+                    Finder.number_frames, Finder.size_overview, Finder.overview.shape, Finder.size_frames)
     
     def append_data(self, folder):
         data = self.get_data(folder)
@@ -63,39 +65,64 @@ class Positioncollector(object):
             print('No data received.')
             return
         else:
-            optimized_positions, positions, number_frames, size_overview, shape_overview = data
+            optimized_positions, positions, number_frames, size_overview, shape_overview, size_frames = data
             pixelsize = size_overview/np.amax(shape_overview)
         
-        for i in range(self.evenlines.shape[1]):
-            if np.isnan(self.evenlines[0, i]).all():
-                self.mapnames[i]['mapname'] = folder
-                self.mapnames[i]['pixelsize'] = pixelsize
-                differences = positions - optimized_positions
-                # Even lines have odd indices
-                evenlines = differences[1::2]
-                yevenlines = np.median(evenlines[:,:,0], axis=1)
-                xevenlines = np.median(evenlines[:,:,1], axis=0)
-                inter_yevenlines = interp1d(np.mgrid[0:100:len(yevenlines)*1j], yevenlines)
-                inter_xevenlines = interp1d(np.mgrid[0:100:len(xevenlines)*1j], xevenlines)
-                self.evenlines[0, i] = inter_yevenlines(np.arange(101))
-                self.evenlines[1, i] = inter_xevenlines(np.arange(101))
-                # odd lines have even indices
-                oddlines = differences[2::2]
-                yoddlines = np.median(oddlines[:,:,0], axis=1)
-                xoddlines = np.median(oddlines[:,:,1], axis=0)
-                inter_yoddlines = interp1d(np.mgrid[0:100:len(yoddlines)*1j], yoddlines)
-                inter_xoddlines = interp1d(np.mgrid[0:100:len(xoddlines)*1j], xoddlines)
-                self.oddlines[0, i] = inter_yoddlines(np.arange(101))
-                self.oddlines[1, i] = inter_xoddlines(np.arange(101))
-                # special treatment for first line
-                firstlines = differences[0]
-                yfirstlines = np.median(firstlines[:,0])
-                xfirstlines = firstlines[:,1]
-                inter_xfirstlines = interp1d(np.mgrid[0:100:len(xfirstlines)*1j], xfirstlines)
-                self.firstlines[0, i] = np.resize(yfirstlines, (101))
-                self.firstlines[1, i] = inter_xfirstlines(np.arange(101))
-                
-                break
+        if folder in self.mapnames['mapname']:
+            i = np.where(self.mapnames['mapname'] == folder)[0].item()
+        else:
+            shape = self.evenlines.shape
+            i = shape[1]
+    
+            resized_evenlines = np.empty((shape[0], i+1, shape[2]), dtype=self.evenlines.dtype)
+            resized_evenlines[:, :i, :] = self.evenlines
+            self.evenlines = resized_evenlines
+    
+            resized_oddlines = np.empty((shape[0], i+1, shape[2]), dtype=self.oddlines.dtype)
+            resized_oddlines[:, :i, :] = self.oddlines
+            self.oddlines = resized_oddlines
+    
+            resized_firstlines = np.empty((shape[0], i+1, shape[2]), dtype=self.firstlines.dtype)
+            resized_firstlines[:, :i, :] = self.firstlines
+            self.firstlines = resized_firstlines
+            
+            resized_mapnames = np.empty(i+1, dtype=self.mapnames.dtype)
+            resized_mapnames[:i] = self.mapnames
+            self.mapnames = resized_mapnames
+        
+#        for i in range(self.evenlines.shape[1]):
+#            if np.isnan(self.evenlines[0, i]).all():
+        self.mapnames['mapname'][i] = folder
+        self.mapnames['pixelsize'][i] = pixelsize
+        self.mapnames['number_frames'][i] = np.array(number_frames)
+        self.mapnames['size_frames'][i] = size_frames
+        self.mapnames['size_overview'][i] = size_overview
+        differences = positions - optimized_positions
+        # Even lines have odd indices
+        evenlines = differences[1::2]
+        yevenlines = np.median(evenlines[:,:,0], axis=1)
+        xevenlines = np.median(evenlines[:,:,1], axis=0)
+        inter_yevenlines = interp1d(np.mgrid[0:100:len(yevenlines)*1j], yevenlines)
+        inter_xevenlines = interp1d(np.mgrid[0:100:len(xevenlines)*1j], xevenlines)
+        self.evenlines[0, i] = inter_yevenlines(np.arange(101))
+        self.evenlines[1, i] = inter_xevenlines(np.arange(101))
+        # odd lines have even indices
+        oddlines = differences[2::2]
+        yoddlines = np.median(oddlines[:,:,0], axis=1)
+        xoddlines = np.median(oddlines[:,:,1], axis=0)
+        inter_yoddlines = interp1d(np.mgrid[0:100:len(yoddlines)*1j], yoddlines)
+        inter_xoddlines = interp1d(np.mgrid[0:100:len(xoddlines)*1j], xoddlines)
+        self.oddlines[0, i] = inter_yoddlines(np.arange(101))
+        self.oddlines[1, i] = inter_xoddlines(np.arange(101))
+        # special treatment for first line
+        firstlines = differences[0]
+        yfirstlines = np.median(firstlines[:,0])
+        xfirstlines = firstlines[:,1]
+        inter_xfirstlines = interp1d(np.mgrid[0:100:len(xfirstlines)*1j], xfirstlines)
+        self.firstlines[0, i] = np.resize(yfirstlines, (101))
+        self.firstlines[1, i] = inter_xfirstlines(np.arange(101))
+        
+#        break
         
     
     def save(self):
@@ -115,7 +142,7 @@ class Positioncollector(object):
 
             self.append_data(path)
             
-        print('Done Appending.\nSaving data...')
+        print('Done Appending.\n\nSaving data...')
         self.save()
         print('Done')
         
