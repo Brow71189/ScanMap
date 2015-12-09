@@ -68,7 +68,7 @@ class Mapping(object):
     def savepath(self, savepath):
         self._savepath = os.path.normpath(savepath)
         
-    def create_map_coordinates(self, compensate_stage_error=False):
+    def create_map_coordinates(self, compensate_stage_error=False, positionfile='../positioncollection.npz'):
         imsize = self.frame_parameters['fov']*1e-9
         distance = self.offset*imsize
         self.num_subframes = np.array((int(np.abs(self.rightX-self.leftX)/(imsize+distance))+1, 
@@ -80,63 +80,123 @@ class Mapping(object):
     
         # add additional lines and frames to number of subframes
         if compensate_stage_error:
-            extra_lines = 2  # Number of lines to add at the beginning of the map
-            extra_frames = 5  # Number of extra moves at each end of a line
-            oldm = 0.25  # odd line distance mover (additional offset of odd lines, in fractions of (imsize+distance))
-            eldm = 0  # even line distance mover (additional offset of even lines, in fractions of (imsize+distance))
-            num_subframes = self.num_subframes + np.array((2*extra_frames, extra_lines))
-            leftX = self.leftX - extra_frames*(imsize+distance)
-            for i in range(extra_lines):
-                if i % 2 == 0:  # Odd lines (have even indices because numbering starts with 0), e.g. map from left to right
-                    topY = self.topY + imsize + oldm*distance
-                else:
-                    topY = self.topY + imsize + eldm*distance
-        else:
-            num_subframes = self.num_subframes
-            leftX = self.leftX
-            topY = self.topY
-            oldm = 0
-            eldm = 0
+            try:
+                # Load position errors from disk
+                data = np.load(os.path.normpath(positionfile))
+            except IOError as detail:
+                print('Could not load position data from disk. Reason: ' + str(detail))
+                print('Compensate_stage_error will be disabled.')
+                compensate_stage_error = False
+                self.switches['compensate_stage_error'] = False
+            else:
+                evenlines = data['evenlines']
+                firstlines = data['firstlines']
+                mapnames = data['mapnames']
+                oddlines = data['oddlinses']
+                
+                # average over all the datasets. This results in 1-D arrays for the different types of coordinates
+                xevenline = np.mean(evenlines[1]*np.array([mapnames['pixelsize']]).T, axis=0)
+                yevenline = np.mean(evenlines[0]*np.array([mapnames['pixelsize']]).T, axis=0)
+                xoddline = np.mean(oddlines[1]*np.array([mapnames['pixelsize']]).T, axis=0)
+                yoddline = np.mean(oddlines[0]*np.array([mapnames['pixelsize']]).T, axis=0)
+                xfirstline = np.mean(firstlines[1]*np.array([mapnames['pixelsize']]).T, axis=0)
+                yfirstline = np.mean(firstlines[0]*np.array([mapnames['pixelsize']]).T, axis=0)
+                # Pick the offsets at the appropriate positions for this specific map and convert them to um
+                xevenline = xevenline[np.rint(np.mgrid[0:100:self.num_subframes[0]*1j]).astype(np.int)] * 1e-3
+                xoddline = xoddline[np.rint(np.mgrid[0:100:self.num_subframes[0]*1j]).astype(np.int)] * 1e-3
+                xfirstline = xfirstline[np.rint(np.mgrid[0:100:self.num_subframes[0]*1j]).astype(np.int)] * 1e-3
+                yevenline = yevenline[np.rint(np.mgrid[0:100:self.num_subframes[1]*1j]).astype(np.int)] * 1e-3
+                yoddline = yoddline[np.rint(np.mgrid[0:100:self.num_subframes[1]*1j]).astype(np.int)] * 1e-3
+                yfirstline = yfirstline[np.rint(np.mgrid[0:100:self.num_subframes[1]*1j]).astype(np.int)] * 1e-3
+                
+            # Do not use else here to make sure the zero-offset arrays are also created when compensate_stage_error was
+            # disabled in the last step.
+            if not compensate_stage_error:
+                xevenline = xoddline = xfirstline = np.zeros(self.num_subframes[0])
+                yevenline = yoddline = yfirstline = np.zeros(self.num_subframes[1])
+            
+#            extra_lines = 2  # Number of lines to add at the beginning of the map
+#            extra_frames = 5  # Number of extra moves at each end of a line
+#            oldm = 0.25  # odd line distance mover (additional offset of odd lines, in fractions of (imsize+distance))
+#            eldm = 0  # even line distance mover (additional offset of even lines, in fractions of (imsize+distance))
+#            num_subframes = self.num_subframes + np.array((2*extra_frames, extra_lines))
+#            leftX = self.leftX - extra_frames*(imsize+distance)
+#            for i in range(extra_lines):
+#                if i % 2 == 0:  # Odd lines (have even indices because numbering starts with 0), e.g. map from left to right
+#                    topY = self.topY + imsize + oldm*distance
+#                else:
+#                    topY = self.topY + imsize + eldm*distance
+#        else:
+#            num_subframes = self.num_subframes
+#            leftX = self.leftX
+#            topY = self.topY
+#            oldm = 0
+#            eldm = 0
         # make a list of coordinates where images will be aquired.
         # Starting point is the upper-left corner and mapping will proceed to the right. The next line will start
         # at the right and scan towards the left. The next line will again start at the left, and so on. E.g. a "snake shaped"
         # path is chosen for the mapping.
+        num_subframes = self.num_subframes
+        leftX = self.leftX
+        topY = self.topY
     
         for j in range(num_subframes[1]):
             for i in range(num_subframes[0]):
-                if j % 2 == 0:  # Odd lines (have even indices because numbering starts with 0), e.g. map from left to right
-                    map_coords.append(tuple((leftX+i*(imsize+distance), 
-                                             topY-j*(imsize+distance) - oldm*(imsize+distance))) +
+                if j == 0:
+                    map_coords.append(tuple((leftX + i*(imsize+distance) + xfirstline[i], 
+                                             topY - j*(imsize+distance) - yfirstline[j])) +
                                       tuple(self.interpolation((leftX + i*(imsize+distance),
-                                            topY-j*(imsize+distance) - oldm*(imsize+distance)))))
-    
+                                            topY - j*(imsize+distance)))))                
+                        
+                    frame_number.append(j*num_subframes[0]+i)
+                    
+                elif j % 2 == 0:  # Odd lines (have even indices because numbering starts with 0), e.g. map from left to right
+                    map_coords.append(tuple((leftX + i*(imsize+distance) + xoddline[i], 
+                                             topY - j*(imsize+distance) - yoddline[j])) +
+                                      tuple(self.interpolation((leftX + i*(imsize+distance),
+                                            topY - j*(imsize+distance)))))                
+                        
+                    frame_number.append(j*num_subframes[0]+i)
+#                    map_coords.append(tuple((leftX+i*(imsize+distance), 
+#                                             topY-j*(imsize+distance) - oldm*(imsize+distance))) +
+#                                      tuple(self.interpolation((leftX + i*(imsize+distance),
+#                                            topY-j*(imsize+distance) - oldm*(imsize+distance)))))
+
                     # Apply correct (continuous) frame numbering for all cases. If no extra positions are added, just 
                     # append the correct frame number. Elsewise append the correct frame number if a non-additional
                     # one, else None
-                    if not compensate_stage_error:
-                        frame_number.append(j*num_subframes[0]+i)
-                    elif extra_frames <= i < num_subframes[0]-extra_frames and j >= extra_lines:
-                        frame_number.append((j-extra_lines)*(num_subframes[0]-2*extra_frames)+(i-extra_frames))
-                    else:
-                        frame_number.append(None)
+#                    if not compensate_stage_error:
+#                        frame_number.append(j*num_subframes[0]+i)
+#                    elif extra_frames <= i < num_subframes[0]-extra_frames and j >= extra_lines:
+#                        frame_number.append((j-extra_lines)*(num_subframes[0]-2*extra_frames)+(i-extra_frames))
+#                    else:
+#                        frame_number.append(None)
     
                 else: # Even lines, e.g. scan from right to left
-                    map_coords.append(tuple((leftX + (num_subframes[0] - (i+1))*(imsize + distance),
-                                             topY-j*(imsize + distance) - eldm*(imsize + distance))) +
+                    map_coords.append(tuple((leftX + (num_subframes[0] - (i+1))*(imsize + distance) + xevenline[i],
+                                             topY-j*(imsize + distance) - yevenline[j])) +
                                       tuple(self.interpolation(
                                             (leftX + (num_subframes[0] - (i+1))*(imsize + distance),
-                                             topY-j*(imsize + distance) - eldm*(imsize + distance)))))
-    
-                    # Apply correct (continuous) frame numbering for all cases. If no extra positions are added, just 
-                    # append the correct frame number. Elsewise append the correct frame number if a non-additional
-                    # one, else None
-                    if not compensate_stage_error:
-                        frame_number.append(j*num_subframes[0]+(num_subframes[0]-(i+1)))
-                    elif extra_frames <= i < num_subframes[0]-extra_frames and j >= extra_lines:
-                        frame_number.append( (j-extra_lines)*(num_subframes[0]-2*extra_frames) +
-                                             ((num_subframes[0]-2*extra_frames)-(i-extra_frames+1)) )
-                    else:
-                        frame_number.append(None)
+                                             topY-j*(imsize + distance)))))
+                    
+                    frame_number.append(j*num_subframes[0]+(num_subframes[0]-(i+1)))
+                                             
+#                    map_coords.append(tuple((leftX + (num_subframes[0] - (i+1))*(imsize + distance),
+#                                             topY-j*(imsize + distance) - eldm*(imsize + distance))) +
+#                                      tuple(self.interpolation(
+#                                            (leftX + (num_subframes[0] - (i+1))*(imsize + distance),
+#                                             topY-j*(imsize + distance) - eldm*(imsize + distance)))))
+#    
+#                    # Apply correct (continuous) frame numbering for all cases. If no extra positions are added, just 
+#                    # append the correct frame number. Elsewise append the correct frame number if a non-additional
+#                    # one, else None
+#                    if not compensate_stage_error:
+#                        frame_number.append(j*num_subframes[0]+(num_subframes[0]-(i+1)))
+#                    elif extra_frames <= i < num_subframes[0]-extra_frames and j >= extra_lines:
+#                        frame_number.append( (j-extra_lines)*(num_subframes[0]-2*extra_frames) +
+#                                             ((num_subframes[0]-2*extra_frames)-(i-extra_frames+1)) )
+#                    else:
+#                        frame_number.append(None)
     
         return (map_coords, frame_number)
     
@@ -181,6 +241,7 @@ class Mapping(object):
                 clean_spot_nm = clean_spot * self.frame_parameters['fov'] / self.frame_parameters['size_pixels']
                 tune_frame_parameters = {'size_pixels': (512, 512), 'pixeltime': 8, 'fov': 4,
                                          'rotation': 0, 'center': clean_spot_nm}
+                data = Tuner.image.copy()
                 try:
                     Tuner.kill_aberrations(frame_parameters=tune_frame_parameters)
                     if self.event is not None and self.event.is_set():
