@@ -482,7 +482,12 @@ class Imaging(object):
                                                                        self.detectors)
                 self.superscan.set_frame_parameters(**self.record_parameters)
                 #im = self.superscan.record(**self.record_parameters)
-                im = self.superscan.grab_next_to_start()
+                channels_enabled = [False, False]
+                if self.detectors['HAADF']:
+                    channels_enabled[0] = True
+                if self.detectors['MAADF']:
+                    channels_enabled[1] = True
+                im = self.superscan.grab_next_to_start(channels_enabled=channels_enabled)
                 if len(im) > 1:
                     return_image = []
                     for entry in im:
@@ -582,7 +587,7 @@ class Imaging(object):
                     return_image = (im.reshape(self.shape).astype('float32'), kernel)
                 else:
                     return_image = im.reshape(self.shape).astype('float32')
-        print(self.aberrations)
+        #print(self.aberrations)
         return return_image
 
     def logwrite(self, msg, level='info'):
@@ -1240,11 +1245,9 @@ class Tuning(Peaking):
 
 
 def draw_circle(image, center, radius, color=-1, thickness=-1):
-
     subarray = image[center[0]-radius:center[0]+radius+1, center[1]-radius:center[1]+radius+1]
     y, x = np.mgrid[-radius:radius+1, -radius:radius+1]
     distances = np.sqrt(x**2+y**2)
-
     if thickness < 0:
         subarray[distances <= radius] = color
     elif thickness == 0:
