@@ -230,7 +230,7 @@ class Positionfinder(object):
         added *= 255/cutoff
         added = added.astype('uint8')
         
-        self.colored_optimized_positions = added
+        self.colored_borders = added
         
     def draw_positions(self, lastval=0.9):
         added = np.zeros((3,)+np.shape(self.overview))
@@ -254,7 +254,7 @@ class Positionfinder(object):
         added *= 255/cutoff
         added = added.astype('uint8')
         
-        self.colored_optimized_positions = added
+        self.colored_positions = added
         
     def draw_optimized_positions(self, lastval=0.9):
         added = np.zeros((3,)+np.shape(self.overview))
@@ -655,9 +655,23 @@ class Positionfinder(object):
                                     self.framelist.append(name)
         
         self.framelist.sort()
+        
+    def remove_frame(self, frame_number, *args):
+        number_frames = (self.number_frames[1], self.number_frames[0])
+        if np.isscalar(frame_number):
+            index = np.unravel_index(frame_number, number_frames)
+            self.optimized_positions[index] = -1
+        else:
+            for number in frame_number:
+                index = np.unravel_index(number, number_frames)
+                self.optimized_positions[index] = -1
+                
+        for number in args:
+                index = np.unravel_index(number, number_frames)
+                self.optimized_positions[index] = -1
                     
     
-    def main(self, iterations=10, save_results=True, plot_results=True, save_plots=False, discard_final_result=False,
+    def main(self, iterations=100, save_results=True, plot_results=True, save_plots=False, discard_final_result=False,
              use_saved_parameters=True, **kwargs):
         """
         kwargs takes all additional parameters for the subfunctions called here. These are in detail:
@@ -792,14 +806,14 @@ class Positionfinder(object):
             
 if __name__=='__main__':
     
-    dirpath = '/3tb/maps_data/map_2015_09_28_20_11'
+    dirpath = '/3tb/maps_data/map_2015_12_10_12_30'
     
 #    overview = '/3tb/maps_data/map_2015_08_18_17_07/Overview_1576.59891322_nm.tif'
     
-    size_overview = 872 #nm
-    size_frames = 22 #nm
+    size_overview = 1154 #nm
+    size_frames = 20 #nm
     #number of frames in x- and y-direction
-    number_frames = (17,15)
+    number_frames = (22,25)
     
     Finder = Positionfinder(number_frames=number_frames, size_overview=size_overview, size_frames=size_frames,
                             framepath=dirpath)
@@ -808,12 +822,12 @@ if __name__=='__main__':
 #    Finder.data_to_load.remove('positions')
 #    Finder.data_to_load.remove('borders')
 #    Finder.data_to_load = []
-    Finder.data_to_load = ['scaledframes', 'options']
+#    Finder.data_to_load = ['scaledframes', 'options']
 #    Finder.data_to_load = ['scaledframes', 'leftborder', 'topborder', 'rightborder', 'bottomborder', 'allborders',
 #                           'options']
-    Finder.main(iterations=100, save_plots=False, plot_results=False, border_min_correlation=0.7,
-                optimize_searchrange=3, optimize_min_correlation=0.8, outlier_tolerance=0.6, relax_searchrange=2,
-                relax_min_correlation=0.75, choose_frame=2, discard_final_result=False, use_saved_parameters=False)
+    Finder.main(save_plots=True, plot_results=False, border_min_correlation=0.7,
+                optimize_searchrange=3, optimize_min_correlation=0.85, outlier_tolerance=0.6, relax_searchrange=3,
+                relax_min_correlation=0.7, choose_frame=2, discard_final_result=False, use_saved_parameters=True)
 #    Finder.get_framelist()    
 #    Finder.load_data()
 #    Finder.scale_images()

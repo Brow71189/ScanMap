@@ -234,16 +234,16 @@ if __name__ == '__main__':
     
     overall_starttime = time.time()
 
-    dirpath = '/3tb/maps_data/map_2015_10_19_20_44'
+    dirpath = '/3tb/maps_data/map_2015_12_10_16_40'
     #dirpath = '/3tb/Dark_noise/'
     imsize = 20
-    graphene_threshold = 0.0063
+    graphene_threshold = 0.0033
     #graphene_threshold = 0
-    light_threshold = 0.0144
+    light_threshold = 0.011
     #light_threshold = 0
-    heavy_threshold = 0.02645
+    heavy_threshold = 0.011
     dirt_border = 30
-    maximum_dirt_coverage=0.5
+    maximum_dirt_coverage=0.6
 
     if not dirpath.endswith('/'):
         dirpath += '/'

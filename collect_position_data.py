@@ -69,8 +69,10 @@ class Positioncollector(object):
             pixelsize = size_overview/np.amax(shape_overview)
         
         if folder in self.mapnames['mapname']:
+            print('\nReplacing ' + folder + ' because it is already in the saved data.')
             i = np.where(self.mapnames['mapname'] == folder)[0].item()
         else:
+            print('\nAppending ' + folder + '.')
             shape = self.evenlines.shape
             i = shape[1]
     
@@ -149,7 +151,8 @@ class Positioncollector(object):
 
 if __name__ == '__main__':
     paths = ['map_2015_04_15_13_13', 'map_2015_04_16_00_25', 'map_2015_06_30_14_44/all', 'map_2015_08_18_17_07',
-             'map_2015_10_19_17_49', 'map_2015_10_19_20_44', 'map_2015_10_19_22_26']
+             'map_2015_10_19_17_49', 'map_2015_10_19_20_44', 'map_2015_10_19_22_26', 'map_2015_12_10_12_30',
+             'map_2015_12_10_17_27']
     
     
     Collector = Positioncollector(paths=paths)
