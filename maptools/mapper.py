@@ -68,7 +68,7 @@ class Mapping(object):
     def savepath(self, savepath):
         self._savepath = os.path.normpath(savepath)
         
-    def create_map_coordinates(self, compensate_stage_error=False, positionfile='../positioncollection.npz'):
+    def create_map_coordinates(self, compensate_stage_error=False, positionfile='C:/Users/ASUser/repos/ScanMap/positioncollection.npz'):
         imsize = self.frame_parameters['fov']*1e-9
         distance = self.offset*imsize
         self.num_subframes = np.array((int(np.abs(self.rightX-self.leftX)/(imsize+distance))+1, 
@@ -92,7 +92,7 @@ class Mapping(object):
                 evenlines = data['evenlines']
                 firstlines = data['firstlines']
                 mapnames = data['mapnames']
-                oddlines = data['oddlinses']
+                oddlines = data['oddlines']
                 
                 # average over all the datasets. This results in 1-D arrays for the different types of coordinates
                 xevenline = np.mean(evenlines[1]*np.array([mapnames['pixelsize']]).T, axis=0)
@@ -101,19 +101,19 @@ class Mapping(object):
                 yoddline = np.mean(oddlines[0]*np.array([mapnames['pixelsize']]).T, axis=0)
                 xfirstline = np.mean(firstlines[1]*np.array([mapnames['pixelsize']]).T, axis=0)
                 yfirstline = np.mean(firstlines[0]*np.array([mapnames['pixelsize']]).T, axis=0)
-                # Pick the offsets at the appropriate positions for this specific map and convert them to um
-                xevenline = xevenline[np.rint(np.mgrid[0:100:self.num_subframes[0]*1j]).astype(np.int)] * 1e-3
-                xoddline = xoddline[np.rint(np.mgrid[0:100:self.num_subframes[0]*1j]).astype(np.int)] * 1e-3
-                xfirstline = xfirstline[np.rint(np.mgrid[0:100:self.num_subframes[0]*1j]).astype(np.int)] * 1e-3
-                yevenline = yevenline[np.rint(np.mgrid[0:100:self.num_subframes[1]*1j]).astype(np.int)] * 1e-3
-                yoddline = yoddline[np.rint(np.mgrid[0:100:self.num_subframes[1]*1j]).astype(np.int)] * 1e-3
-                yfirstline = yfirstline[np.rint(np.mgrid[0:100:self.num_subframes[1]*1j]).astype(np.int)] * 1e-3
+                # Pick the offsets at the appropriate positions for this specific map and convert them to m
+                xevenline = xevenline[np.rint(np.mgrid[0:100:self.num_subframes[0]*1j]).astype(np.int)] * 1e-9
+                xoddline = xoddline[np.rint(np.mgrid[0:100:self.num_subframes[0]*1j]).astype(np.int)] * 1e-9
+                xfirstline = xfirstline[np.rint(np.mgrid[0:100:self.num_subframes[0]*1j]).astype(np.int)] * 1e-9
+                yevenline = yevenline[np.rint(np.mgrid[0:100:self.num_subframes[1]*1j]).astype(np.int)] * 1e-9
+                yoddline = yoddline[np.rint(np.mgrid[0:100:self.num_subframes[1]*1j]).astype(np.int)] * 1e-9
+                yfirstline = yfirstline[np.rint(np.mgrid[0:100:self.num_subframes[1]*1j]).astype(np.int)] * 1e-9
                 
             # Do not use else here to make sure the zero-offset arrays are also created when compensate_stage_error was
             # disabled in the last step.
-            if not compensate_stage_error:
-                xevenline = xoddline = xfirstline = np.zeros(self.num_subframes[0])
-                yevenline = yoddline = yfirstline = np.zeros(self.num_subframes[1])
+        if not compensate_stage_error:
+            xevenline = xoddline = xfirstline = np.zeros(self.num_subframes[0])
+            yevenline = yoddline = yfirstline = np.zeros(self.num_subframes[1])
             
 #            extra_lines = 2  # Number of lines to add at the beginning of the map
 #            extra_frames = 5  # Number of extra moves at each end of a line

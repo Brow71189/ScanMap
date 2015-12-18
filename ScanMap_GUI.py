@@ -31,11 +31,13 @@ class ScanMapPanelDelegate(object):
         self.superscan = None
         self.as2 = None
         self.coord_dict = {'top-left': None, 'top-right': None, 'bottom-right': None, 'bottom-left': None}
-        self.switches = {}
+        self.switches = {'do_autotuning': False, 'use_z_drive': False, 'auto_offset': False, 'auto_rotation': False,
+                            'compensate_stage_error': False, 'acquire_overview': True, 'blank_beam': False}
         self.frame_parameters = {'size_pixels': None, 'pixeltime': None, 'fov': None, 'rotation': 0}
         self.offset = 0
         self.number_of_images = 1
         self.savepath = None
+        # Is filled later with the actual checkboxes. For now just the default values are stored
         self._checkboxes = {'do_autotuning': False, 'use_z_drive': False, 'auto_offset': False, 'auto_rotation': False,
                             'compensate_stage_error': False, 'acquire_overview': True, 'blank_beam': False}
     
