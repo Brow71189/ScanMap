@@ -41,7 +41,7 @@ import matplotlib.animation as animation
 #    lock=l
 class Positionfinder(object):
     
-    def __init__(self, **kwargs):
+    def __init__(self, *args, **kwargs):
         self.overview = kwargs.get('overview')
         self.overview_name = kwargs.get('overview_name')
         self.framelist = kwargs.get('framelist', [])
@@ -49,7 +49,10 @@ class Positionfinder(object):
         self.scaledframes = [] # list of scaled images
         self.size_overview = kwargs.get('size_overview')
         self.size_frames = kwargs.get('size_frames')
-        self.framepath = kwargs.get('framepath')
+        if len(args) > 0:
+            self.framepath = args[0]
+        else:
+            self.framepath = kwargs.get('framepath')
         self.leftborder = [] # items have the form ((framenumber, correlation value), (position y, position x))
         self.topborder = []
         self.rightborder = []
@@ -57,6 +60,7 @@ class Positionfinder(object):
         self.allborders = []
         self.colored_borders = None
         self.colored_positions = None
+        self.colored_optimized_positions = None
         self.corners = [] # in the order top-left, top-right, bottom-right, bottom-left. (y, x)
         self.border_parameters = [] # parameters of the lines connecting the four corners
                                     # Order: Top, right, bottom, left
@@ -72,6 +76,9 @@ class Positionfinder(object):
         self.positions_to_relax = []
         self.options = []
         self.result_is_final = False
+        self.frameinfo_columns = []
+        self.frameinfo_data = {}
+        self.cutoff = None
         
     
     def save_data(self):
@@ -130,6 +137,101 @@ class Positionfinder(object):
                             self.loaded_data.append(item)
         print('Finished loading.')
     
+    def read_frame_info_file(self, name='frame_continue.txt', splitchar='\t'):
+        if not os.path.isfile(name):
+            name = os.path.join(self.framepath, name)
+        
+        if not os.path.isfile(name):
+            print('\nCould not find ' + name + '.')
+            return
+
+        found_right_map = False
+        
+        with open(name) as infofile:
+            print('\nLoading frame infos from ' + name + '.')
+            for line in infofile:            
+                
+                line = line.lower().strip()
+                
+                if not line or line.startswith('##'):
+                    continue
+                
+                if line.startswith('#informations') or line.startswith('#this'):
+                    if line.endswith(os.path.basename(self.framepath)):
+                        found_right_map = True
+                        print('Found data for the current map.')
+                    else:
+                        found_right_map = False
+                    continue
+                        
+                if found_right_map and (line.startswith('#label') or line.startswith('#filename')):
+                    line = line[1:]
+                    self.frameinfo_columns = []
+                    self.frameinfo_data = {}
+                    splitline = line.split(splitchar)
+                    for item in splitline:
+                        self.frameinfo_columns.append(item)
+                    print('Found the following columns:\n' + line + '\n')
+                    continue
+                    
+                if found_right_map and not line.startswith('#'):
+                    splitline = line.split(splitchar)
+                    
+                    for i in range(len(splitline)):
+                        if not self.frameinfo_data.get(self.frameinfo_columns[i]):
+                            self.frameinfo_data[self.frameinfo_columns[i]] = []
+                        if i == 0:
+                            self.frameinfo_data[self.frameinfo_columns[i]].append(splitline[i])
+                        else:
+                            self.frameinfo_data[self.frameinfo_columns[i]].append(float(splitline[i]))
+                    continue
+                
+    def add_info_color(self, column):
+        if not self.frameinfo_columns or not self.frameinfo_data:
+            print('No frame info file was loaded. Please call "read_frame_info_file" first.')
+            return
+            
+        if np.isreal(column) and column < 0:
+            pass            
+        elif np.isreal(column):
+            try:
+                column = self.frameinfo_columns[column]
+            except IndexError:
+                print('Column No. ' + str(column) + ' is larger than the number of available columns (' +
+                      str(len(self.frameinfo_columns)) + ').')
+                return
+        else:
+            column = column.lower()
+            if not column in self.frameinfo_columns:
+                print('Column ' + column + ' not found in the available data.')
+                return
+            
+        if self.colored_optimized_positions is None:
+            self.draw_optimized_positions()
+        
+        # if column is still a number, info colors should be deleted            
+        if np.isreal(column):
+            column = self.frameinfo_columns[0]
+            values = np.zeros(len(self.frameinfo_data[column]))
+        else:
+            values = np.array(self.frameinfo_data[column])
+            values -= np.amin(values)
+            values /= np.amax(values)
+            values = np.rint(values*255).astype(np.uint8)
+            
+        for i in range(len(self.frameinfo_data[column])):
+            frame_number = int(self.frameinfo_data[self.frameinfo_columns[0]][i].split('_')[0])
+            coordinates = np.unravel_index(frame_number,
+                                           (self.number_frames[1], self.number_frames[0]))
+            self.colored_optimized_positions[:,:,0][self.optimized_positions[coordinates][0]:
+                                                    self.optimized_positions[coordinates][0]+
+                                                    self.scaledframes[frame_number].shape[0],
+                                                    self.optimized_positions[coordinates][1]:
+                                                    self.optimized_positions[coordinates][1]+
+                                                    self.scaledframes[frame_number].shape[1]] = \
+            np.ones(self.scaledframes[frame_number].shape, dtype=np.uint8)*values[i]
+            #np.rint(self.scaledframes[frame_number]/self.cutoff[0]*values[i]).astype(np.uint8)
+    
     def scale_images(self):
         print('\nStarted scaling of images...')
         self.framelist.sort()
@@ -140,17 +242,17 @@ class Positionfinder(object):
             scale = (self.size_frames/float(image.shape[0])/(self.size_overview/float(self.overview.shape[0])))
             scaledframe = cv2.resize(image, None, fx=scale, fy=scale, interpolation=cv2.INTER_AREA)
             self.scaledframes.append(scaledframe)
-            means = np.mean(scaledframe)
+            #means = np.mean(scaledframe)
             
             for i in range(1, len(self.framelist)):
                 image = ndimage.imread(os.path.join(self.framepath, self.framelist[i]))
                 scaledframe = cv2.resize(image, None, fx=scale, fy=scale, interpolation=cv2.INTER_AREA)
                 self.scaledframes.append(scaledframe)
-                means += np.mean(scaledframe)
+                #means += np.mean(scaledframe)
                 if i%(np.rint(len(self.framelist)/50)) == 0:
                     print('Done {:.0f} / {:.0f} ({:.1%})'.format(i, len(self.framelist), i/len(self.framelist)),
                           end='\r')
-            means /= len(self.scaledframes)
+            #means /= len(self.scaledframes)
 #            for frame in self.scaledframes:
 #                frame /= means
 #            np.save(os.path.join(self.framepath, 'scaledframes.npy'), scaledframes)
@@ -222,12 +324,13 @@ class Positionfinder(object):
         
         added = np.swapaxes(added, 0, 2)
         added = np.swapaxes(added, 0, 1)
-        hist = np.histogram(added[:,:,1:], bins=300)
-        integral = np.cumsum(hist[0])
-        maxint = lastval*np.amax(integral)
-        cutoff = hist[1][len(integral[integral<maxint])]
-        added[added>cutoff] = cutoff
-        added *= 255/cutoff
+        if not self.cutoff or not self.cutoff[1] == lastval:
+            hist = np.histogram(added[:,:,1:], bins=300)
+            integral = np.cumsum(hist[0])
+            maxint = lastval*np.amax(integral)
+            self.cutoff = (hist[1][len(integral[integral<maxint])], lastval)
+        added[added>self.cutoff[0]] = self.cutoff[0]
+        added *= 255/self.cutoff[0]
         added = added.astype('uint8')
         
         self.colored_borders = added
@@ -246,12 +349,13 @@ class Positionfinder(object):
         
         added = np.swapaxes(added, 0, 2)
         added = np.swapaxes(added, 0, 1)
-        hist = np.histogram(added[:,:,1:], bins=300)
-        integral = np.cumsum(hist[0])
-        maxint = lastval*np.amax(integral)
-        cutoff = hist[1][len(integral[integral<maxint])]
-        added[added>cutoff] = cutoff
-        added *= 255/cutoff
+        if not self.cutoff or not self.cutoff[1] == lastval:
+            hist = np.histogram(added[:,:,1:], bins=300)
+            integral = np.cumsum(hist[0])
+            maxint = lastval*np.amax(integral)
+            self.cutoff = (hist[1][len(integral[integral<maxint])], lastval)
+        added[added>self.cutoff[0]] = self.cutoff[0]
+        added *= 255/self.cutoff[0]
         added = added.astype('uint8')
         
         self.colored_positions = added
@@ -271,12 +375,13 @@ class Positionfinder(object):
         
         added = np.swapaxes(added, 0, 2)
         added = np.swapaxes(added, 0, 1)
-        hist = np.histogram(added[:,:,1:], bins=300)
-        integral = np.cumsum(hist[0])
-        maxint = lastval*np.amax(integral)
-        cutoff = hist[1][len(integral[integral<maxint])]
-        added[added>cutoff] = cutoff
-        added *= 255/cutoff
+        if not self.cutoff or not self.cutoff[1] == lastval:
+            hist = np.histogram(added[:,:,1:], bins=300)
+            integral = np.cumsum(hist[0])
+            maxint = lastval*np.amax(integral)
+            self.cutoff = (hist[1][len(integral[integral<maxint])], lastval)
+        added[added>self.cutoff[0]] = self.cutoff[0]
+        added *= 255/self.cutoff[0]
         added = added.astype('uint8')
         
         self.colored_optimized_positions = added

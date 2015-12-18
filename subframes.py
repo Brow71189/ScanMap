@@ -228,7 +228,8 @@ def subframes_preprocessing(filename, dirname, imsize, counts_threshold=1e-9, gr
         
     
     #return image parameters
-    return (filename, dirt_coverage, number_peaks, peak_intensities_sum, rotation, ellipse_a, ellipse_b, angle, success)
+    return (os.path.splitext(filename)[0], dirt_coverage, number_peaks, peak_intensities_sum, rotation,
+            ellipse_a, ellipse_b, angle, success)
 
 if __name__ == '__main__':
     
@@ -280,13 +281,12 @@ if __name__ == '__main__':
     frame_data_file = open(dirpath+'prep_'+dirpath.split('/')[-2]+'/'+'frame_init_' + dirpath.split('/')[-2] + '.txt',
                            'w')
     
-    frame_data_file.write('#This file contains informations about all frames of '+(dirpath.split('/')[-2]+'\n'))
+    frame_data_file.write('#Informations about all frames of '+(dirpath.split('/')[-2]+'\n'))
     frame_data_file.write('#Created: ' + time.strftime('%Y/%m/%d %H:%M') + '\n')
     frame_data_file.write('#Imagesize in nm: {:.1f}\tgraphene threshold: {:f}\t'.format(imsize,graphene_threshold))
     frame_data_file.write('light threshold: {:f}\theavy threshold: {:f}\t'.format(light_threshold, heavy_threshold))
     frame_data_file.write('Dirt border: {:n}\tmaximum dirt coverage: {:f}\n'.format(dirt_border, maximum_dirt_coverage))
-    frame_data_file.write('#Meanings of the values are:\n')
-    frame_data_file.write('#filename\tdirt\tnumpeak\ttuning\ttilt\tella\tellb\tellphi\n\n')
+    frame_data_file.write('#label\tdirt\tnumpeak\ttuning\ttilt\tella\tellb\tellphi\n\n')
     
     for frame_data in res_list:
         if frame_data[-1]:
