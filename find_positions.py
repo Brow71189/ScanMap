@@ -79,6 +79,7 @@ class Positionfinder(object):
         self.frameinfo_columns = []
         self.frameinfo_data = {}
         self.cutoff = None
+        self.hist = None
         
     
     def save_data(self):
@@ -325,10 +326,11 @@ class Positionfinder(object):
         added = np.swapaxes(added, 0, 2)
         added = np.swapaxes(added, 0, 1)
         if not self.cutoff or not self.cutoff[1] == lastval:
-            hist = np.histogram(added[:,:,1:], bins=300)
-            integral = np.cumsum(hist[0])
+            if self.hist is None:
+                self.hist = np.histogram(added[:,:,1:], bins=300)
+            integral = np.cumsum(self.hist[0])
             maxint = lastval*np.amax(integral)
-            self.cutoff = (hist[1][len(integral[integral<maxint])], lastval)
+            self.cutoff = (self.hist[1][len(integral[integral<maxint])], lastval)
         added[added>self.cutoff[0]] = self.cutoff[0]
         added *= 255/self.cutoff[0]
         added = added.astype('uint8')
@@ -350,10 +352,11 @@ class Positionfinder(object):
         added = np.swapaxes(added, 0, 2)
         added = np.swapaxes(added, 0, 1)
         if not self.cutoff or not self.cutoff[1] == lastval:
-            hist = np.histogram(added[:,:,1:], bins=300)
-            integral = np.cumsum(hist[0])
+            if self.hist is None:
+                self.hist = np.histogram(added[:,:,1:], bins=300)
+            integral = np.cumsum(self.hist[0])
             maxint = lastval*np.amax(integral)
-            self.cutoff = (hist[1][len(integral[integral<maxint])], lastval)
+            self.cutoff = (self.hist[1][len(integral[integral<maxint])], lastval)
         added[added>self.cutoff[0]] = self.cutoff[0]
         added *= 255/self.cutoff[0]
         added = added.astype('uint8')
@@ -376,10 +379,13 @@ class Positionfinder(object):
         added = np.swapaxes(added, 0, 2)
         added = np.swapaxes(added, 0, 1)
         if not self.cutoff or not self.cutoff[1] == lastval:
-            hist = np.histogram(added[:,:,1:], bins=300)
-            integral = np.cumsum(hist[0])
+            if self.hist is None:
+                print('Calculating histogram...')
+                self.hist = np.histogram(added[:,:,1:], bins=300)
+                print('Done.')
+            integral = np.cumsum(self.hist[0])
             maxint = lastval*np.amax(integral)
-            self.cutoff = (hist[1][len(integral[integral<maxint])], lastval)
+            self.cutoff = (self.hist[1][len(integral[integral<maxint])], lastval)
         added[added>self.cutoff[0]] = self.cutoff[0]
         added *= 255/self.cutoff[0]
         added = added.astype('uint8')

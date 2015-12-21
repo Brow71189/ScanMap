@@ -17,13 +17,16 @@ class Finder_GUI(object):
     def __init__(self):
         self.Finder = None
         self.fig, self.ax = plt.subplots()
-        plt.subplots_adjust(left=0.3)
+        plt.subplots_adjust(left=0.25, bottom=0.075, top=0.975)
         self.radio_ax = plt.axes([0.05, 0.7, 0.15, 0.15])
         #self.radio_ax.set_axis_off()
         self.open_ax = plt.axes([0.05, 0.05, 0.07, 0.075])
         self.update_ax = plt.axes([0.13, 0.05, 0.07, 0.075])
+        self.slider_ax = plt.axes([0.35, 0.01, 0.5, 0.02])
         self.openbutton = widgets.Button(self.open_ax, 'Open')
         self.updatebutton = widgets.Button(self.update_ax, 'Update')
+        self.contrastslider = widgets.Slider(self.slider_ax, 'Contrast', 0, 1, valinit=0.8)
+        self.contrastslider.on_changed(self.slider_changed)
         self.openbutton.on_clicked(self.open_button_clicked)
         self.updatebutton.on_clicked(self.update_button_clicked)
         self.radiobuttons = None
@@ -32,7 +35,15 @@ class Finder_GUI(object):
         self.npzfilepath = None
         self.mapinfofilepath = None
         self.cid = self.fig.canvas.mpl_connect('button_press_event', self.mouseclick)
+        self.contrastvalue = 0.8
         plt.show()
+        
+    def slider_changed(self, event):
+        self.contrastvalue = self.contrastslider.val
+        if self.Finder is not None:
+            self.Finder.draw_optimized_positions(lastval=self.contrastvalue)
+            self.show_image.set_data(self.Finder.colored_optimized_positions)
+            plt.draw()
         
     def open_button_clicked(self, event):
         root = tkinter.Tk()
@@ -68,7 +79,7 @@ class Finder_GUI(object):
             self.Finder.relax_positions()
             self.Finder.remove_outliers()
             self.Finder.interpolate_positions()
-            self.Finder.draw_optimized_positions()
+            self.Finder.draw_optimized_positions(lastval=self.contrastvalue)
             self.show_image.set_data(self.Finder.colored_optimized_positions)
             plt.draw()
             self.deletemap = None
@@ -129,7 +140,7 @@ class Finder_GUI(object):
         if self.mapinfofilepath and self.radiobuttons is None:
             self.create_radio_buttons()
         self.Finder.load_data()
-        self.Finder.draw_optimized_positions()
+        self.Finder.draw_optimized_positions(lastval=self.contrastvalue)
         self.show_image = self.ax.imshow(self.Finder.colored_optimized_positions)
         #self.ax.imshow(np.random.rand(1000,1000))
         self.ax.axis('image')
