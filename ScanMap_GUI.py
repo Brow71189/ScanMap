@@ -5,6 +5,7 @@ import numpy as np
 import threading
 import warnings
 import os
+import time
 
 try:
     from importlib import reload
@@ -15,7 +16,7 @@ with warnings.catch_warnings():
     warnings.simplefilter('ignore')
     import ViennaTools.ViennaTools as vt
 
-from .maptools import mapper
+from .maptools import mapper, autotune
 
 _ = gettext.gettext
 
@@ -186,6 +187,21 @@ class ScanMapPanelDelegate(object):
                 
                 sync_gui()
                 logging.info('Loaded all mapping configs successfully.')
+        
+        def test_button_clicked():
+            if None in self.frame_parameters.values():
+                logging.warn('You must specify all scan parameters (e.g. FOV, framesize, rotation, pixeltime) ' +
+                             'before acquiring a test image.')
+                return
+                
+            Image = autotune.Imaging(frame_parameters=self.frame_parameters)
+            testimage = Image.image_grabber()
+            di=self.__api.library.create_data_item_from_data(testimage, 'testimage_'+ time.strftime('%Y_%m_%d_%H_%M'))
+            calibration = self.__api.creat_calibration(scale=self.frame_parameters['fov']/
+                                                       self.frame_parameters['size_pixels'][0],
+                                                       units='nm')
+            di.set_dimensional_calibrations([calibration, calibration])
+            
        
         def done_button_clicked():
             saving_finished(savepath_line_edit.text)
@@ -375,6 +391,7 @@ class ScanMapPanelDelegate(object):
         drive_br = ui.create_push_button_widget(_("Bottom\nRight"))
         save_button = ui.create_push_button_widget(_("Save Configs"))
         load_button = ui.create_push_button_widget(_("Load Configs"))
+        test_button = ui.create_push_button_widget(_("Test image"))
         done_button = ui.create_push_button_widget(_("Done"))
         abort_button = ui.create_push_button_widget(_("Abort"))
    
@@ -404,6 +421,7 @@ class ScanMapPanelDelegate(object):
         drive_br.on_clicked = drive_br_button_clicked
         save_button.on_clicked = save_button_clicked
         load_button.on_clicked = load_button_clicked
+        test_button.on_clicked = test_button_clicked
         done_button.on_clicked = done_button_clicked
         abort_button.on_clicked = abort_button_clicked
         
@@ -441,9 +459,11 @@ class ScanMapPanelDelegate(object):
         checkbox_row3.add_stretch()
         
         save_button_row.add(save_button)
-        save_button_row.add_spacing(15)
+        save_button_row.add_spacing(5)
         save_button_row.add(load_button)
-                
+        save_button_row.add_spacing(5)
+        save_button_row.add(test_button)        
+        
         done_button_row.add(done_button)
         done_button_row.add_spacing(15)
         done_button_row.add(abort_button)

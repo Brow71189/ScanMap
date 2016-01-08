@@ -43,7 +43,10 @@ from . import autoalign
 #    except:
 #        pass
 
-
+try:    
+    from superscan import SuperScanPy as ss    
+except:
+    logging.warn('Could not import SuperScanPy. Maybe you are running in offline mode.')
 #global variable to store aberrations when simulating them (see function image_grabber() for details)
 #global_aberrations = {'EHTFocus': 0, 'C12_a': 5, 'C12_b': 0, 'C21_a': 801.0, 'C21_b': 0, 'C23_a': -500, 'C23_b': 0}
 global_aberrations = {'EHTFocus': 2, 'C12_a': 0, 'C12_b': -3, 'C21_a': 0, 'C21_b': 0, 'C23_a': 185, 'C23_b': 0}
@@ -147,7 +150,6 @@ class Imaging(object):
             Frame parameters to set in the microscope. Possible keys are:
 
             - size_pixels: Number of pixels in x- and y-direction of the acquired frame as tuple (x,y)
-            - center: Offset for the center of the scanned area in x- and y-direction (nm) as tuple (x,y)
             - pixeltime: Time per pixel (us)
             - fov: Field-of-view of the acquired frame (nm)
             - rotation: Scan rotation (deg)
@@ -172,8 +174,6 @@ class Imaging(object):
 
             if frame_parameters.get('size_pixels') is not None:
                 parameters['size'] = list(frame_parameters['size_pixels'])
-            if frame_parameters.get('center') is not None:
-                parameters['center_nm'] = list(frame_parameters['center'])
             if frame_parameters.get('pixeltime') is not None:
                 parameters['pixel_time_us'] = frame_parameters['pixeltime']
             if frame_parameters.get('fov') is not None:
@@ -476,24 +476,42 @@ class Imaging(object):
                 vt.as2_set_control(self.as2, controls[key], self.aberrations[key] * 1e-9)
 
             if acquire_image:
-                assert self.superscan is not None, \
-                       'You have to provide an instance of superscan to perform superscan-related operations.'
-                self.record_parameters = self.create_record_parameters(self.frame_parameters,
-                                                                       self.detectors)
-                self.superscan.set_frame_parameters(**self.record_parameters)
+#                assert self.superscan is not None, \
+#                       'You have to provide an instance of superscan to perform superscan-related operations.'
+#                self.record_parameters = self.create_record_parameters(self.frame_parameters,
+#                                                                       self.detectors)
+#                self.superscan.set_frame_parameters(**self.record_parameters)
+                
                 #im = self.superscan.record(**self.record_parameters)
-                channels_enabled = [False, False]
-                if self.detectors['HAADF']:
-                    channels_enabled[0] = True
-                if self.detectors['MAADF']:
-                    channels_enabled[1] = True
-                im = self.superscan.grab_next_to_start(channels_enabled=channels_enabled)
-                if len(im) > 1:
-                    return_image = []
-                    for entry in im:
-                        return_image.append(entry.data)
-                else:
-                    return_image = im[0].data
+#                channels_enabled = [False, False]
+#                if self.detectors['HAADF']:
+#                    channels_enabled[0] = True
+#                if self.detectors['MAADF']:
+#                    channels_enabled[1] = True
+                ss.SS_Functions_SS_SetFrameParams(self.frame_parameters['size_pixels'][1],
+                                                  self.frame_parameters['size_pixels'][0],
+                                                  self.frame_parameters['center'][1],
+                                                  self.frame_parameters['cetner'][0],
+                                                  self.frame_parameters['pixeltime'],
+                                                  self.frame_parameters['fov'],
+                                                  self.frame_parameters['rotation']/180*np.pi,
+                                                  self.detectors['HAADF'],
+                                                  self.detectors['MAADF'], False, False)
+                frame_nr = ss.SS_Functions_SS_StartFrame(False)
+                ss.SS_Functions_SS_WaitForEndOfFrame(frame_nr)
+                return_image = np.asarray(ss.SS_Functions_SS_GetImageForFrame(frame_nr, 0))
+                if self.detectors['HAADF'] and self.detectors['MAADF']:
+                    data = np.asarray(ss.SS_Functions_SS_GetImageForFrame(frame_nr, 1))
+                    return_image = [return_image, data]
+
+                    
+                #im = self.superscan.grab_next_to_start(channels_enabled=channels_enabled)
+#                if len(im) > 1:
+#                    return_image = []
+#                    for entry in im:
+#                        return_image.append(entry.data)
+#                else:
+#                    return_image = im[0].data
             # reset all corrector values to the original ones
             for key in originals.keys():
                 vt.as2_set_control(controls[key], originals[key] * 1e-9)
