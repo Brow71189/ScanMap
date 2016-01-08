@@ -620,7 +620,7 @@ class Mapping(object):
                                     self.frame_parameters['pixeltime'] = pixeltimes[i]
                                 data = img.image_grabber(frame_parameters=self.frame_parameters)
                                 splitname = os.path.splitext(name)
-                                name = splitname[0] + ('_{:0'+len(str(self.number_of_images))+'d}'
+                                name = splitname[0] + ('_{:0'+str(len(str(self.number_of_images)))+'d}'
                                                        ).format(i) + splitname[1]
                                 tifffile.imsave(os.path.join(self.store, name), data)
                             if self.switches.get('blank_beam'):
