@@ -157,7 +157,7 @@ def create_mask(Peak, graphene_threshold, light_threshold, heavy_threshold, dirt
 
 def subframes_preprocessing(filename, dirname, imsize, counts_threshold=1e-9, graphene_threshold=0, light_threshold=0, 
                             heavy_threshold=0.02, median_blur_diameter=39, gaussian_blur_radius=3,
-                            maximum_dirt_coverage=0.5, dirt_border=100, save_fft=True):
+                            minimum_graphene_area=0.5, dirt_border=100, save_fft=True):
     """
     Returns tuple of the form:
             (filename, success, dirt coverage, counts divisor, angle of lattice rotation, mean peak radius)
@@ -173,15 +173,15 @@ def subframes_preprocessing(filename, dirname, imsize, counts_threshold=1e-9, gr
     image_org = image.copy()
     
     Peak = at.Peaking(image=image, imsize=imsize)
-    #get mask to filter dirt and check if image is covered by more than "maximum_dirt_coverage"
+    #get mask to filter dirt and check if less than "minimum_graphene_area" is graphene in the image
 #    mask = Peak.dirt_detector(dirt_threshold=dirt_threshold, median_blur_diam=median_blur_diameter,
 #                              gaussian_blur_radius=gaussian_blur_radius)
     mask = create_mask(Peak, graphene_threshold, light_threshold, heavy_threshold, dirt_border)
     
-    dirt_coverage = float(np.sum(mask[mask==16])/16)/(np.shape(image)[0]*np.shape(image)[1])
-    if dirt_coverage > maximum_dirt_coverage:
+    graphene_area = float(np.sum(mask[mask==1]))/(np.shape(image)[0]*np.shape(image)[1])
+    if graphene_area < minimum_graphene_area:
         success = False
-        return (filename, dirt_coverage, None, None, None, None, None, None,  success)
+        return (filename, graphene_area, None, None, None, None, None, None,  success)
     
     #get angle of rotation and peak radius
     try:
@@ -231,7 +231,7 @@ def subframes_preprocessing(filename, dirname, imsize, counts_threshold=1e-9, gr
         
     
     #return image parameters
-    return (os.path.splitext(filename)[0], dirt_coverage, number_peaks, peak_intensities_sum, rotation,
+    return (os.path.splitext(filename)[0], graphene_area, number_peaks, peak_intensities_sum, rotation,
             ellipse_a, ellipse_b, angle, success)
 
 if __name__ == '__main__':
@@ -247,7 +247,7 @@ if __name__ == '__main__':
     #light_threshold = 0
     heavy_threshold = 0.014
     dirt_border = 50
-    maximum_dirt_coverage=0.5
+    minimum_graphene_area=0.5
 
     if not dirpath.endswith('/'):
         dirpath += '/'
@@ -267,7 +267,7 @@ if __name__ == '__main__':
                             {'graphene_threshold': graphene_threshold, 'light_threshold': light_threshold,
                              'heavy_threshold': heavy_threshold, 'dirt_border':dirt_border, 'median_blur_diameter': 67,
                              'gaussian_blur_radius': 4, 'save_fft': True,
-                             'maximum_dirt_coverage': maximum_dirt_coverage}) for filename in matched_dirlist]
+                             'minimum_graphene_area': minimum_graphene_area}) for filename in matched_dirlist]
     res_list = [p.get() for p in res]
     pool.close()
     pool.terminate()
@@ -288,7 +288,7 @@ if __name__ == '__main__':
     frame_data_file.write('#Created: ' + time.strftime('%Y/%m/%d %H:%M') + '\n')
     frame_data_file.write('#Imagesize in nm: {:.1f}\tgraphene threshold: {:f}\t'.format(imsize,graphene_threshold))
     frame_data_file.write('light threshold: {:f}\theavy threshold: {:f}\t'.format(light_threshold, heavy_threshold))
-    frame_data_file.write('Dirt border: {:n}\tmaximum dirt coverage: {:f}\n'.format(dirt_border, maximum_dirt_coverage))
+    frame_data_file.write('Dirt border: {:n}\tmaximum dirt coverage: {:f}\n'.format(dirt_border, minimum_graphene_area))
     frame_data_file.write('#label\tdirt\tnumpeak\ttuning\ttilt\tella\tellb\tellphi\n\n')
     
     for frame_data in res_list:
