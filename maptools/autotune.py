@@ -488,15 +488,26 @@ class Imaging(object):
 #                    channels_enabled[0] = True
 #                if self.detectors['MAADF']:
 #                    channels_enabled[1] = True
-                ss.SS_Functions_SS_SetFrameParams(self.frame_parameters['size_pixels'][1],
-                                                  self.frame_parameters['size_pixels'][0],
-                                                  self.frame_parameters['center'][1],
-                                                  self.frame_parameters['cetner'][0],
-                                                  self.frame_parameters['pixeltime'],
-                                                  self.frame_parameters['fov'],
-                                                  self.frame_parameters['rotation']/180*np.pi,
-                                                  self.detectors['HAADF'],
-                                                  self.detectors['MAADF'], False, False)
+                default_params = ss.SS_Functions_SS_GetFrameParams2()
+                ss.SS_Functions_SS_SetFrameParams(self.frame_parameters.get('size_pixels', (default_params[0],
+                                                                                            default_params[0]))[1],
+                                                  self.frame_parameters.get('size_pixels', (default_params[1],
+                                                                                            default_params[1]))[0],
+                                                  self.frame_parameters.get('center', (default_params[2],
+                                                                                       default_params[2]))[1],
+                                                  self.frame_parameters.get('center', (default_params[3],
+                                                                                       default_params[3]))[0],
+                                                  self.frame_parameters.get('pixeltime', default_params[4]),
+                                                  self.frame_parameters.get('fov', default_params[5]),
+                                                  self.frame_parameters.get('rotation',
+                                                                            default_params[6]*180/np.pi)/180*np.pi,
+                                                  0)
+                acchannels = 0
+                if self.detectors['HAADF']:
+                    acchannels += 1
+                if self.detectors['MAADF']:
+                    acchannels +=2
+                ss.SS_Functions_SS_SetAcquisitionChannels(acchannels)
                 frame_nr = ss.SS_Functions_SS_StartFrame(False)
                 ss.SS_Functions_SS_WaitForEndOfFrame(frame_nr)
                 return_image = np.asarray(ss.SS_Functions_SS_GetImageForFrame(frame_nr, 0))

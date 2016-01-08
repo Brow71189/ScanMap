@@ -367,7 +367,14 @@ class Mapping(object):
                     line = line.split(':')
                     if hasattr(self, line[0].strip()):
                         setattr(self, line[0].strip(), eval(line[1].strip()))
-                    continue
+                elif len(line.split(':')) > 2:
+                    line = line.split(':')
+                    if hasattr(self, line[0].strip()):
+                        lastpart = line[1].strip()
+                        for part in line[2:]:
+                            lastpart += ':'+part.strip()
+                        setattr(self, line[0].strip(), eval(lastpart))
+                
                 else:
                     continue
         
@@ -587,7 +594,7 @@ class Mapping(object):
                                 while not self.as2.get_property_as_float('C_Blank') == 0:
                                     print('Waiting for beam to be unblanked...')
                                     time.sleep(0.02)
-
+                        time.sleep(0.1)
                         data, message = self.handle_autotuning(frame_number[counter-1], img)
 
                         if self.switches.get('blank_beam'):
@@ -601,7 +608,7 @@ class Mapping(object):
                                 while not self.as2.get_property_as_float('C_Blank') == 0:
                                     print('Waiting for beam to be unblanked...')
                                     time.sleep(0.02)
-                                    
+                            time.sleep(0.1)        
                             data = img.image_grabber()
                             if self.switches.get('blank_beam'):
                                 self.as2.set_property_as_float('C_Blank', 1)
@@ -614,6 +621,7 @@ class Mapping(object):
                                 while not self.as2.get_property_as_float('C_Blank') == 0:
                                     print('Waiting for beam to be unblanked...')
                                     time.sleep(0.02)
+                                time.sleep(0.1)
                             splitname = os.path.splitext(name)    
                             for i in range(self.number_of_images):
                                 if pixeltimes is not None:

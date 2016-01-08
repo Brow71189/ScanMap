@@ -176,6 +176,7 @@ class ScanMapPanelDelegate(object):
             if not os.path.isfile(self.savepath):
                 logging.warn('Please type the path to the config file into the \'savepath\' field to load configs.')
             else:
+                reload(mapper)
                 Mapper = mapper.Mapping()
                 Mapper.load_mapping_config(self.savepath)
                 self.coord_dict = Mapper.coord_dict.copy()
@@ -184,20 +185,20 @@ class ScanMapPanelDelegate(object):
                 self.offset = Mapper.offset
                 self.savepath = Mapper.savepath
                 self.frame_parameters = Mapper.frame_parameters.copy()
-                
                 sync_gui()
                 logging.info('Loaded all mapping configs successfully.')
+                sync_gui()
         
         def test_button_clicked():
             if None in self.frame_parameters.values():
                 logging.warn('You must specify all scan parameters (e.g. FOV, framesize, rotation, pixeltime) ' +
                              'before acquiring a test image.')
                 return
-                
-            Image = autotune.Imaging(frame_parameters=self.frame_parameters)
+            reload(autotune)   
+            Image = autotune.Imaging(frame_parameters=self.frame_parameters, as2=self.as2, superscan=self.superscan)
             testimage = Image.image_grabber()
             di=self.__api.library.create_data_item_from_data(testimage, 'testimage_'+ time.strftime('%Y_%m_%d_%H_%M'))
-            calibration = self.__api.creat_calibration(scale=self.frame_parameters['fov']/
+            calibration = self.__api.create_calibration(scale=self.frame_parameters['fov']/
                                                        self.frame_parameters['size_pixels'][0],
                                                        units='nm')
             di.set_dimensional_calibrations([calibration, calibration])
