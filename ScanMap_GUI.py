@@ -211,8 +211,9 @@ class ScanMapPanelDelegate(object):
             
             try:
                 reload(mapper)
+                reload(autotune)
             except:
-                logging.warn('Couldn\'t reload mapper')
+                logging.warn('Couldn\'t reload mapper and autotune.')
                 
             if None in self.frame_parameters.values():
                 logging.warn('You must specify all scan parameters (e.g. FOV, framesize, rotation, pixeltime) ' +
