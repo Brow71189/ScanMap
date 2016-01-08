@@ -614,12 +614,12 @@ class Mapping(object):
                                 while not self.as2.get_property_as_float('C_Blank') == 0:
                                     print('Waiting for beam to be unblanked...')
                                     time.sleep(0.02)
-                                
+                            splitname = os.path.splitext(name)    
                             for i in range(self.number_of_images):
                                 if pixeltimes is not None:
                                     self.frame_parameters['pixeltime'] = pixeltimes[i]
                                 data = img.image_grabber(frame_parameters=self.frame_parameters)
-                                splitname = os.path.splitext(name)
+                                
                                 name = splitname[0] + ('_{:0'+str(len(str(self.number_of_images)))+'d}'
                                                        ).format(i) + splitname[1]
                                 tifffile.imsave(os.path.join(self.store, name), data)
