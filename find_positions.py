@@ -371,10 +371,13 @@ class Positionfinder(object):
             coordinates = np.unravel_index(i, (self.number_frames[1], self.number_frames[0]))
             position = self.optimized_positions[coordinates]
             if (position > -1).all():
-                added[1,position[0]:position[0] + self.scaledframes[i].shape[0],
-                      position[1]:position[1]+self.scaledframes[i].shape[1]] = self.scaledframes[i]
-                cv2.putText(added[0], str(int(i)), (int(np.rint(position[1]-4)), int(np.rint(position[0]-2))),
-                            cv2.FONT_HERSHEY_PLAIN, 2, color, thickness=2)
+                try:
+                    added[1,position[0]:position[0] + self.scaledframes[i].shape[0],
+                          position[1]:position[1]+self.scaledframes[i].shape[1]] = self.scaledframes[i]
+                    cv2.putText(added[0], str(int(i)), (int(np.rint(position[1]-4)), int(np.rint(position[0]-2))),
+                                cv2.FONT_HERSHEY_PLAIN, 2, color, thickness=2)
+                except:
+                    print('Error in placing frame No. ' + str(i) + '.')
         
         added = np.swapaxes(added, 0, 2)
         added = np.swapaxes(added, 0, 1)

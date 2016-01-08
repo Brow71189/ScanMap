@@ -12,6 +12,10 @@ import matplotlib.widgets as widgets
 from tkinter.filedialog import askopenfilename
 import tkinter
 import os
+import warnings
+with warnings.catch_warnings():
+    warnings.simplefilter("ignore")
+    import tifffile
 
 class Finder_GUI(object):
     def __init__(self):
@@ -20,15 +24,18 @@ class Finder_GUI(object):
         plt.subplots_adjust(left=0.25, bottom=0.075, top=0.975)
         self.radio_ax = plt.axes([0.05, 0.7, 0.15, 0.15])
         #self.radio_ax.set_axis_off()
-        self.open_ax = plt.axes([0.05, 0.05, 0.07, 0.075])
-        self.update_ax = plt.axes([0.13, 0.05, 0.07, 0.075])
+        self.open_ax = plt.axes([0.01, 0.05, 0.07, 0.075])
+        self.update_ax = plt.axes([0.09, 0.05, 0.07, 0.075])
+        self.save_ax = plt.axes([0.17, 0.05, 0.07, 0.075])
         self.slider_ax = plt.axes([0.35, 0.01, 0.5, 0.02])
         self.openbutton = widgets.Button(self.open_ax, 'Open')
         self.updatebutton = widgets.Button(self.update_ax, 'Update')
+        self.savebutton = widgets.Button(self.save_ax, 'Save\nImage')
         self.contrastslider = widgets.Slider(self.slider_ax, 'Contrast', 0, 1, valinit=0.8)
         self.contrastslider.on_changed(self.slider_changed)
         self.openbutton.on_clicked(self.open_button_clicked)
         self.updatebutton.on_clicked(self.update_button_clicked)
+        self.savebutton.on_clicked(self.save_button_clicked)
         self.radiobuttons = None
         self.deletemap = None
         self.show_image = None
@@ -44,6 +51,19 @@ class Finder_GUI(object):
             self.Finder.draw_optimized_positions(lastval=self.contrastvalue)
             self.show_image.set_data(self.Finder.colored_optimized_positions)
             plt.draw()
+            
+    def save_button_clicked(self, event):
+        if self.show_image is None:
+            print('No image is open. Nothing to save.')
+            return
+        savepath = os.path.join(os.path.dirname(self.npzfilepath),
+                                'positions_' + os.path.basename(os.path.dirname(GUI.npzfilepath)) + '.tif')
+        resolution = tuple(np.array(self.Finder.overview.shape) /
+                           np.array((self.Finder.size_overview, self.Finder.size_overview)))
+        tifffile_metadata={'kwargs': {'unit': 'nm'}}
+        tifffile.imsave(savepath, self.Finder.colored_optimized_positions, resolution=resolution, imagej=True,
+                        metadata=tifffile_metadata)
+        print('Saved current image to: ' + savepath + '.')
         
     def open_button_clicked(self, event):
         root = tkinter.Tk()
@@ -144,6 +164,7 @@ class Finder_GUI(object):
         self.show_image = self.ax.imshow(self.Finder.colored_optimized_positions)
         #self.ax.imshow(np.random.rand(1000,1000))
         self.ax.axis('image')
+        self.fig.canvas.set_window_title(os.path.basename(os.path.dirname(GUI.npzfilepath)))
         plt.draw()
             
 if __name__ == '__main__':

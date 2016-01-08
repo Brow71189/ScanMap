@@ -11,7 +11,10 @@ import logging
 from multiprocessing import Pool
 #import matplotlib.pyplot as plt
 import time
-import tifffile
+import warnings
+with warnings.catch_warnings():
+    warnings.simplefilter("ignore")
+    import tifffile
 import scipy.optimize
 
 try:
@@ -139,7 +142,7 @@ def create_mask(Peak, graphene_threshold, light_threshold, heavy_threshold, dirt
     else:
         mask = np.ones(Peak.shape, dtype=np.uint8)
     
-    if light_threshold > 0:
+    if light_threshold > 0 and light_threshold != heavy_threshold:
         mask[Peak.dirt_detector(dirt_threshold=light_threshold)==1] = 4
         
     if heavy_threshold > 0:
@@ -235,16 +238,16 @@ if __name__ == '__main__':
     
     overall_starttime = time.time()
 
-    dirpath = '/3tb/maps_data/map_2015_12_10_16_40'
+    dirpath = '/3tb/maps_data/map_2015_04_23_19_12'
     #dirpath = '/3tb/Dark_noise/'
-    imsize = 20
-    graphene_threshold = 0.0033
-    #graphene_threshold = 0
-    light_threshold = 0.011
+    imsize = 12
+    #graphene_threshold = 0.0033
+    graphene_threshold = 0
+    light_threshold = 0.014
     #light_threshold = 0
-    heavy_threshold = 0.011
-    dirt_border = 30
-    maximum_dirt_coverage=0.6
+    heavy_threshold = 0.014
+    dirt_border = 50
+    maximum_dirt_coverage=0.5
 
     if not dirpath.endswith('/'):
         dirpath += '/'
