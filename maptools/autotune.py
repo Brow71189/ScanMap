@@ -461,7 +461,7 @@ class Imaging(object):
             originals = {}
 
             if kwargs.get('aberrations') is not None or len(self.aberrations) > 0:
-                assert self.as2 is not None, 'You have to provide an instance of as2 to perform as2-related operations.'
+                assert self.as2 is not None,'You have to provide an instance of as2 to perform as2-related operations.'
             if kwargs.get('aberrations') is not None:
                 for key in keys:
                     if relative_aberrations:
@@ -477,7 +477,12 @@ class Imaging(object):
             for key in self.aberrations.keys():
                 vt.as2_set_control(self.as2, controls[key], self.aberrations[key] * 1e-9)
 
-            if acquire_image:                
+            if acquire_image:
+                assert self.superscan is not None, \
+                    'You have to provide an instance of superscan in order to perform superscan-related operations.'                
+                self.record_parameters = self.create_record_parameters(self.frame_parameters, self.detectors)
+                self.superscan.set_frame_parameters(**self.record_parameters)
+                self.superscan.stop_playing()
                 #im = self.superscan.record(**self.record_parameters)
 #                channels_enabled = [False, False]
 #                if self.detectors['HAADF']:
