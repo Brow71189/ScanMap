@@ -76,6 +76,8 @@ class Imaging(object):
         self.as2 = kwargs.get('as2')
         self.document_controller = kwargs.get('document_controller')
         self.delta_graphene = None
+        self.live_data_item_MAADF = None
+        self.live_data_item_HAADF = None
 
     @property
     def image(self):
@@ -384,7 +386,7 @@ class Imaging(object):
         return image[start:start+impix, start:start+impix]
         #return image
 
-    def image_grabber(self, acquire_image=True, debug_mode=False, **kwargs):
+    def image_grabber(self, acquire_image=True, debug_mode=False, show_live_image=False, **kwargs):
         """
         acquire_image defines if an image is taken and returned or if just the correctors are updated.
 
@@ -475,13 +477,7 @@ class Imaging(object):
             for key in self.aberrations.keys():
                 vt.as2_set_control(self.as2, controls[key], self.aberrations[key] * 1e-9)
 
-            if acquire_image:
-#                assert self.superscan is not None, \
-#                       'You have to provide an instance of superscan to perform superscan-related operations.'
-#                self.record_parameters = self.create_record_parameters(self.frame_parameters,
-#                                                                       self.detectors)
-#                self.superscan.set_frame_parameters(**self.record_parameters)
-                
+            if acquire_image:                
                 #im = self.superscan.record(**self.record_parameters)
 #                channels_enabled = [False, False]
 #                if self.detectors['HAADF']:
@@ -514,8 +510,21 @@ class Imaging(object):
                 if self.detectors['HAADF'] and self.detectors['MAADF']:
                     data = np.asarray(ss.SS_Functions_SS_GetImageForFrame(frame_nr, 1))
                     return_image = [return_image, data]
-
+                
+                if show_live_image:
+                    if self.live_data_item_MAADF is None and self.detectors['MAADF']:
+                        self.live_data_item_MAADF = self.document_controller.library.create_data_item('Live (MAADF)')
+                    if self.live_data_item_HAADF is None and self.detectors['HAADF']:
+                        self.live_data_item_HAADF = self.document_controller.library.create_data_item('Live (HAADF)')
                     
+                    if self.detectors['HAADF'] and self.detectors['MAADF']:
+                        self.live_data_item_HAADF.set_data(return_image[0])
+                        self.live_data_item_MAADF.set_data(return_image[1])
+                    elif self.detectors['HAADF']:
+                        self.live_data_item_HAADF.set_data(return_image)
+                    elif self.detectors['MAADF']:
+                        self.live_data_item_MAADF.set_data(return_image)
+                        
                 #im = self.superscan.grab_next_to_start(channels_enabled=channels_enabled)
 #                if len(im) > 1:
 #                    return_image = []
