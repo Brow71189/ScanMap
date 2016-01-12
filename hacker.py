@@ -4,7 +4,7 @@ import logging
 import numpy as np
 
 _ = gettext.gettext
-# _HardwareSource_hardware_source.acquire_dat_elements()
+# _HardwareSource_hardware_source.acquire_data_elements()
 class HackerPanelDelegate(object):
     
     
@@ -54,6 +54,9 @@ class HackerPanelDelegate(object):
             if self.current_position < -1:
                 self.current_position += 1
                 self.input_field.text = self.history[self.current_position]
+            else:
+                self.current_position = 0
+                self.input_field.text = ''
         
         column = ui.create_column_widget()
         description = ui.create_label_widget('Sends commands to python.')

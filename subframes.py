@@ -149,9 +149,9 @@ def create_mask(Peak, graphene_threshold, light_threshold, heavy_threshold, dirt
         heavy_dirt_mask = Peak.dirt_detector(dirt_threshold=heavy_threshold)
         if dirt_border > 0:
             heavy_dirt_mask = cv2.dilate(heavy_dirt_mask, np.ones((dirt_border, dirt_border)))
-            mask[heavy_dirt_mask==1] = 16
-        else:
-            mask[heavy_dirt_mask==1] = 16
+        
+        mask[heavy_dirt_mask==1] = 16
+
         
     return mask
 
@@ -184,7 +184,14 @@ def subframes_preprocessing(filename, dirname, imsize, counts_threshold=1e-9, gr
         return (filename, graphene_area, None, None, None, None, None, None,  success)
     
     # to improve peak finding set areas without graphene to mean intensity of graphene
-    Peak.image[mask!=1] = np.mean(Peak.image[mask==1])
+    graphene_mean = np.mean(Peak.image[mask==1])
+    Peak.image[mask!=1] = graphene_mean
+    # Check for beam blanker artifacts at beginning of image
+    if np.mean(Peak.image[:int(median_blur_diameter/2)]) > 1.1*graphene_mean:
+        Peak.image[:int(median_blur_diameter/2)] = graphene_mean
+        mask[:int(median_blur_diameter/2)] = 16
+        print('Correcting for blanker artifacts in ' + filename + '.')
+        
     #get angle of rotation and peak radius
     try:
         rotation, radius, number_peaks, peak_intensities_sum, ellipse_a, ellipse_b, angle = rotation_radius(Peak)
@@ -225,8 +232,8 @@ def subframes_preprocessing(filename, dirname, imsize, counts_threshold=1e-9, gr
             fft = np.log(np.abs(Peak.fft)).astype(np.float32)
             center = np.array(np.shape(image))/2
             ell = np.ones(np.shape(fft), dtype='float32')
-            cv2.ellipse(ell, (tuple(center), (ellipse_a*2, ellipse_b*2), -angle*180/np.pi), 2, 3)
-            cv2.ellipse(ell, (tuple(center), (ellipse_a*2*np.sqrt(3), ellipse_b*2*np.sqrt(3)), -angle*180/np.pi), 2, 3)
+            cv2.ellipse(ell, (tuple(center), (ellipse_a*2, ellipse_b*2), -angle*180/np.pi), 2)
+            cv2.ellipse(ell, (tuple(center), (ellipse_a*2*np.sqrt(3), ellipse_b*2*np.sqrt(3)), -angle*180/np.pi), 2)
             fft *= ell
             savesize = int(2.0*imsize/0.213)
             tifffile.imsave(dirname+'fft_'+dirname.split('/')[-2]+'/'+filename,
@@ -264,6 +271,7 @@ if __name__ == '__main__':
             pass
     matched_dirlist.sort()
     #starttime = time.time()
+    #matched_dirlist=matched_dirlist[400:600]
     
     pool = Pool()
     res = [pool.apply_async(subframes_preprocessing, (filename, dirpath, imsize),
