@@ -170,9 +170,9 @@ def subframes_preprocessing(filename, dirname, imsize, counts_threshold=1e-9, gr
     image = cv2.imread(dirname+filename, -1)
     if image is None:
         raise ValueError(dirname+filename+' is not an image file. Make sure you give the total path as input argument.')
-    image_org = image.copy()
+    #image_org = image.copy()
     
-    Peak = at.Peaking(image=image, imsize=imsize)
+    Peak = at.Peaking(image=image.copy(), imsize=imsize)
     #get mask to filter dirt and check if less than "minimum_graphene_area" is graphene in the image
 #    mask = Peak.dirt_detector(dirt_threshold=dirt_threshold, median_blur_diam=median_blur_diameter,
 #                              gaussian_blur_radius=gaussian_blur_radius)
@@ -183,6 +183,8 @@ def subframes_preprocessing(filename, dirname, imsize, counts_threshold=1e-9, gr
         success = False
         return (filename, graphene_area, None, None, None, None, None, None,  success)
     
+    # to improve peak finding set areas without graphene to mean intensity of graphene
+    Peak.image[mask!=1] = np.mean(Peak.image[mask==1])
     #get angle of rotation and peak radius
     try:
         rotation, radius, number_peaks, peak_intensities_sum, ellipse_a, ellipse_b, angle = rotation_radius(Peak)
@@ -219,11 +221,12 @@ def subframes_preprocessing(filename, dirname, imsize, counts_threshold=1e-9, gr
         tifffile.imsave(dirname+'mask_'+dirname.split('/')[-2]+'/'+filename, mask)
         
         if save_fft:
-            fft = np.log(np.abs(np.fft.fftshift(np.fft.fft2(image_org)))).astype('float32')
+            #fft = np.log(np.abs(np.fft.fftshift(np.fft.fft2(image_org)))).astype('float32')
+            fft = np.log(np.abs(Peak.fft)).astype(np.float32)
             center = np.array(np.shape(image))/2
             ell = np.ones(np.shape(fft), dtype='float32')
-            cv2.ellipse(ell, (tuple(center), (ellipse_a*2, ellipse_b*2), -angle*180/np.pi), 2)
-            cv2.ellipse(ell, (tuple(center), (ellipse_a*2*np.sqrt(3), ellipse_b*2*np.sqrt(3)), -angle*180/np.pi), 2)            
+            cv2.ellipse(ell, (tuple(center), (ellipse_a*2, ellipse_b*2), -angle*180/np.pi), 2, 3)
+            cv2.ellipse(ell, (tuple(center), (ellipse_a*2*np.sqrt(3), ellipse_b*2*np.sqrt(3)), -angle*180/np.pi), 2, 3)
             fft *= ell
             savesize = int(2.0*imsize/0.213)
             tifffile.imsave(dirname+'fft_'+dirname.split('/')[-2]+'/'+filename,
@@ -238,16 +241,16 @@ if __name__ == '__main__':
     
     overall_starttime = time.time()
 
-    dirpath = '/3tb/maps_data/map_2015_04_23_19_12'
+    dirpath = '/3tb/maps_data/map_2016_01_08_18_54'
     #dirpath = '/3tb/Dark_noise/'
-    imsize = 12
+    imsize = 28
     #graphene_threshold = 0.0033
-    graphene_threshold = 0
-    light_threshold = 0.014
+    graphene_threshold = 0.0011
+    light_threshold = -1
     #light_threshold = 0
-    heavy_threshold = 0.014
+    heavy_threshold = 0.0025
     dirt_border = 50
-    minimum_graphene_area=0.5
+    minimum_graphene_area=0.3
 
     if not dirpath.endswith('/'):
         dirpath += '/'
@@ -288,8 +291,8 @@ if __name__ == '__main__':
     frame_data_file.write('#Created: ' + time.strftime('%Y/%m/%d %H:%M') + '\n')
     frame_data_file.write('#Imagesize in nm: {:.1f}\tgraphene threshold: {:f}\t'.format(imsize,graphene_threshold))
     frame_data_file.write('light threshold: {:f}\theavy threshold: {:f}\t'.format(light_threshold, heavy_threshold))
-    frame_data_file.write('Dirt border: {:n}\tmaximum dirt coverage: {:f}\n'.format(dirt_border, minimum_graphene_area))
-    frame_data_file.write('#label\tdirt\tnumpeak\ttuning\ttilt\tella\tellb\tellphi\n\n')
+    frame_data_file.write('Dirt border: {:n}\tminimum graphene area: {:f}\n'.format(dirt_border, minimum_graphene_area))
+    frame_data_file.write('#label\tgraphene\tnumpeak\ttuning\ttilt\tella\tellb\tellphi\n\n')
     
     for frame_data in res_list:
         if frame_data[-1]:

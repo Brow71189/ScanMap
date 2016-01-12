@@ -482,7 +482,8 @@ class Imaging(object):
                     'You have to provide an instance of superscan in order to perform superscan-related operations.'                
                 self.record_parameters = self.create_record_parameters(self.frame_parameters, self.detectors)
                 self.superscan.set_frame_parameters(**self.record_parameters)
-                self.superscan.stop_playing()
+                if self.superscan.is_playing():
+                    self.superscan.stop_playing()
                 #im = self.superscan.record(**self.record_parameters)
 #                channels_enabled = [False, False]
 #                if self.detectors['HAADF']:
@@ -511,6 +512,7 @@ class Imaging(object):
                 ss.SS_Functions_SS_SetAcquisitionChannels(acchannels)
                 frame_nr = ss.SS_Functions_SS_StartFrame(False)
                 ss.SS_Functions_SS_WaitForEndOfFrame(frame_nr)
+                time.sleep(0.1)
                 return_image = np.asarray(ss.SS_Functions_SS_GetImageForFrame(frame_nr, 0))
                 if self.detectors['HAADF'] and self.detectors['MAADF']:
                     data = np.asarray(ss.SS_Functions_SS_GetImageForFrame(frame_nr, 1))
