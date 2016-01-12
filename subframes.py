@@ -248,9 +248,9 @@ if __name__ == '__main__':
     
     overall_starttime = time.time()
 
-    dirpath = '/3tb/maps_data/map_2016_01_08_18_54'
+    dirpath = '/3tb/maps_data/map_2016_01_09_00_01'
     #dirpath = '/3tb/Dark_noise/'
-    imsize = 28
+    imsize = 16
     #graphene_threshold = 0.0033
     graphene_threshold = 0.0011
     light_threshold = -1
