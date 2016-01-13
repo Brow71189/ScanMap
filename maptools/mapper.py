@@ -693,7 +693,7 @@ class Mapping(object):
             #acquire image and save it
             overview_parameters = {'size_pixels': (4096, 4096), 'center': (0,0), 'pixeltime': 4, \
                                 'fov': over_size, 'rotation': self.frame_parameters['rotation']}
-            image = img.image_grabber(frame_parameters=overview_parameters)
+            image = img.image_grabber(frame_parameters=overview_parameters, show_live_image=True)
             tifffile.imsave(os.path.join(self.store, 'Overview_{:.0f}_nm.tif'.format(over_size)), image)
     
         if self.event is None or not self.event.is_set():

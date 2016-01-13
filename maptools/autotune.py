@@ -511,6 +511,7 @@ class Imaging(object):
                 if self.detectors['MAADF']:
                     acchannels +=2
                 ss.SS_Functions_SS_SetAcquisitionChannels(acchannels)
+                self.document_controller.queue_task(lambda: self.superscan._HardwareSource__hardware_source.set_selected_profile_index(1))
                 frame_nr = ss.SS_Functions_SS_StartFrame2(False, 1)
                 ss.SS_Functions_SS_WaitForEndOfFrame(frame_nr)
                 while not ss.SS_Functions_SS_GetRemainingPixelsForFrame(frame_nr):
