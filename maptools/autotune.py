@@ -480,18 +480,19 @@ class Imaging(object):
             if acquire_image:
                 assert self.superscan is not None, \
                     'You have to provide an instance of superscan in order to perform superscan-related operations.'                
-                self.record_parameters = self.create_record_parameters(self.frame_parameters, self.detectors)
-                self.superscan.set_frame_parameters(**self.record_parameters)
-                if self.superscan.is_playing():
-                    self.superscan.stop_playing()
+                #self.record_parameters = self.create_record_parameters(self.frame_parameters, self.detectors)
+                #self.superscan.set_frame_parameters(**self.record_parameters)
+                #if self.superscan.is_playing:
+                #    self.superscan.stop_playing()
                 #im = self.superscan.record(**self.record_parameters)
 #                channels_enabled = [False, False]
 #                if self.detectors['HAADF']:
 #                    channels_enabled[0] = True
 #                if self.detectors['MAADF']:
 #                    channels_enabled[1] = True
-                default_params = ss.SS_Functions_SS_GetFrameParams2()
-                ss.SS_Functions_SS_SetFrameParams(self.frame_parameters.get('size_pixels', (default_params[0],
+                default_params = ss.SS_Functions_SS_GetFrameParamsForProfile2(1)
+                ss.SS_Functions_SS_SetFrameParamsForProfile(1,
+                                                  self.frame_parameters.get('size_pixels', (default_params[0],
                                                                                             default_params[0]))[1],
                                                   self.frame_parameters.get('size_pixels', (default_params[1],
                                                                                             default_params[1]))[0],
@@ -510,10 +511,21 @@ class Imaging(object):
                 if self.detectors['MAADF']:
                     acchannels +=2
                 ss.SS_Functions_SS_SetAcquisitionChannels(acchannels)
-                frame_nr = ss.SS_Functions_SS_StartFrame(False)
+                frame_nr = ss.SS_Functions_SS_StartFrame2(False, 1)
                 ss.SS_Functions_SS_WaitForEndOfFrame(frame_nr)
-                time.sleep(0.1)
+                while not ss.SS_Functions_SS_GetRemainingPixelsForFrame(frame_nr):
+                    print('Waiting for Frame to finish.')
+                    time.sleep(0.02)
                 return_image = np.asarray(ss.SS_Functions_SS_GetImageForFrame(frame_nr, 0))
+                startwaittime = time.time()
+                while (return_image[-1] == 0).all():
+                    if time.time() - startwaittime() > 1:
+                        print('Exceeded maximum waiting time for frame data.')
+                        break
+                    print('Waiting for frame to be fully transfered.')
+                    return_image = np.asarray(ss.SS_Functions_SS_GetImageForFrame(frame_nr, 0))
+                    time.sleep(0.02)
+                    
                 if self.detectors['HAADF'] and self.detectors['MAADF']:
                     data = np.asarray(ss.SS_Functions_SS_GetImageForFrame(frame_nr, 1))
                     return_image = [return_image, data]

@@ -609,7 +609,7 @@ class Mapping(object):
                                     print('Waiting for beam to be unblanked...')
                                     time.sleep(0.02)
                             time.sleep(0.1)        
-                            data = img.image_grabber()
+                            data = img.image_grabber(show_live_image=True)
                             if self.switches.get('blank_beam'):
                                 self.as2.set_property_as_float('C_Blank', 1)
     
@@ -626,7 +626,7 @@ class Mapping(object):
                             for i in range(self.number_of_images):
                                 if pixeltimes is not None:
                                     self.frame_parameters['pixeltime'] = pixeltimes[i]
-                                data = img.image_grabber(frame_parameters=self.frame_parameters)
+                                data = img.image_grabber(frame_parameters=self.frame_parameters, show_live_image=True)
                                 
                                 name = splitname[0] + ('_{:0'+str(len(str(self.number_of_images)))+'d}'
                                                        ).format(i) + splitname[1]
