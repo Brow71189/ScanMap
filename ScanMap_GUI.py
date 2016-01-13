@@ -31,6 +31,7 @@ class ScanMapPanelDelegate(object):
         self.panel_position = 'right'
         self.superscan = None
         self.as2 = None
+        self.ccd = None
         self.coord_dict = {'top-left': None, 'top-right': None, 'bottom-right': None, 'bottom-left': None}
         self.switches = {'do_autotuning': False, 'use_z_drive': False, 'auto_offset': False, 'auto_rotation': False,
                             'compensate_stage_error': False, 'acquire_overview': True, 'blank_beam': False}
@@ -45,7 +46,8 @@ class ScanMapPanelDelegate(object):
     def create_panel_widget(self, ui, document_controller):
         
         self.superscan = self.__api.get_hardware_source_by_id('scan_controller', '1')
-        self.as2 = self.__api.get_instrument_by_id('autostem_controller', '1')        
+        self.as2 = self.__api.get_instrument_by_id('autostem_controller', '1')
+        self.ccd = self.__api.get_hardware_source_by_id('nionccd', '1')
         
         column = ui.create_column_widget()        
         
@@ -227,7 +229,7 @@ class ScanMapPanelDelegate(object):
                 return
             
             Mapper = mapper.Mapping(superscan=self.superscan, as2=self.as2, document_controller=document_controller,
-                                    coord_dict=self.coord_dict.copy(), switches=self.switches.copy())
+                                    coord_dict=self.coord_dict.copy(), switches=self.switches.copy(), ccd=self.ccd)
                                     
             Mapper.number_of_images = self.number_of_images
             Mapper.offset = self.offset

@@ -27,6 +27,7 @@ class Mapping(object):
     def __init__(self, **kwargs):
         self.superscan = kwargs.get('superscan')
         self.as2 = kwargs.get('as2')
+        self.ccd = kwargs.get('ccd')
         self.document_controller = kwargs.get('document_controller')
         self.coord_dict = kwargs.get('coord_dict')
         # frame_parameters are: rotation, imsize, impix, pixeltime
@@ -476,6 +477,30 @@ class Mapping(object):
             result['bottom-right'] = points[2]
     
         return result
+    
+    def verified_unblank(self, timeout=1):
+        assert self.as2 is not None, 'Cannot do unblank beam without an instance of as2.'
+        if not self.ccd:
+            self.document_controller.queue_task(lambda: logging.warn('Cannot check if beam is unblanked without ccd.'))
+            self.as2.set_property_as_float('C_Blank', 0)
+            return
+        self.ccd.set_property_as_float('exposure_ms', 50)
+        if not self.ccd.is_playing:
+            self.ccd.start_playing()
+        reference = np.mean(self.ccd.grab_next_to_finish()[0].data)
+        value = 0
+        counter = 0
+        self.as2.set_property_as_float('C_Blank', 0)
+        starttime = time.time()
+        while value < 5*reference:
+            counter += 1
+            if time.time()-starttime < timeout:
+                self.document_controller.queue_task(lambda:
+                                                logging.warn('A timeout occured during waiting for beam unblanking.'))
+                break
+            value = np.mean(self.ccd.grab_next_to_finish()[0].data)
+            time.sleep(0.02)
+        print(str(counter) + ' steps until full unblank.')
         
     def SuperScan_mapping(self, **kwargs):
         """
@@ -589,12 +614,13 @@ class Mapping(object):
                     
                     if self.switches.get('do_autotuning'):
                         if self.switches.get('blank_beam'):
-                                self.as2.set_property_as_float('C_Blank', 0)
+                                #self.as2.set_property_as_float('C_Blank', 0)
                                 #time.sleep(0.7)
-                                while not self.as2.get_property_as_float('C_Blank') == 0:
-                                    print('Waiting for beam to be unblanked...')
-                                    time.sleep(0.02)
-                        time.sleep(0.1)
+                                #while not self.as2.get_property_as_float('C_Blank') == 0:
+                                #    print('Waiting for beam to be unblanked...')
+                                #    time.sleep(0.02)
+                                self.verified_unblank()
+                        #time.sleep(0.1)
                         data, message = self.handle_autotuning(frame_number[counter-1], img)
 
                         if self.switches.get('blank_beam'):
@@ -603,12 +629,13 @@ class Mapping(object):
                         # Take frame and save it to disk
                         if self.number_of_images < 2:
                             if self.switches.get('blank_beam'):
-                                self.as2.set_property_as_float('C_Blank', 0)
-                                #time.sleep(0.5)
-                                while not self.as2.get_property_as_float('C_Blank') == 0:
-                                    print('Waiting for beam to be unblanked...')
-                                    time.sleep(0.02)
-                            time.sleep(0.1)        
+                                self.verified_unblank()
+#                                self.as2.set_property_as_float('C_Blank', 0)
+#                                #time.sleep(0.5)
+#                                while not self.as2.get_property_as_float('C_Blank') == 0:
+#                                    print('Waiting for beam to be unblanked...')
+#                                    time.sleep(0.02)
+#                            time.sleep(0.1)        
                             data = img.image_grabber(show_live_image=True)
                             if self.switches.get('blank_beam'):
                                 self.as2.set_property_as_float('C_Blank', 1)
@@ -616,12 +643,13 @@ class Mapping(object):
                             tifffile.imsave(os.path.join(self.store, name), data)
                         else:
                             if self.switches.get('blank_beam'):
-                                self.as2.set_property_as_float('C_Blank', 0)
-                                #time.sleep(0.5)
-                                while not self.as2.get_property_as_float('C_Blank') == 0:
-                                    print('Waiting for beam to be unblanked...')
-                                    time.sleep(0.02)
-                                time.sleep(0.1)
+                                self.verified_unblank()
+#                                self.as2.set_property_as_float('C_Blank', 0)
+#                                #time.sleep(0.5)
+#                                while not self.as2.get_property_as_float('C_Blank') == 0:
+#                                    print('Waiting for beam to be unblanked...')
+#                                    time.sleep(0.02)
+#                                time.sleep(0.1)
                             splitname = os.path.splitext(name)    
                             for i in range(self.number_of_images):
                                 if pixeltimes is not None:
