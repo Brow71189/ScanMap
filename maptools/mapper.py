@@ -494,13 +494,15 @@ class Mapping(object):
         starttime = time.time()
         while value < 5*reference:
             counter += 1
-            if time.time()-starttime < timeout:
+            if time.time()-starttime > timeout:
                 self.document_controller.queue_task(lambda:
                                                 logging.warn('A timeout occured during waiting for beam unblanking.'))
                 break
             value = np.mean(self.ccd.grab_next_to_finish()[0].data)
             time.sleep(0.02)
-        print(str(counter) + ' steps until full unblank.')
+        else:
+            print(str(counter) + ' steps until full unblank.')
+        time.sleep(0.02)
         
     def SuperScan_mapping(self, **kwargs):
         """

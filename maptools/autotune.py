@@ -514,16 +514,16 @@ class Imaging(object):
                 self.document_controller.queue_task(lambda: self.superscan._HardwareSource__hardware_source.set_selected_profile_index(1))
                 frame_nr = ss.SS_Functions_SS_StartFrame2(False, 1)
                 ss.SS_Functions_SS_WaitForEndOfFrame(frame_nr)
-                while not ss.SS_Functions_SS_GetRemainingPixelsForFrame(frame_nr):
-                    print('Waiting for Frame to finish.')
+                while not ss.SS_Functions_SS_GetRemainingPixelsForFrame(frame_nr) == -1:
+                    self.logwrite('Waiting for Frame to finish.')
                     time.sleep(0.02)
                 return_image = np.asarray(ss.SS_Functions_SS_GetImageForFrame(frame_nr, 0))
                 startwaittime = time.time()
                 while (return_image[-1] == 0).all():
                     if time.time() - startwaittime() > 1:
-                        print('Exceeded maximum waiting time for frame data.')
+                        self.logwrite('Exceeded maximum waiting time for frame data.')
                         break
-                    print('Waiting for frame to be fully transfered.')
+                    self.logwrite('Waiting for frame to be fully transfered.')
                     return_image = np.asarray(ss.SS_Functions_SS_GetImageForFrame(frame_nr, 0))
                     time.sleep(0.02)
                     

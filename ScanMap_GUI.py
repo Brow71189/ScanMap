@@ -47,7 +47,7 @@ class ScanMapPanelDelegate(object):
         
         self.superscan = self.__api.get_hardware_source_by_id('scan_controller', '1')
         self.as2 = self.__api.get_instrument_by_id('autostem_controller', '1')
-        self.ccd = self.__api.get_hardware_source_by_id('nionccd', '1')
+        self.ccd = self.__api.get_hardware_source_by_id('nionccd1010', '1')
         
         column = ui.create_column_widget()        
         
@@ -90,14 +90,14 @@ class ScanMapPanelDelegate(object):
         def time_finished(text):
             if len(text) > 0:
                 try:
-                    time = float(text)
-                    self.frame_parameters['pixeltime'] = time
-                    logging.info('Setting pixeltime to: ' + str(time) + ' us.')
+                    pixeltime = float(text)
+                    self.frame_parameters['pixeltime'] = pixeltime
+                    logging.info('Setting pixeltime to: ' + str(pixeltime) + ' us.')
                 except (TypeError, ValueError):
                     try:
-                        time = [float(s) for s in text.split(',')]
-                        self.frame_parameters['pixeltime'] = time
-                        logging.info('Pixel times will be (in this order): ' + str(time) + ' us.')
+                        pixeltime = [float(s) for s in text.split(',')]
+                        self.frame_parameters['pixeltime'] = pixeltime
+                        logging.info('Pixel times will be (in this order): ' + str(pixeltime) + ' us.')
                     except ValueError:
                         logging.warn(text + ' is not a valid Time. Please input a floating point number or a comma-seperated list of floats')
                         time_line_edit.select_all()
@@ -197,7 +197,8 @@ class ScanMapPanelDelegate(object):
                              'before acquiring a test image.')
                 return
             reload(autotune)   
-            Image = autotune.Imaging(frame_parameters=self.frame_parameters, as2=self.as2, superscan=self.superscan)
+            Image = autotune.Imaging(frame_parameters=self.frame_parameters, as2=self.as2, superscan=self.superscan,
+                                     document_controller=document_controller)
             testimage = Image.image_grabber()
             di=self.__api.library.create_data_item_from_data(testimage, 'testimage_'+ time.strftime('%Y_%m_%d_%H_%M'))
             calibration = self.__api.create_calibration(scale=self.frame_parameters['fov']/

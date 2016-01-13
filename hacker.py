@@ -42,7 +42,7 @@ class HackerPanelDelegate(object):
                 finally:
                     self.input_field.text = ''
                     
-                if result:
+                if result is not None:
                     logging.info(result)
         
         def back_button_clicked():
