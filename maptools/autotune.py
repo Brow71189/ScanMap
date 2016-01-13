@@ -951,7 +951,7 @@ class Tuning(Peaking):
             #changes = 0.0
             aberrations = {key: self.steps[key]*step_multiplicator}
             #changes += self.steps[key]*step_multiplicator
-            self.image = self.image_grabber(aberrations=aberrations)
+            self.image = self.image_grabber(aberrations=aberrations, show_live_image=True)
             self.mask = self.dirt_detector() if dirt_detection else None
             try:
                 #plus = self.tuning_merit()
@@ -969,7 +969,7 @@ class Tuning(Peaking):
             #passing 2xstepsize to image_grabber to get from +1 to -1
             aberrations = {key: -2.0*self.steps[key]*step_multiplicator}
             #changes += -2.0*self.steps[key]*step_multiplicator
-            self.image = self.image_grabber(aberrations=aberrations)
+            self.image = self.image_grabber(aberrations=aberrations, show_live_image=True)
             self.mask = self.dirt_detector() if dirt_detection else None
             try:
                 #minus = self.tuning_merit()
@@ -1057,7 +1057,7 @@ class Tuning(Peaking):
 
         self.imsize = self.frame_parameters['fov']
         
-        self.image = self.image_grabber(aberrations={})
+        self.image = self.image_grabber(aberrations={}, show_live_image=True)
         self.mask = self.dirt_detector() if dirt_detection else None
         
         try:
@@ -1126,7 +1126,7 @@ class Tuning(Peaking):
                     small_counter+=1
                     aberrations = {key: direction*self.steps[key]}
                     #changes += direction*self.steps[key]
-                    self.image = self.image_grabber(aberrations=aberrations)
+                    self.image = self.image_grabber(aberrations=aberrations, show_live_image=True)
                     self.mask = self.dirt_detector() if dirt_detection else None
                     try:
                         #next_frame = self.tuning_merit()
@@ -1159,7 +1159,7 @@ class Tuning(Peaking):
                 #only keep changes if they improve the overall tuning
                 if len(self.merit_history[merit]) > 0:
                     if current > np.amin(self.merit_history[merit]):
-                        self.image = self.image_grabber()
+                        self.image = self.image_grabber(show_live_image=True)
                         self.mask = self.dirt_detector() if dirt_detection else None
                         try:
                             #current  = self.tuning_merit()
@@ -1170,7 +1170,7 @@ class Tuning(Peaking):
                             raise
                         if current > np.amin(self.merit_history[merit]):
                             self.aberrations = self.aberrations_tracklist[-1].copy()
-                            self.image = self.image_grabber()
+                            self.image = self.image_grabber(show_live_image=True)
                             self.mask = self.dirt_detector() if dirt_detection else None
                             try:
                                 #current  = self.tuning_merit()
