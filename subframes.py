@@ -181,7 +181,7 @@ def subframes_preprocessing(filename, dirname, imsize, counts_threshold=1e-9, gr
     graphene_area = float(np.sum(mask[mask==1]))/(np.shape(image)[0]*np.shape(image)[1])
     if graphene_area < minimum_graphene_area:
         success = False
-        return (filename, graphene_area, None, None, None, None, None, None,  success)
+        return (filename, graphene_area, None, None, None, None, None, None, None, success)
     
     # to improve peak finding set areas without graphene to mean intensity of graphene
     graphene_mean = np.mean(Peak.image[mask==1])
@@ -248,7 +248,7 @@ if __name__ == '__main__':
     
     overall_starttime = time.time()
 
-    dirpath = '/3tb/maps_data/map_2016_01_09_00_01'
+    dirpath = '/3tb/maps_data/map_2016_01_08_18_54'
     #dirpath = '/3tb/Dark_noise/'
     imsize = 16
     #graphene_threshold = 0.0033
@@ -304,7 +304,7 @@ if __name__ == '__main__':
     
     for frame_data in res_list:
         if frame_data[-1]:
-                frame_data_file.write('%s\t%.3f\t%d\t%.2f\t%.6f\t%.6f\t%.6f\t%.6f\n' % frame_data[0:8])
+                frame_data_file.write('%s\t%.3f\t%d\t%.2f\t%.6f\t%.6f\t%.6f\t%.6f\n' % frame_data[0:-1])
     
     frame_data_file.close()
     
