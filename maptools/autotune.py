@@ -49,7 +49,7 @@ except:
     logging.warn('Could not import SuperScanPy. Maybe you are running in offline mode.')
 #global variable to store aberrations when simulating them (see function image_grabber() for details)
 #global_aberrations = {'EHTFocus': 0, 'C12_a': 5, 'C12_b': 0, 'C21_a': 801.0, 'C21_b': 0, 'C23_a': -500, 'C23_b': 0}
-global_aberrations = {'EHTFocus': 2, 'C12_a': 0, 'C12_b': -3, 'C21_a': 0, 'C21_b': 0, 'C23_a': 185, 'C23_b': 0}
+global_aberrations = {'EHTFocus': 0, 'C12_a': 0, 'C12_b': 0, 'C21_a': 0, 'C21_b': 0, 'C23_a': 0, 'C23_b': 0}
 
 
 
@@ -619,11 +619,11 @@ class Imaging(object):
                                                                np.arctan2(self.aberrations.get('C21_b', 0),
                                                                           self.aberrations.get('C21_a', 0))) +
                               (2.0/3.0) *
-                              np.sqrt(self.aberrations.get('C23_a', 0)**2 + self.aberrations.get('C23_a', 0)**2) *
+                              np.sqrt(self.aberrations.get('C23_a', 0)**2 + self.aberrations.get('C23_b', 0)**2) *
                               4.87e-3 *
                               np.sqrt(x**2 + y**2)**3 * np.cos(3 * (np.arctan2(y,x) -
                                                                np.arctan2(self.aberrations.get('C23_b', 0),
-                                                                          self.aberrations.get('C23_b', 0))))) * \
+                                                                          self.aberrations.get('C23_a', 0))))) * \
                               np.pi * 4.87e-3
 
                 kernel = np.cos(raw_kernel)+1j*np.sin(raw_kernel)
