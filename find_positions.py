@@ -9,7 +9,7 @@ import numpy as np
 import cv2
 import os
 #import tifffile
-from scipy.stats import theilslopes
+from scipy.stats.mstats import theilslopes
 import scipy.ndimage as ndimage
 import matplotlib.pyplot as plt
 import matplotlib.animation as animation

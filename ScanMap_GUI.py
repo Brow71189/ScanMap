@@ -33,14 +33,17 @@ class ScanMapPanelDelegate(object):
         self.as2 = None
         self.ccd = None
         self.coord_dict = {'top-left': None, 'top-right': None, 'bottom-right': None, 'bottom-left': None}
-        self.switches = {'do_autotuning': False, 'use_z_drive': False, 'auto_offset': False, 'auto_rotation': False,
+        self.switches = {'do_autotuning': False, 'use_z_drive': False, 'tune_at_edges': False,
                             'compensate_stage_error': False, 'acquire_overview': True, 'blank_beam': False}
         self.frame_parameters = {'size_pixels': None, 'pixeltime': None, 'fov': None, 'rotation': 0}
         self.offset = 0
         self.number_of_images = 1
         self.savepath = None
+        self.tune_event = None
+        self.thread = None
+        self.thread_communication = None
         # Is filled later with the actual checkboxes. For now just the default values are stored
-        self._checkboxes = {'do_autotuning': False, 'use_z_drive': False, 'auto_offset': False, 'auto_rotation': False,
+        self._checkboxes = {'do_autotuning': False, 'use_z_drive': False, 'tune_at_edges': False,
                             'compensate_stage_error': False, 'acquire_overview': True, 'blank_beam': False}
     
     def create_panel_widget(self, ui, document_controller):
@@ -208,6 +211,18 @@ class ScanMapPanelDelegate(object):
             
        
         def done_button_clicked():
+            
+            if self.thread is not None and self.thread.is_alive():
+                if self.tune_event is not None and self.tune_event.is_set():
+                    self.thread_communication['new_EHTFocus'] = self.as2.get_property_as_float('EHTFocus')
+                    if self.switches.get('use_z_drive'):
+                        self.thread_communication['new_z'] = self.as2.get_property_as_float('StageOutX')
+                    self.tune_event.clear()
+                    return
+                else:
+                    logging.warn('There is already a mapping going on. Please abort it and wait for it to terminate.')
+                    return
+                    
             saving_finished(savepath_line_edit.text)
             checkbox_changed('obligatory string argument')
             self.total_number_frames()
@@ -236,6 +251,10 @@ class ScanMapPanelDelegate(object):
             Mapper.offset = self.offset
             Mapper.savepath = self.savepath
             Mapper.frame_parameters = self.frame_parameters.copy()
+            self.thread_communication = Mapper.gui_communication
+            if self.switches['tune_at_edges']:
+                self.tune_event = threading.Event()
+                Mapper.tune_event = self.tune_event
             
             logging.info('FOV: ' + str(self.frame_parameters['fov'])+' nm')
             logging.info('Offset: ' + str(self.offset)+' x image size')

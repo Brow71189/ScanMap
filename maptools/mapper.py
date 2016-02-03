@@ -42,10 +42,12 @@ class Mapping(object):
         else:
             self._savepath = None
         self.event = kwargs.get('event')
+        self.tune_event = kwargs.get('tune_event')
         self.foldername = 'map_' + time.strftime('%Y_%m_%d_%H_%M')
         self.offset = kwargs.get('offset', 0)
         self._online = kwargs.get('online')
         self.autotuning_mode = kwargs.get('autotuning_mode', 'abort')
+        self.gui_communication = {}
         
     @property
     def online(self):
@@ -148,16 +150,20 @@ class Mapping(object):
                                              topY - j*(imsize+distance) - yfirstline[j])) +
                                       tuple(self.interpolation((leftX + i*(imsize+distance),
                                             topY - j*(imsize+distance)))))                
-                        
-                    frame_number.append(j*num_subframes[0]+i)
-                    
+                    if self.switches.get('focus_at_edges') and i == 0:
+                        frame_number.append({'number': j*num_subframes[0]+i, 'retune': True, 'corner': 'top-left'})
+                    else:
+                        frame_number.append({'number': j*num_subframes[0]+i})
                 elif j % 2 == 0:  # Odd lines (have even indices because numbering starts with 0), e.g. map from left to right
                     map_coords.append(tuple((leftX + i*(imsize+distance) + xoddline[i], 
                                              topY - j*(imsize+distance) - yoddline[j])) +
                                       tuple(self.interpolation((leftX + i*(imsize+distance),
                                             topY - j*(imsize+distance)))))                
                         
-                    frame_number.append(j*num_subframes[0]+i)
+                    if self.switches.get('focus_at_edges') and i == 0:
+                        frame_number.append({'number': j*num_subframes[0]+i, 'retune': True, 'corner': 'top-left'})
+                    else:
+                        frame_number.append({'number': j*num_subframes[0]+i})
 #                    map_coords.append(tuple((leftX+i*(imsize+distance), 
 #                                             topY-j*(imsize+distance) - oldm*(imsize+distance))) +
 #                                      tuple(self.interpolation((leftX + i*(imsize+distance),
@@ -180,7 +186,11 @@ class Mapping(object):
                                             (leftX + (num_subframes[0] - (i+1))*(imsize + distance),
                                              topY-j*(imsize + distance)))))
                     
-                    frame_number.append(j*num_subframes[0]+(num_subframes[0]-(i+1)))
+                    if self.switches.get('focus_at_edges') and num_subframes[0]-(i+1) == 0:
+                        frame_number.append({'number': j*num_subframes[0]+(num_subframes[0]-(i+1)), 'retune': True,
+                                             'corner': 'top-right'})
+                    else:
+                        frame_number.append({'number': j*num_subframes[0]+(num_subframes[0]-(i+1))})
                                              
 #                    map_coords.append(tuple((leftX + (num_subframes[0] - (i+1))*(imsize + distance),
 #                                             topY-j*(imsize + distance) - eldm*(imsize + distance))) +
@@ -590,84 +600,87 @@ class Mapping(object):
             counter += 1
             stagex, stagey, stagez, fine_focus = frame_coord
             img.logwrite(str(counter) + '/' + str(len(map_coords)) + ': (No. ' +
-                         str(frame_number[counter-1]) + ') x: ' +str((stagex)) + ', y: ' + str((stagey)) + ', z: ' +
-                         str((stagez)) + ', focus: ' + str((fine_focus)))
+                         str(frame_number[counter-1]['number']) + ') x: ' +str((stagex)) + ', y: ' + str((stagey)) + 
+                         ', z: ' + str((stagez)) + ', focus: ' + str((fine_focus)))
             # only do hardware operations when online
             if self.online:    
                 if self.switches.get('blank_beam'):
                     self.as2.set_property_as_float('C_Blank', 1)
     
-                vt.as2_set_control(self.as2, 'StageOutX', stagex)
-                vt.as2_set_control(self.as2, 'StageOutY', stagey)
+                #vt.as2_set_control(self.as2, 'StageOutX', stagex)
+                #vt.as2_set_control(self.as2, 'StageOutY', stagey)
+                self.as2.set_property_as_float('StageOutX', stagex)
+                self.as2.set_property_as_float('StageOutY', stagey)
                 if self.switches['use_z_drive']:
-                    vt.as2_set_control(self.as2, 'StageOutZ', stagez)
-                vt.as2_set_control(self.as2, 'EHTFocus', fine_focus)
+                    #vt.as2_set_control(self.as2, 'StageOutZ', stagez)
+                    self.as2.set_property_as_float('StageOutZ', stagez)
+                #vt.as2_set_control(self.as2, 'EHTFocus', fine_focus)
+                self.as2.set_property_as_float('EHTFocus', fine_focus)
     
                 # Wait until movement of stage is done (wait longer time before first frame)
                 if counter == 1:
                     time.sleep(10) # time in seconds
-                elif frame_number[counter-1] is None:
-                    time.sleep(1)
                 else:
                     time.sleep(2)
     
-                if frame_number[counter-1] is not None:
-                    name = str('%.4d_%.3f_%.3f.tif' % (frame_number[counter-1], stagex*1e6, stagey*1e6))
-                    
-                    if self.switches.get('do_autotuning'):
-                        if self.switches.get('blank_beam'):
-                                #self.as2.set_property_as_float('C_Blank', 0)
-                                #time.sleep(0.7)
-                                #while not self.as2.get_property_as_float('C_Blank') == 0:
-                                #    print('Waiting for beam to be unblanked...')
-                                #    time.sleep(0.02)
-                                self.verified_unblank()
-                        #time.sleep(0.1)
-                        data, message = self.handle_autotuning(frame_number[counter-1], img)
+                name = str('%.4d_%.3f_%.3f.tif' % (frame_number[counter-1]['number'], stagex*1e6, stagey*1e6))
+                
+                if self.switches.get('do_autotuning'):
+                    if self.switches.get('blank_beam'):
+                            #self.as2.set_property_as_float('C_Blank', 0)
+                            #time.sleep(0.7)
+                            #while not self.as2.get_property_as_float('C_Blank') == 0:
+                            #    print('Waiting for beam to be unblanked...')
+                            #    time.sleep(0.02)
+                            self.verified_unblank()
+                    #time.sleep(0.1)
+                    data, message = self.handle_autotuning(frame_number[counter-1]['number'], img)
 
+                    if self.switches.get('blank_beam'):
+                            self.as2.set_property_as_float('C_Blank', 1)
+                else:
+                    do_edge_focus = False
+                    if self.switches.get('focus_at_edges') and frame_number[counter-1].get('retune'):
+                        do_edge_focus = True
+                    # Take frame and save it to disk
+                    if self.number_of_images < 2:
                         if self.switches.get('blank_beam'):
-                                self.as2.set_property_as_float('C_Blank', 1)
-                    else:
-                        # Take frame and save it to disk
-                        if self.number_of_images < 2:
-                            if self.switches.get('blank_beam'):
-                                self.verified_unblank()
+                            self.verified_unblank()
 #                                self.as2.set_property_as_float('C_Blank', 0)
 #                                #time.sleep(0.5)
 #                                while not self.as2.get_property_as_float('C_Blank') == 0:
 #                                    print('Waiting for beam to be unblanked...')
 #                                    time.sleep(0.02)
 #                            time.sleep(0.1)        
-                            data = img.image_grabber(show_live_image=True)
-                            if self.switches.get('blank_beam'):
-                                self.as2.set_property_as_float('C_Blank', 1)
-    
-                            tifffile.imsave(os.path.join(self.store, name), data)
-                        else:
-                            if self.switches.get('blank_beam'):
-                                self.verified_unblank()
+                        data = img.image_grabber(show_live_image=True)
+                        tifffile.imsave(os.path.join(self.store, name), data)
+                    else:
+                        if self.switches.get('blank_beam'):
+                            self.verified_unblank()
 #                                self.as2.set_property_as_float('C_Blank', 0)
 #                                #time.sleep(0.5)
 #                                while not self.as2.get_property_as_float('C_Blank') == 0:
 #                                    print('Waiting for beam to be unblanked...')
 #                                    time.sleep(0.02)
 #                                time.sleep(0.1)
-                            splitname = os.path.splitext(name)    
-                            for i in range(self.number_of_images):
-                                if pixeltimes is not None:
-                                    self.frame_parameters['pixeltime'] = pixeltimes[i]
-                                data = img.image_grabber(frame_parameters=self.frame_parameters, show_live_image=True)
-                                
-                                name = splitname[0] + ('_{:0'+str(len(str(self.number_of_images)))+'d}'
-                                                       ).format(i) + splitname[1]
-                                tifffile.imsave(os.path.join(self.store, name), data)
-                            if self.switches.get('blank_beam'):
-                                self.as2.set_property_as_float('C_Blank', 1)
+                        splitname = os.path.splitext(name)    
+                        for i in range(self.number_of_images):
+                            if pixeltimes is not None:
+                                self.frame_parameters['pixeltime'] = pixeltimes[i]
+                            data = img.image_grabber(frame_parameters=self.frame_parameters, show_live_image=True)
+                            
+                            name = splitname[0] + ('_{:0'+str(len(str(self.number_of_images)))+'d}'
+                                                   ).format(i) + splitname[1]
+                            tifffile.imsave(os.path.join(self.store, name), data)
                     
-                    test_map.append(frame_coord)    
+                    if do_edge_focus:
+                        self.wait_for_focused(frame_number[counter-1].get('corner'))
+                    if self.switches.get('blank_beam'):
+                        self.as2.set_property_as_float('C_Blank', 1)
+                
+                test_map.append(frame_coord)
             else:
-                if frame_number[counter-1] is not None:
-                    test_map.append(frame_coord)
+                test_map.append(frame_coord)
     
         if self.switches['do_autotuning']:
             bad_frames_file = open(self.store+'bad_frames.txt', 'w')
@@ -682,15 +695,17 @@ class Mapping(object):
         if self.online and self.switches['acquire_overview']:
             #Use longest edge as image size
             if abs(self.rightX-self.leftX) < abs(self.topY-self.botY):
-                over_size = abs(self.topY-self.botY)*1.2e9
+                over_size = abs(self.topY-self.botY)*1e9 + 3*self.frame_parameters['fov']
             else:
-                over_size = abs(self.rightX-self.leftX)*1.2e9
+                over_size = abs(self.rightX-self.leftX)*1e9 + + 3*self.frame_parameters['fov']
     
             #Find center of mapped area:
             map_center = ((self.leftX+self.rightX)/2, (self.topY+self.botY)/2)
             #Goto center
-            vt.as2_set_control(self.as2, 'StageOutX', map_center[0])
-            vt.as2_set_control(self.as2, 'StageOutY', map_center[1])
+            #vt.as2_set_control(self.as2, 'StageOutX', map_center[0])
+            #vt.as2_set_control(self.as2, 'StageOutY', map_center[1])
+            self.as2.set_property_as_float('StageOutX', map_center[0])
+            self.as2.set_property_as_float('StageOutY', map_center[1])
             time.sleep(5)
             #acquire image and save it
             overview_parameters = {'size_pixels': (4096, 4096), 'center': (0,0), 'pixeltime': 4, \
@@ -722,9 +737,32 @@ class Mapping(object):
             tifffile.imsave(os.path.join(self.store, 'z_map.tif'), np.asarray(z_map, dtype='float32'))
             tifffile.imsave(os.path.join(self.store, 'focus_map.tif'), np.asarray(focus_map, dtype='float32'))
         
-        self.superscan.stop_playing()
+        #self.superscan.stop_playing()
         img.logwrite('Done.\n')
 
+    def wait_for_focused(self, corner, Image, timeout=300):
+        self.tune_event.set()
+        Image.logwrite('Please focus now at the current position. Do not change the stage position! If you are done, ' +
+                       'press "Done" and the mapping process will continue.')
+        self.superscan.start_playing()
+        starttime = time.time()
+        while time.time() - starttime < timeout:
+            if self.tune_event.is_set():
+                break
+            time.sleep(0.1)
+        else:
+            Image.logwrite('Timeout during waiting for new focus. Keeping old value.', level='warn')
+            self.superscan.stop_playing()
+            return
+        
+        if self.switches.get('use_z_drive'):
+            self.coord_dict[corner] = self.coord_dict[corner][:2] + (self.gui_communication.pop('new_z'),
+                                                                     self.gui_communication.pop('new_EHTFocus'))
+        else:
+            self.coord_dict[corner] = self.coord_dict[corner][:3] + (self.gui_communication.pop('new_EHTFocus'),)
+        
+        self.superscan.stop_playing()
+        
     def write_map_info_file(self):
     
             def translator(switch_state):
