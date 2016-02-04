@@ -34,17 +34,20 @@ class ScanMapPanelDelegate(object):
         self.ccd = None
         self.coord_dict = {'top-left': None, 'top-right': None, 'bottom-right': None, 'bottom-left': None}
         self.switches = {'do_autotuning': False, 'use_z_drive': False, 'tune_at_edges': False,
-                            'compensate_stage_error': False, 'acquire_overview': True, 'blank_beam': False}
-        self.frame_parameters = {'size_pixels': None, 'pixeltime': None, 'fov': None, 'rotation': 0}
-        self.offset = 0
+                         'compensate_stage_error': False, 'acquire_overview': True, 'blank_beam': False,
+                         'abort_series_on_dirt': False}
+        self.frame_parameters = {'size_pixels': 2048, 'pixeltime': 0.2, 'fov': 20, 'rotation': 114.5}
+        self.offset = 1
         self.number_of_images = 1
+        self.dirt_area = 0.5
         self.savepath = None
         self.tune_event = None
         self.thread = None
         self.thread_communication = None
         # Is filled later with the actual checkboxes. For now just the default values are stored
         self._checkboxes = {'do_autotuning': False, 'use_z_drive': False, 'tune_at_edges': False,
-                            'compensate_stage_error': False, 'acquire_overview': True, 'blank_beam': False}
+                            'compensate_stage_error': False, 'acquire_overview': True, 'blank_beam': False,
+                            'abort_series_on_dirt': False}
     
     def create_panel_widget(self, ui, document_controller):
         
@@ -102,7 +105,8 @@ class ScanMapPanelDelegate(object):
                         self.frame_parameters['pixeltime'] = pixeltime
                         logging.info('Pixel times will be (in this order): ' + str(pixeltime) + ' us.')
                     except ValueError:
-                        logging.warn(text + ' is not a valid Time. Please input a floating point number or a comma-seperated list of floats')
+                        logging.warn(text + ' is not a valid Time. Please input a floating point number or a ' +
+                                     'comma-seperated list of floats')
                         time_line_edit.select_all()
                 
                 self.total_number_frames()                
@@ -130,6 +134,16 @@ class ScanMapPanelDelegate(object):
                     number_line_edit.select_all()
                     
                 self.total_number_frames()
+                
+        def dirt_area_finished(text):
+            if len(text) > 0:
+                try:
+                    self.dirt_area = float(text)/100
+                    logging.info('Image series will be aborted if more than ' + text + '% dirt were found in the last' +
+                                 ' image.')
+                except ValueError:
+                    logging.warn(text + ' is not a valid number. Please input a floating point number.')
+                    number_line_edit.select_all()
                 
         def saving_finished(text):
             if len(text)>0:
@@ -208,8 +222,7 @@ class ScanMapPanelDelegate(object):
                                                        self.frame_parameters['size_pixels'][0],
                                                        units='nm')
             di.set_dimensional_calibrations([calibration, calibration])
-            
-       
+
         def done_button_clicked():
             
             if self.thread is not None and self.thread.is_alive():
@@ -248,6 +261,7 @@ class ScanMapPanelDelegate(object):
                                     coord_dict=self.coord_dict.copy(), switches=self.switches.copy(), ccd=self.ccd)
                                     
             Mapper.number_of_images = self.number_of_images
+            Mapper.dirt_area = self.dirt_area
             Mapper.offset = self.offset
             Mapper.savepath = self.savepath
             Mapper.frame_parameters = self.frame_parameters.copy()
@@ -302,6 +316,7 @@ class ScanMapPanelDelegate(object):
         checkbox_row1 = ui.create_row_widget()
         checkbox_row2 = ui.create_row_widget()
         checkbox_row3 = ui.create_row_widget()
+        checkbox_row4 = ui.create_row_widget()
         savepath_row = ui.create_row_widget()
         save_button_row = ui.create_row_widget()
         done_button_row = ui.create_row_widget()
@@ -338,6 +353,8 @@ class ScanMapPanelDelegate(object):
         column.add_spacing(5)
         column.add(checkbox_row3)
         column.add_spacing(5)
+        column.add(checkbox_row4)
+        column.add_spacing(5)
         column.add(savepath_row)
         column.add_spacing(5)
         column.add(save_button_row)
@@ -369,33 +386,38 @@ class ScanMapPanelDelegate(object):
         
         left_edit_row1.add(ui.create_label_widget(_("FOV per Frame (nm): ")))
         fov_line_edit = ui.create_line_edit_widget()
+        fov_line_edit.text = '20'
         fov_line_edit.on_editing_finished = fov_finished
         left_edit_row1.add(fov_line_edit)
         
         right_edit_row1.add(ui.create_label_widget(_("Framesize (px): ")))
         size_line_edit = ui.create_line_edit_widget()
+        size_line_edit.text = '2048'
         size_line_edit.on_editing_finished = size_finished
         right_edit_row1.add(size_line_edit)
         
         left_edit_row2.add(ui.create_label_widget(_("Scan roation (deg): ")))
         rotation_line_edit = ui.create_line_edit_widget()
+        rotation_line_edit.text = '114.5'
         rotation_line_edit.on_editing_finished = rotation_finished
         left_edit_row2.add(rotation_line_edit)
         
         right_edit_row2.add(ui.create_label_widget(_("Offset (images): ")))
         offset_line_edit = ui.create_line_edit_widget()
+        offset_line_edit.text = '1'
         offset_line_edit.on_editing_finished = offset_finished
         right_edit_row2.add(offset_line_edit)
         
         left_edit_row3.add(ui.create_label_widget(_("Pixeltime (us): ")))
         time_line_edit = ui.create_line_edit_widget()
+        time_line_edit.text = '0.2'
         time_line_edit.placeholder_text = 'Number or comma-separated list of numbers'
         time_line_edit.on_editing_finished = time_finished
         left_edit_row3.add(time_line_edit)
         
         right_edit_row3.add(ui.create_label_widget(_("Images per location: ")))
         number_line_edit = ui.create_line_edit_widget()
-        number_line_edit.placeholder_text = 'Defaults to 1'
+        number_line_edit.text = '1'
         number_line_edit.on_editing_finished = number_of_images_finished
         right_edit_row3.add(number_line_edit)
         
@@ -423,10 +445,8 @@ class ScanMapPanelDelegate(object):
         z_drive_checkbox.on_check_state_changed = checkbox_changed
         autotuning_checkbox = ui.create_check_box_widget(_("Autotuning"))
         autotuning_checkbox.on_check_state_changed = checkbox_changed
-        auto_offset_checkbox = ui.create_check_box_widget(_("Auto Offset"))
-        auto_offset_checkbox.on_check_state_changed = checkbox_changed
-        auto_rotation_checkbox = ui.create_check_box_widget(_("Auto Rotation"))
-        auto_rotation_checkbox.on_check_state_changed = checkbox_changed
+        tune_at_edges_checkbox = ui.create_check_box_widget(_("Retune at edges"))
+        tune_at_edges_checkbox.on_check_state_changed = checkbox_changed
         overview_checkbox = ui.create_check_box_widget(_("Acquire Overview"))
         overview_checkbox.check_state = 'checked'
         overview_checkbox.on_check_state_changed = checkbox_changed
@@ -434,6 +454,13 @@ class ScanMapPanelDelegate(object):
         blank_checkbox.on_check_state_changed = checkbox_changed
         correct_stage_errors_checkbox = ui.create_check_box_widget(_("Compensate Stage Movement Errors"))
         correct_stage_errors_checkbox.on_check_state_changed = checkbox_changed
+        abort_series_on_dirt_checkbox = ui.create_check_box_widget(_("Abort series on more than "))
+        correct_stage_errors_checkbox.on_check_state_changed = checkbox_changed
+        dirt_area_line_edit = ui.create_line_edit_widget()
+        dirt_area_line_edit.text = '50'
+        dirt_area_line_edit.on_editing_finished = dirt_area_finished
+        
+        
         
         tl_button.on_clicked = tl_button_clicked
         tr_button.on_clicked = tr_button_clicked
@@ -467,9 +494,7 @@ class ScanMapPanelDelegate(object):
         
         checkbox_row1.add(autotuning_checkbox)
         checkbox_row1.add_spacing(4)
-        checkbox_row1.add(auto_rotation_checkbox)        
-        checkbox_row1.add_spacing(4)
-        checkbox_row1.add(auto_offset_checkbox)
+        checkbox_row1.add(tune_at_edges_checkbox)
         checkbox_row1.add_spacing(4)
         checkbox_row1.add(z_drive_checkbox)
         checkbox_row1.add_stretch()
@@ -481,6 +506,11 @@ class ScanMapPanelDelegate(object):
 
         checkbox_row3.add(correct_stage_errors_checkbox)
         checkbox_row3.add_stretch()
+        
+        checkbox_row4.add(abort_series_on_dirt_checkbox)
+        checkbox_row4.add(dirt_area_line_edit)
+        checkbox_row4.add(ui.create_label_widget(_('% dirt in an image')))
+        checkbox_row4.add_stretch()
         
         save_button_row.add(save_button)
         save_button_row.add_spacing(5)
@@ -494,11 +524,11 @@ class ScanMapPanelDelegate(object):
         
         self._checkboxes['use_z_drive'] = z_drive_checkbox
         self._checkboxes['do_autotuning'] = autotuning_checkbox
-        self._checkboxes['auto_offset'] = auto_offset_checkbox
-        self._checkboxes['auto_rotation'] = auto_rotation_checkbox
+        self._checkboxes['tune_at_edges'] = tune_at_edges_checkbox
         self._checkboxes['acquire_overview'] = overview_checkbox
         self._checkboxes['blank_beam'] = blank_checkbox
         self._checkboxes['compensate_stage_error'] = correct_stage_errors_checkbox
+        self._checkboxes['abort_series_on_dirt'] = abort_series_on_dirt_checkbox
 
         return column
         
@@ -507,24 +537,24 @@ class ScanMapPanelDelegate(object):
             reload(vt)
         except:
             logging.warn('Could not reload ViennaTools!')
-        self.coord_dict[position] = (vt.as2_get_control(self.as2, 'StageOutX'), vt.as2_get_control(self.as2, 'StageOutY'), 
-                                vt.as2_get_control(self.as2, 'StageOutZ'), vt.as2_get_control(self.as2, 'EHTFocus'))
+        self.coord_dict[position] = (self.as2.get_property_as_float('StageOutX'), self.as2.get_property_as_float('StageOutY'), 
+                                self.as2.get_property_as_float('StageOutZ'), self.as2.get_property_as_float('EHTFocus'))
         logging.info('Saved x: ' +
-                     str(vt.as2_get_control(self.as2, 'StageOutX')) + ', y: ' +
-                     str(vt.as2_get_control(self.as2, 'StageOutY')) + ', z: ' +
-                     str(vt.as2_get_control(self.as2, 'StageOutZ')) + ', focus: ' +
-                     str(vt.as2_get_control(self.as2, 'EHTFocus')) + ' as ' + position + ' corner.')
+                     str(self.coord_dict[position][0]) + ', y: ' +
+                     str(self.coord_dict[position][1]) + ', z: ' +
+                     str(self.coord_dict[position][2]) + ', focus: ' +
+                     str(self.coord_dict[position][3]) + ' as ' + position + ' corner.')
 
     def drive_coords(self, position):
         if self.coord_dict[position] is None:
             logging.warn('You haven\'t set the '+position+' corner yet.')
         else:
             logging.info('Going to '+str(position)+' corner: x: '+str(self.coord_dict[position][0])+', y: '+str(self.coord_dict[position][1])+', z: '+str(self.coord_dict[position][2])+', focus: '+str(self.coord_dict[position][3]))
-            vt.as2_set_control(self.as2, 'StageOutX', self.coord_dict[position][0])
-            vt.as2_set_control(self.as2, 'StageOutY', self.coord_dict[position][1])
-            vt.as2_set_control(self.as2, 'EHTFocus', self.coord_dict[position][3])
+            self.as2.set_property_as_float('StageOutX', self.coord_dict[position][0])
+            self.as2.set_property_as_float('StageOutY', self.coord_dict[position][1])
+            self.as2.set_property_as_float('EHTFocus', self.coord_dict[position][3])
             if self.switches['use_z_drive']:          
-                vt.as2_set_control(self.as2, 'StageOutZ', self.coord_dict[position][2])
+                self.as2.set_property_as_float('StageOutZ', self.coord_dict[position][2])
             
     def total_number_frames(self):
         if not None in self.coord_dict.values() and not None in self.frame_parameters.values():

@@ -37,6 +37,7 @@ class Mapping(object):
         # acquire_overview, blank_beam
         self.switches = kwargs.get('switches', {})
         self.number_of_images = kwargs.get('number_of_images', 1)
+        self.dirt_area = kwargs.get('dirt_area', 0.5)
         if kwargs.get('savepath') is not None:
             self._savepath = os.path.normpath(kwargs.get('savepath'))
         else:
@@ -142,14 +143,17 @@ class Mapping(object):
         num_subframes = self.num_subframes
         leftX = self.leftX
         topY = self.topY
-    
+        # Focus interpolation will be done live to take changes of the smaple points into account. The map_coords tuples
+        # will still have len-4, because the first two coordinates are the position were the stage will move to, the
+        # last two are the target positions for the interpolation. In case of uncorrected stage movement they will be
+        # the same, otherwise they can differ.
         for j in range(num_subframes[1]):
             for i in range(num_subframes[0]):
                 if j == 0:
                     map_coords.append(tuple((leftX + i*(imsize+distance) + xfirstline[i], 
                                              topY - j*(imsize+distance) - yfirstline[j])) +
-                                      tuple(self.interpolation((leftX + i*(imsize+distance),
-                                            topY - j*(imsize+distance)))))                
+                                      tuple((leftX + i*(imsize+distance),
+                                            topY - j*(imsize+distance))))
                     if self.switches.get('focus_at_edges') and i == 0:
                         frame_number.append({'number': j*num_subframes[0]+i, 'retune': True, 'corner': 'top-left'})
                     else:
@@ -157,8 +161,8 @@ class Mapping(object):
                 elif j % 2 == 0:  # Odd lines (have even indices because numbering starts with 0), e.g. map from left to right
                     map_coords.append(tuple((leftX + i*(imsize+distance) + xoddline[i], 
                                              topY - j*(imsize+distance) - yoddline[j])) +
-                                      tuple(self.interpolation((leftX + i*(imsize+distance),
-                                            topY - j*(imsize+distance)))))                
+                                      tuple((leftX + i*(imsize+distance),
+                                            topY - j*(imsize+distance))))
                         
                     if self.switches.get('focus_at_edges') and i == 0:
                         frame_number.append({'number': j*num_subframes[0]+i, 'retune': True, 'corner': 'top-left'})
@@ -182,9 +186,8 @@ class Mapping(object):
                 else: # Even lines, e.g. scan from right to left
                     map_coords.append(tuple((leftX + (num_subframes[0] - (i+1))*(imsize + distance) + xevenline[i],
                                              topY-j*(imsize + distance) - yevenline[j])) +
-                                      tuple(self.interpolation(
-                                            (leftX + (num_subframes[0] - (i+1))*(imsize + distance),
-                                             topY-j*(imsize + distance)))))
+                                      tuple((leftX + (num_subframes[0] - (i+1))*(imsize + distance),
+                                             topY-j*(imsize + distance))))
                     
                     if self.switches.get('focus_at_edges') and num_subframes[0]-(i+1) == 0:
                         frame_number.append({'number': j*num_subframes[0]+(num_subframes[0]-(i+1)), 'retune': True,
@@ -598,7 +601,8 @@ class Mapping(object):
             if self.event is not None and self.event.is_set():
                 break
             counter += 1
-            stagex, stagey, stagez, fine_focus = frame_coord
+            stagex, stagey, stagex_corrected, stagey_corrected = frame_coord
+            stagez, fine_focus = self.interpolation((stagex_corrected, stagey_corrected))
             img.logwrite(str(counter) + '/' + str(len(map_coords)) + ': (No. ' +
                          str(frame_number[counter-1]['number']) + ') x: ' +str((stagex)) + ', y: ' + str((stagey)) + 
                          ', z: ' + str((stagez)) + ', focus: ' + str((fine_focus)))
@@ -639,9 +643,6 @@ class Mapping(object):
                     if self.switches.get('blank_beam'):
                             self.as2.set_property_as_float('C_Blank', 1)
                 else:
-                    do_edge_focus = False
-                    if self.switches.get('focus_at_edges') and frame_number[counter-1].get('retune'):
-                        do_edge_focus = True
                     # Take frame and save it to disk
                     if self.number_of_images < 2:
                         if self.switches.get('blank_beam'):
@@ -672,8 +673,14 @@ class Mapping(object):
                             name = splitname[0] + ('_{:0'+str(len(str(self.number_of_images)))+'d}'
                                                    ).format(i) + splitname[1]
                             tifffile.imsave(os.path.join(self.store, name), data)
+                            if self.switches.get('abort_series_on_dirt'):
+                                dirt_mask = img.dirt_detector(image=data)
+                                if np.sum(dirt_mask)/np.prod(data.shape) > self.dirt_area:
+                                    img.logwrite('Series was aborted because more than ' +
+                                                 str(int(self.dirt_area*100)) + '% dirt coverage.')
+                                    break
                     
-                    if do_edge_focus:
+                    if self.switches.get('focus_at_edges') and frame_number[counter-1].get('retune'):
                         self.wait_for_focused(frame_number[counter-1].get('corner'))
                     if self.switches.get('blank_beam'):
                         self.as2.set_property_as_float('C_Blank', 1)
@@ -684,7 +691,8 @@ class Mapping(object):
     
         if self.switches['do_autotuning']:
             bad_frames_file = open(self.store+'bad_frames.txt', 'w')
-            bad_frames_file.write('#This file contains the filenames of \"bad\" frames and the cause for the listing.\n\n')
+            bad_frames_file.write('#This file contains the filenames of \"bad\" frames and the cause for the ' +
+                                  'listing.\n\n')
             for key, value in bad_frames.items():
                 bad_frames_file.write('{0:30}{1:}\n'.format(key+':', value))
                 
@@ -742,6 +750,10 @@ class Mapping(object):
 
     def wait_for_focused(self, corner, Image, timeout=300):
         self.tune_event.set()
+        self.document_controller.show_confirmation_message_box('Please focus now at the current position. Do not ' +
+                                                               'change the stage position! If you are done, ' +
+                                                               'press "Done" and the mapping process will continue.',
+                                                               lambda: None)
         Image.logwrite('Please focus now at the current position. Do not change the stage position! If you are done, ' +
                        'press "Done" and the mapping process will continue.')
         self.superscan.start_playing()
@@ -796,38 +808,38 @@ class Mapping(object):
         
             config_file.close()
             
-def find_offset_and_rotation(as2, superscan):
-    """
-    This function finds the current rotation of the scan with respect to the stage coordinate system and the offset that has to be set between two neighboured images when no overlap should occur.
-    It takes no input arguments, so the current frame parameters are used for image acquisition.
-
-    It returns a tuple of the form (rotation(degrees), offset(fraction of images)).
-
-    """
-
-    frame_parameters = superscan.get_frame_parameters()
-
-    imsize = frame_parameters['fov_nm']
-
-    image_grabber_parameters = {'size_pixels': frame_parameters['size'], 'rotation': 0,
-                                'pixeltime': frame_parameters['pixel_time_us'], 'fov': frame_parameters['fov_nm']}
-
-    leftX = vt.as2_get_control(as2, 'StageOutX')
-    vt.as2_set_control(as2, 'StageOutX', leftX + 6.0*imsize)
-    time.sleep(5)
-
-    image1 = autotune.image_grabber(frame_parameters=image_grabber_parameters, detectors={'MAADF': True, 'HAADF': False})
-    #Go to the right by one half image size
-    vt.as2_set_control('StageOutX', leftX + 6.5*imsize)
-    time.sleep(3)
-    image2 = autotune.image_grabber(frame_parameters=image_grabber_parameters, detectors={'MAADF': True, 'HAADF': False})
-    #find offset between the two images
-    try:
-        frame_rotation, frame_distance = autoalign.rot_dist_fft(image1, image2)
-    except:
-        raise
-
-    return (frame_rotation, frame_distance)
+#def find_offset_and_rotation(as2, superscan):
+#    """
+#    This function finds the current rotation of the scan with respect to the stage coordinate system and the offset that has to be set between two neighboured images when no overlap should occur.
+#    It takes no input arguments, so the current frame parameters are used for image acquisition.
+#
+#    It returns a tuple of the form (rotation(degrees), offset(fraction of images)).
+#
+#    """
+#
+#    frame_parameters = superscan.get_frame_parameters()
+#
+#    imsize = frame_parameters['fov_nm']
+#
+#    image_grabber_parameters = {'size_pixels': frame_parameters['size'], 'rotation': 0,
+#                                'pixeltime': frame_parameters['pixel_time_us'], 'fov': frame_parameters['fov_nm']}
+#
+#    leftX = vt.as2_get_control(as2, 'StageOutX')
+#    vt.as2_set_control(as2, 'StageOutX', leftX + 6.0*imsize)
+#    time.sleep(5)
+#
+#    image1 = autotune.image_grabber(frame_parameters=image_grabber_parameters, detectors={'MAADF': True, 'HAADF': False})
+#    #Go to the right by one half image size
+#    vt.as2_set_control('StageOutX', leftX + 6.5*imsize)
+#    time.sleep(3)
+#    image2 = autotune.image_grabber(frame_parameters=image_grabber_parameters, detectors={'MAADF': True, 'HAADF': False})
+#    #find offset between the two images
+#    try:
+#        frame_rotation, frame_distance = autoalign.rot_dist_fft(image1, image2)
+#    except:
+#        raise
+#
+#    return (frame_rotation, frame_distance)
 
 def find_nearest_neighbors(number, target, points):
     """
