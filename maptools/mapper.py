@@ -602,10 +602,10 @@ class Mapping(object):
                 break
             counter += 1
             stagex, stagey, stagex_corrected, stagey_corrected = frame_coord
-            stagez, fine_focus = self.interpolation((stagex_corrected, stagey_corrected))
+            stagez, fine_focus = self.interpolation((stagex, stagey))
             img.logwrite(str(counter) + '/' + str(len(map_coords)) + ': (No. ' +
-                         str(frame_number[counter-1]['number']) + ') x: ' +str((stagex)) + ', y: ' + str((stagey)) + 
-                         ', z: ' + str((stagez)) + ', focus: ' + str((fine_focus)))
+                         str(frame_number[counter-1]['number']) + ') x: ' +str((stagex_corrected)) + ', y: ' +
+                         str((stagey_corrected)) + ', z: ' + str((stagez)) + ', focus: ' + str((fine_focus)))
             # only do hardware operations when online
             if self.online:    
                 if self.switches.get('blank_beam'):
@@ -613,8 +613,8 @@ class Mapping(object):
     
                 #vt.as2_set_control(self.as2, 'StageOutX', stagex)
                 #vt.as2_set_control(self.as2, 'StageOutY', stagey)
-                self.as2.set_property_as_float('StageOutX', stagex)
-                self.as2.set_property_as_float('StageOutY', stagey)
+                self.as2.set_property_as_float('StageOutX', stagex_corrected)
+                self.as2.set_property_as_float('StageOutY', stagey_corrected)
                 if self.switches['use_z_drive']:
                     #vt.as2_set_control(self.as2, 'StageOutZ', stagez)
                     self.as2.set_property_as_float('StageOutZ', stagez)
@@ -627,7 +627,8 @@ class Mapping(object):
                 else:
                     time.sleep(2)
     
-                name = str('%.4d_%.3f_%.3f.tif' % (frame_number[counter-1]['number'], stagex*1e6, stagey*1e6))
+                name = str('%.4d_%.3f_%.3f.tif' % (frame_number[counter-1]['number'], stagex_corrected*1e6,
+                                                   stagey_corrected*1e6))
                 
                 if self.switches.get('do_autotuning'):
                     if self.switches.get('blank_beam'):
@@ -681,7 +682,7 @@ class Mapping(object):
                                     break
                     
                     if self.switches.get('focus_at_edges') and frame_number[counter-1].get('retune'):
-                        self.wait_for_focused(frame_number[counter-1].get('corner'))
+                        self.wait_for_focused(frame_number[counter-1].get('corner'), stagex, stagey, img)
                     if self.switches.get('blank_beam'):
                         self.as2.set_property_as_float('C_Blank', 1)
                 
@@ -748,31 +749,47 @@ class Mapping(object):
         #self.superscan.stop_playing()
         img.logwrite('Done.\n')
 
-    def wait_for_focused(self, corner, Image, timeout=300):
+    def wait_for_focused(self, corner, stagex, stagey, Image, timeout=300, accept_timeout=30):
         self.tune_event.set()
+        
+        accepted = False
+        def was_accepted():
+            nonlocal accepted
+            accepted = True
+            
         self.document_controller.show_confirmation_message_box('Please focus now at the current position. Do not ' +
                                                                'change the stage position! If you are done, ' +
-                                                               'press "Done" and the mapping process will continue.',
-                                                               lambda: None)
-        Image.logwrite('Please focus now at the current position. Do not change the stage position! If you are done, ' +
-                       'press "Done" and the mapping process will continue.')
+                                                               'press "Done" and the mapping process will continue.' + 
+                                                               'Please confirm this message within ' +
+                                                               str(accept_timeout) +  ' seconds, otherwise the map ' + 
+                                                               'will continue with the old values.',
+                                                               was_accepted)
+        starttime = time.time()
+        while time.time() - starttime < accept_timeout:
+            if accepted:
+                break
+            time.sleep(0.1)
+        else:
+            Image.logwrite('Timeout during waiting for confirmation. Continuing with old values.', level='warn')
+            self.superscan.stop_playing()
+            self.tune_event.clear()
+            return
+        
+        self.superscan.profile_index(0)
         self.superscan.start_playing()
         starttime = time.time()
         while time.time() - starttime < timeout:
-            if self.tune_event.is_set():
+            if not self.tune_event.is_set():
                 break
             time.sleep(0.1)
         else:
             Image.logwrite('Timeout during waiting for new focus. Keeping old value.', level='warn')
             self.superscan.stop_playing()
+            self.tune_event.clear()
             return
         
-        if self.switches.get('use_z_drive'):
-            self.coord_dict[corner] = self.coord_dict[corner][:2] + (self.gui_communication.pop('new_z'),
-                                                                     self.gui_communication.pop('new_EHTFocus'))
-        else:
-            self.coord_dict[corner] = self.coord_dict[corner][:3] + (self.gui_communication.pop('new_EHTFocus'),)
-        
+        self.coord_dict[corner] = (stagex, stagey, self.gui_communication.pop('new_z'),
+                                   self.gui_communication.pop('new_EHTFocus'))
         self.superscan.stop_playing()
         
     def write_map_info_file(self):

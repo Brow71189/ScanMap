@@ -22,6 +22,23 @@ try:
 except:
     from .maptools import autotune as at
 
+#######################################################################################################################    
+#######################################################################################################################
+#######################################################################################################################
+dirpath = '/3tb/maps_data/map_2015_04_15_13_13'
+#dirpath = '/3tb/Dark_noise/'
+imsize = 12
+#graphene_threshold = 0.0033
+graphene_threshold = 0.0028
+light_threshold = -1
+#light_threshold = 0
+heavy_threshold = 0.0077
+dirt_border = 50
+minimum_graphene_area=0.3
+#######################################################################################################################
+#######################################################################################################################
+#######################################################################################################################
+
 def ellipse(polar_angle, a, b, rotation):
     """
     Returns the radius of a point lying on an ellipse with the given parameters.
@@ -247,17 +264,6 @@ def subframes_preprocessing(filename, dirname, imsize, counts_threshold=1e-9, gr
 if __name__ == '__main__':
     
     overall_starttime = time.time()
-
-    dirpath = '/3tb/maps_data/map_2016_01_08_18_54'
-    #dirpath = '/3tb/Dark_noise/'
-    imsize = 16
-    #graphene_threshold = 0.0033
-    graphene_threshold = 0.0011
-    light_threshold = -1
-    #light_threshold = 0
-    heavy_threshold = 0.0025
-    dirt_border = 50
-    minimum_graphene_area=0.3
 
     if not dirpath.endswith('/'):
         dirpath += '/'
