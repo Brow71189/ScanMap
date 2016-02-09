@@ -681,14 +681,13 @@ class Mapping(object):
                                                  str(int(self.dirt_area*100)) + '% dirt coverage.')
                                     break
                     
-                    if self.switches.get('focus_at_edges') and frame_number[counter-1].get('retune'):
-                        self.wait_for_focused(frame_number[counter-1].get('corner'), stagex, stagey, img)
                     if self.switches.get('blank_beam'):
                         self.as2.set_property_as_float('C_Blank', 1)
+                        
+                    if self.switches.get('focus_at_edges') and frame_number[counter-1].get('retune'):
+                        self.wait_for_focused(frame_number[counter-1].get('corner'), stagex, stagey, img)
                 
-                test_map.append(frame_coord)
-            else:
-                test_map.append(frame_coord)
+            test_map.append(frame_coord)
     
         if self.switches['do_autotuning']:
             bad_frames_file = open(self.store+'bad_frames.txt', 'w')
@@ -704,9 +703,9 @@ class Mapping(object):
         if self.online and self.switches['acquire_overview']:
             #Use longest edge as image size
             if abs(self.rightX-self.leftX) < abs(self.topY-self.botY):
-                over_size = abs(self.topY-self.botY)*1e9 + 3*self.frame_parameters['fov']
+                over_size = abs(self.topY-self.botY)*1e9 + 6*self.frame_parameters['fov']
             else:
-                over_size = abs(self.rightX-self.leftX)*1e9 + + 3*self.frame_parameters['fov']
+                over_size = abs(self.rightX-self.leftX)*1e9 + 6*self.frame_parameters['fov']
     
             #Find center of mapped area:
             map_center = ((self.leftX+self.rightX)/2, (self.topY+self.botY)/2)
@@ -774,7 +773,9 @@ class Mapping(object):
             self.superscan.stop_playing()
             self.tune_event.clear()
             return
-        
+            
+        if self.switches.get('blank_beam'):
+            self.superscan.set_property_as_float('C_Blank', 0)
         self.superscan.profile_index(0)
         self.superscan.start_playing()
         starttime = time.time()
@@ -791,6 +792,8 @@ class Mapping(object):
         self.coord_dict[corner] = (stagex, stagey, self.gui_communication.pop('new_z'),
                                    self.gui_communication.pop('new_EHTFocus'))
         self.superscan.stop_playing()
+        if self.switches.get('blank_beam'):
+            self.superscan.set_property_as_float('C_Blank', 1)
         
     def write_map_info_file(self):
     

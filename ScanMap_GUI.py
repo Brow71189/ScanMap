@@ -40,6 +40,7 @@ class ScanMapPanelDelegate(object):
         self.offset = 1
         self.number_of_images = 1
         self.dirt_area = 0.5
+        self.peak_intensity_reference = None
         self.savepath = None
         self.tune_event = None
         self.thread = None
@@ -286,6 +287,15 @@ class ScanMapPanelDelegate(object):
             logging.info('Aborting after current frame is finished. (May take a short while until actual abort)')
             self.event.set()
             
+        def analyze_button_clicked():
+            image = document_controller.target_data_item.data
+            imsize = document_controller.target_data_item.dimensional_calibrations[0].scale * image.shape[0]
+            Peak = autotune.Peaking(image=image, imsize=imsize, integration_radius=1)
+            peaks = Peak.find_peaks(half_line_thickness=2, position_tolerance = 10, second_order=True)
+            intensities_sum = np.sum(peaks[0][:,-1])+np.sum(peaks[1][:,-1])
+            self.peak_intensity_reference = intensities_sum
+            logging.info('Measured')
+            
         def sync_gui():
             for key, value in self._checkboxes.items():
                 value.checked = self.switches.get(key, False)
@@ -439,6 +449,7 @@ class ScanMapPanelDelegate(object):
         test_button = ui.create_push_button_widget(_("Test image"))
         done_button = ui.create_push_button_widget(_("Done"))
         abort_button = ui.create_push_button_widget(_("Abort"))
+        analyze_button = ui.create_push_button_widget(_("Analyze image"))
    
         z_drive_checkbox = ui.create_check_box_widget(_("Use Z Drive"))
         z_drive_checkbox.on_check_state_changed = checkbox_changed
@@ -460,7 +471,6 @@ class ScanMapPanelDelegate(object):
         dirt_area_line_edit.on_editing_finished = dirt_area_finished
         
         
-        
         tl_button.on_clicked = tl_button_clicked
         tr_button.on_clicked = tr_button_clicked
         bl_button.on_clicked = bl_button_clicked
@@ -474,6 +484,7 @@ class ScanMapPanelDelegate(object):
         test_button.on_clicked = test_button_clicked
         done_button.on_clicked = done_button_clicked
         abort_button.on_clicked = abort_button_clicked
+        analyze_button.on_clicked = analyze_button_clicked
         
         left_buttons_row1.add(tl_button)
         left_buttons_row1.add_spacing(3)
@@ -518,8 +529,10 @@ class ScanMapPanelDelegate(object):
         save_button_row.add(test_button)        
         
         done_button_row.add(done_button)
-        done_button_row.add_spacing(15)
+        done_button_row.add_spacing(5)
         done_button_row.add(abort_button)
+        done_button_row.add_spacing(5)
+        done_button_row.add(analyze_button)
         
         self._checkboxes['use_z_drive'] = z_drive_checkbox
         self._checkboxes['do_autotuning'] = autotuning_checkbox

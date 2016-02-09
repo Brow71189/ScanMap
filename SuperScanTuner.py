@@ -25,7 +25,7 @@ astig3f_step = 50
 coma_step = 150
 average_frames = 3
 integration_radius = 1
-dirt_threshold = None
+dirt_threshold = 0.5
 save_images = False
 savepath = None
 merit = 'peaks'
@@ -214,13 +214,13 @@ class SuperScanTunerPanelDelegate(object):
 
         descriptor_row1 = ui.create_row_widget()
 
-        descriptor_row1.add(ui.create_label_widget(_("Define tuning stepsizes here (default values are used for empty fields):")))
+        descriptor_row1.add(ui.create_label_widget(_("Define tuning stepsizes here:")))
 
         parameters_row1 = ui.create_row_widget()
 
-        parameters_row1.add(ui.create_label_widget(_("EHTFocus: ")))
+        parameters_row1.add(ui.create_label_widget(_("Focus: ")))
         EHTFocus = ui.create_line_edit_widget()
-        EHTFocus.placeholder_text = "Defaults to 2"
+        EHTFocus.text = "1"
         parameters_row1.add(EHTFocus)
         parameters_row1.add(ui.create_label_widget(_("nm")))
         EHTFocus.on_editing_finished = Focus_finished
@@ -229,7 +229,7 @@ class SuperScanTunerPanelDelegate(object):
 
         parameters_row1.add(ui.create_label_widget(_("C12 (Astig 2f): ")))
         C12 = ui.create_line_edit_widget()
-        C12.placeholder_text = "Defaults to 2"
+        C12.text = "1"
         parameters_row1.add(C12)
         parameters_row1.add(ui.create_label_widget(_("nm")))
         C12.on_editing_finished = C12_finished
@@ -238,7 +238,7 @@ class SuperScanTunerPanelDelegate(object):
 
         parameters_row2.add(ui.create_label_widget(_("C21 (Coma): ")))
         C21 = ui.create_line_edit_widget()
-        C21.placeholder_text = "Defaults to 300"
+        C21.text = "150"
         parameters_row2.add(C21)
         parameters_row2.add(ui.create_label_widget(_("nm")))
         C21.on_editing_finished = C21_finished
@@ -247,7 +247,7 @@ class SuperScanTunerPanelDelegate(object):
 
         parameters_row2.add(ui.create_label_widget(_("C23 (Astig 3f): ")))
         C23 = ui.create_line_edit_widget()
-        C23.placeholder_text = "Defaults to 150"
+        C23.text = "50"
         parameters_row2.add(C23)
         parameters_row2.add(ui.create_label_widget(_("nm")))
         C23.on_editing_finished = C23_finished
@@ -259,14 +259,14 @@ class SuperScanTunerPanelDelegate(object):
         parameters_row3 = ui.create_row_widget()
         parameters_row3.add(ui.create_label_widget(_("Average images: ")))
         number_average = ui.create_line_edit_widget()
-        number_average.placeholder_text = "Defaults to 3"
+        number_average.text = "3"
         parameters_row3.add(number_average)
         number_average.on_editing_finished = average_finished
         parameters_row3.add_spacing(15)
 
         parameters_row3.add(ui.create_label_widget(_("Integration radius: ")))
         integration = ui.create_line_edit_widget()
-        integration.placeholder_text = "Defaults to 1"
+        integration.text = "1"
         parameters_row3.add(integration)
         integration.on_editing_finished = integration_finished
         parameters_row3.add(ui.create_label_widget(_("px")))
@@ -274,35 +274,33 @@ class SuperScanTunerPanelDelegate(object):
         parameters_row4 = ui.create_row_widget()
         parameters_row4.add(ui.create_label_widget(_("Dirt threshold: ")))
         dirt = ui.create_line_edit_widget()
-        dirt.placeholder_text = "Defaults to 0.015"
+        dirt.text = "0.5"
         parameters_row4.add(dirt)
         dirt.on_editing_finished = dirt_finished
         parameters_row4.add_spacing(250)
 
         descriptor_row3 = ui.create_row_widget()
-        descriptor_row3.add(ui.create_label_widget(_("Check all aberrations you want to include in the auto-tuning:")))
+        descriptor_row3.add(ui.create_label_widget(_("Check all aberrations to include in auto-tuning:")))
 
         checkbox_row1 = ui.create_row_widget()
-        EHTFocus = ui.create_check_box_widget(_("EHTFocus"))
+        EHTFocus = ui.create_check_box_widget(_("Focus"))
         checkbox_row1.add(EHTFocus)
         checkbox_row1.add_spacing(4)
-        Twofold = ui.create_check_box_widget(_("Twofold Astig"))
+        Twofold = ui.create_check_box_widget(_("Astig 2f"))
         checkbox_row1.add(Twofold)
         checkbox_row1.add_spacing(4)
         Coma = ui.create_check_box_widget(_("Coma"))
         checkbox_row1.add(Coma)
         checkbox_row1.add_spacing(4)
-        Threefold = ui.create_check_box_widget(_("Threefold Astig"))
+        Threefold = ui.create_check_box_widget(_("Astig 3f"))
         checkbox_row1.add(Threefold)
         EHTFocus.check_state = 'checked'
         Twofold.check_state = 'checked'
-        Coma.check_state = 'checked'
-        Threefold.check_state = 'checked'
 
         checkbox_row2 = ui.create_row_widget()
-        saving = ui.create_check_box_widget(_("Save all tuning images"))
+        saving = ui.create_check_box_widget(_("Save tuning images"))
         checkbox_row2.add(saving)
-        Dirt_detection = ui.create_check_box_widget(_("Abort when dirt is coming in"))
+        Dirt_detection = ui.create_check_box_widget(_("Abort on dirt coming in"))
         Dirt_detection.check_state = 'checked'
         checkbox_row2.add(Dirt_detection)
 
