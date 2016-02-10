@@ -14,7 +14,7 @@ class HackerPanelDelegate(object):
         self.panel_name = _('Hacker')
         self.panel_positions = ['left', 'right']
         self.panel_position = 'right'
-        self.adocument_controller = None
+        #self.adocument_controller = None
         self.input_field = None
         self.send_button = None
         self.api=api
@@ -25,6 +25,8 @@ class HackerPanelDelegate(object):
 #        globals()['self'] = self
     
     def create_panel_widget(self, ui, document_controller):
+        self.ui = ui
+        self.document_controller = document_controller
         def send_button_clicked(text=None):
             if self.input_field.text:
                 

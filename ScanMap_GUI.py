@@ -264,6 +264,7 @@ class ScanMapPanelDelegate(object):
             Mapper.dirt_area = self.dirt_area
             Mapper.offset = self.offset
             Mapper.savepath = self.savepath
+            Mapper.peak_intensity_reference = self.peak_intensity_reference
             Mapper.frame_parameters = self.frame_parameters.copy()
             self.thread_communication = Mapper.gui_communication
             if self.switches['tune_at_edges']:
@@ -288,13 +289,17 @@ class ScanMapPanelDelegate(object):
             self.event.set()
             
         def analyze_button_clicked():
-            image = document_controller.target_data_item.data
-            imsize = document_controller.target_data_item.dimensional_calibrations[0].scale * image.shape[0]
-            Peak = autotune.Peaking(image=image, imsize=imsize, integration_radius=1)
+            selected_data_item = document_controller.target_data_item
+            imsize = selected_data_item.dimensional_calibrations[0].scale * selected_data_item.data.shape[0]
+            Peak = autotune.Peaking(image=selected_data_item.data.copy(), imsize=imsize, integration_radius=1)
+            dirt_mask = Peak.dirt_detector()
+            graphene_mean = np.mean(Peak.image[dirt_mask==0])
+            Peak.image[dirt_mask==1] = graphene_mean
             peaks = Peak.find_peaks(half_line_thickness=2, position_tolerance = 10, second_order=True)
             intensities_sum = np.sum(peaks[0][:,-1])+np.sum(peaks[1][:,-1])
             self.peak_intensity_reference = intensities_sum
-            logging.info('Measured')
+            logging.info('Measured peak intensities in {} from {} to: {:d}.'.format(selected_data_item._data_item.title,
+                         str(selected_data_item.data_and_metadata.timestamp).split('.')[0]), intensities_sum)
             
         def sync_gui():
             for key, value in self._checkboxes.items():

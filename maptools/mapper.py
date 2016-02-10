@@ -34,10 +34,11 @@ class Mapping(object):
         self.frame_parameters = kwargs.get('frame_parameters', {})
         self.detectors = kwargs.get('detectors', {'HAADF': False, 'MAADF': True})
         # switches are: do_autotuning, use_z_drive, auto_offset, auto_rotation, compensate_stage_error,
-        # acquire_overview, blank_beam
+        # acquire_overview, blank_beam, tune_at_edges, abort_series_on_dirt
         self.switches = kwargs.get('switches', {})
         self.number_of_images = kwargs.get('number_of_images', 1)
         self.dirt_area = kwargs.get('dirt_area', 0.5)
+        self.peak_intensity_reference = kwargs.get('peak_intensity_reference')
         if kwargs.get('savepath') is not None:
             self._savepath = os.path.normpath(kwargs.get('savepath'))
         else:
@@ -47,7 +48,7 @@ class Mapping(object):
         self.foldername = 'map_' + time.strftime('%Y_%m_%d_%H_%M')
         self.offset = kwargs.get('offset', 0)
         self._online = kwargs.get('online')
-        self.autotuning_mode = kwargs.get('autotuning_mode', 'abort')
+        self.autotuning_mode = kwargs.get('autotuning_mode', 'missing_peaks')
         self.gui_communication = {}
         
     @property
@@ -214,7 +215,69 @@ class Mapping(object):
     
         return (map_coords, frame_number)
     
-    def handle_autotuning(self, number_frame, Tuner):
+    def tuning_necessary(self, number_frame, message):
+        """
+        returns a tuple in the form (True/False, message)
+        """
+        self.Tuner.dirt_mask = self.Tuner.dirt_detector()
+        if np.sum(self.Tuner.dirt_mask)/(np.shape(self.Tuner.image)[0]*np.shape(self.Tuner.image)[1]) > 0.5:
+            message += 'Over 50% dirt coverage. '
+            self.Tuner.logwrite('Over 50% dirt coverage in No. ' + number_frame)
+            return (False, None, message)
+        
+        if self.autotuning_mode == 'reference':
+            graphene_mean = np.mean(self.Tuner.image[self.Tuner.dirt_mask==0])
+            self.Tuner.image[self.Tuner.dirt_mask==1] = graphene_mean
+            try:
+                peaks = self.Tuner.find_peaks(half_line_thickness=2, position_tolerance = 10, second_order=True,
+                                              integration_radius=1)
+            except RuntimeError as detail:
+                message += str(detail) + ' '
+                self.Tuner.logwrite(message)
+                return (False, message)
+            else:
+                intensities_sum = np.sum(peaks[0][:,-1])+np.sum(peaks[1][:,-1])
+            if intensities_sum < 0.4 * self.peak_intensity_reference:
+                message += ('Retune because peak intensity sum is only {:d} compared to reference ' + 
+                            '({:d}, {:.1%}). ').format(intensities_sum, self.peak_intensity_reference,
+                            intensities_sum/self.peak_intensity_reference)
+                self.Tuner.logwrite(message)
+                return (True, message)
+            else:
+                return (False, message)
+        else:
+            graphene_mean = np.mean(self.Tuner.image[self.Tuner.dirt_mask==0])
+            self.Tuner.image[self.Tuner.dirt_mask==1] = graphene_mean
+            try:
+                first_order, second_order = self.Tuner.find_peaks(imsize=self.frame_parameters['fov'],
+                                                             second_order=True)
+            except RuntimeError:
+                first_order = second_order = 0
+                number_peaks = 0
+                message += str(detail) + ' '
+                self.Tuner.logwrite(message)
+            else:
+                number_peaks = np.count_nonzero(first_order[:,-1])+np.count_nonzero(second_order[:,-1])
+    
+            if number_peaks == 12:
+                self.missing_peaks = 0
+            elif number_peaks < 10:
+                message += 'Missing '+str(12 - number_peaks)+' peaks. '
+                self.Tuner.logwrite('No. '+str(number_frame) + ': Missing ' + str(12 - number_peaks) + ' peaks.')
+                self.missing_peaks += 12 - number_peaks
+    
+            if self.missing_peaks > 12:
+                self.Tuner.logwrite('No. '+str(number_frame) + ': Retune because '+str(self.missing_peaks) +
+                               ' peaks miss in total.')
+                message += 'Retune because '+str(self.missing_peaks)+' peaks miss in total. '
+                return (True, message)
+            else:
+                return (False, message)
+    
+    def tuning_successful(self, success):
+        pass
+    
+    def handle_autotuning(self, number_frame):
         # tests in each frame after aquisition if all 6 reflections in the fft are still there (only for frames where 
         # less than 50% of the area are covered with dirt). If not all reflections are visible, autofocus is applied
         # and the result is added as offset to the interpolated focus values. The dirt coverage is calculated by
@@ -222,88 +285,64 @@ class Mapping(object):
 #        Tuner = Tuning(event=self.event, document_controller=self.document_controller, as2=self.as2, 
 #                       superscan=self.superscan)        
         message = ''
-        Tuner.image = Tuner.image_grabber(frame_parameters=self.frame_parameters)
-        #name = str('%.4d_%.3f_%.3f.tif' % (frame_number[counter-1],stagex*1e6,stagey*1e6))
-        Tuner.dirt_mask = Tuner.dirt_detector()
-        #calculate the fraction of 'bad' pixels and save frame if fraction is >0.5, but add note to "bad_frames" file
-        if np.sum(Tuner.dirt_mask)/(np.shape(Tuner.image)[0]*np.shape(Tuner.image)[1]) > 0.5:
-            message += 'Over 50% dirt coverage. '
-            Tuner.logwrite('Over 50% dirt coverage in No. ' + number_frame)
+        tune, message = self.tuning_necessary(number_frame, message)   
+        if not tune:
+            return message
         else:
+            # find place in the image with least dirt to do tuning there
+            clean_spot, size = self.Tuner.find_biggest_clean_spot()
+            clean_spot_nm = clean_spot * self.frame_parameters['fov'] / self.frame_parameters['size_pixels']
+            tune_frame_parameters = {'size_pixels': (512, 512), 'pixeltime': 8, 'fov': 4,
+                                     'rotation': 0, 'center': clean_spot_nm}
+            data = self.Tuner.image.copy()
             try:
-                first_order, second_order = Tuner.find_peaks(imsize=self.frame_parameters['fov'],
-                                                             second_order=True)
-                number_peaks = np.count_nonzero(first_order[:,-1])+np.count_nonzero(second_order[:,-1])
-            except RuntimeError:
-                first_order = second_order = 0
-                number_peaks = 0
-    
-            if number_peaks == 12:
-                missing_peaks = 0
-            elif number_peaks < 10:
-                message += 'Missing '+str(12 - number_peaks)+' peaks. '
-                Tuner.logwrite('No. '+str(number_frame) + ': Missing ' + str(12 - number_peaks) + ' peaks.')
-                missing_peaks += 12 - number_peaks
-    
-            if missing_peaks > 12:
-                Tuner.logwrite('No. '+str(number_frame) + ': Retune because '+str(missing_peaks) +
-                               ' peaks miss in total.')
-                message += 'Retune because '+str(missing_peaks)+' peaks miss in total. '
-                
-                # find place in the image with least dirt to do tuning there
-                clean_spot, size = Tuner.find_biggest_clean_spot()
-                clean_spot_nm = clean_spot * self.frame_parameters['fov'] / self.frame_parameters['size_pixels']
-                tune_frame_parameters = {'size_pixels': (512, 512), 'pixeltime': 8, 'fov': 4,
-                                         'rotation': 0, 'center': clean_spot_nm}
-                data = Tuner.image.copy()
+                self.Tuner.kill_aberrations(frame_parameters=tune_frame_parameters)
+                if self.event is not None and self.event.is_set():
+                    return (data, message)
+            except DirtError:
+                self.Tuner.logwrite('No. '+str(number_frame) + ': Tuning was aborted because of dirt coming in.')
+                message += 'Tuning was aborted because of dirt coming in. '
+            else:
+                self.Tuner.logwrite('No. '+str(number_frame) + ': New tuning: '+str(self.Tuner.aberrations))
+                message += 'New tuning: '+ str(self.Tuner.aberrations) + '. '
+
+                data_new = self.Tuner.image_grabber(frame_parameters = self.frame_parameters)
                 try:
-                    Tuner.kill_aberrations(frame_parameters=tune_frame_parameters)
-                    if self.event is not None and self.event.is_set():
-                        return (data, message)
-                except DirtError:
-                    Tuner.logwrite('No. '+str(number_frame) + ': Tuning was aborted because of dirt coming in.')
-                    message += 'Tuning was aborted because of dirt coming in. '
+                    first_order_new, second_order_new = self.Tuner.find_peaks(iamge=data_new,
+                                                                         imsize=self.frame_parameters['fov'],
+                                                                         second_order=True)
+                    number_peaks_new = np.count_nonzero(first_order_new[:,-1]) + \
+                                       np.count_nonzero(second_order_new[:,-1])
+                except RuntimeError:
+                    message += 'Dismissed result because it did not improve tuning: ' + \
+                               str(self.Tuner.aberrations) + '. '
+                    self.Tuner.logwrite('No. '+str(number_frame) + \
+                                   ': Dismissed result because it did not improve tuning: ' + \
+                                   str(self.Tuner.aberrations))
+                    #reset aberrations to values before tuning
+                    self.Tuner.image_grabber(acquire_image=False, relative_aberrations=False,
+                                        aberrations=self.Tuner.aberrations_tracklist[0])
+                    self.missing_peaks = 0
+                
                 else:
-                    Tuner.logwrite('No. '+str(number_frame) + ': New tuning: '+str(Tuner.aberrations))
-                    message += 'New tuning: '+ str(Tuner.aberrations) + '. '
-    
-                    data_new = Tuner.image_grabber(frame_parameters = self.frame_parameters)
-                    try:
-                        first_order_new, second_order_new = Tuner.find_peaks(iamge=data_new,
-                                                                             imsize=self.frame_parameters['fov'],
-                                                                             second_order=True)
-                        number_peaks_new = np.count_nonzero(first_order_new[:,-1]) + \
-                                           np.count_nonzero(second_order_new[:,-1])
-                    except RuntimeError:
-                        message += 'Dismissed result because it did not improve tuning: ' + \
-                                   str(Tuner.aberrations) + '. '
-                        Tuner.logwrite('No. '+str(number_frame) + \
-                                       ': Dismissed result because it did not improve tuning: ' + \
-                                       str(Tuner.aberrations))
-                        #reset aberrations to values before tuning
-                        Tuner.image_grabber(acquire_image=False, relative_aberrations=False,
-                                            aberrations=Tuner.aberrations_tracklist[0])
-                        missing_peaks = 0
-                    
+                    if number_peaks_new > number_peaks:
+                        data = data_new
+                        #add new focus as offset to all coordinates
+                        for i in range(len(self.map_coords)):
+                            temp_coord = np.array(self.map_coords[i])
+                            temp_coord[i][3] += self.Tuner.aberrations['EHTFocus'] * 1e-9
+                            self.map_coords[i] = tuple(temp_coord[i])
+                        self.missing_peaks = 0
                     else:
-                        if number_peaks_new > number_peaks:
-                            data = data_new
-                            #add new focus as offset to all coordinates
-                            for i in range(len(self.map_coords)):
-                                temp_coord = np.array(self.map_coords[i])
-                                temp_coord[i][3] += Tuner.aberrations['EHTFocus'] * 1e-9
-                                self.map_coords[i] = tuple(temp_coord[i])
-                            missing_peaks = 0
-                        else:
-                            message += 'Dismissed result because it did not improve tuning: ' + \
-                                       str(Tuner.aberrations) + '. '
-                            Tuner.logwrite('No. ' + str(number_frame) + \
-                                           ': Dismissed result because it did not improve tuning: ' + \
-                                           str(Tuner.aberrations))
-                            #reset aberrations to values before tuning
-                            Tuner.image_grabber(acquire_image=False, relative_aberrations=False,
-                                            aberrations=Tuner.aberrations_tracklist[0])
-                            missing_peaks=0
+                        message += 'Dismissed result because it did not improve tuning: ' + \
+                                   str(self.Tuner.aberrations) + '. '
+                        self.Tuner.logwrite('No. ' + str(number_frame) + \
+                                       ': Dismissed result because it did not improve tuning: ' + \
+                                       str(self.Tuner.aberrations))
+                        #reset aberrations to values before tuning
+                        self.Tuner.image_grabber(acquire_image=False, relative_aberrations=False,
+                                        aberrations=self.Tuner.aberrations_tracklist[0])
+                        self.missing_peaks=0
         
         return (data, message)
 
@@ -377,18 +416,9 @@ class Mapping(object):
                 elif line.startswith('{'):
                     line = line[1:].strip()
                     self.fill_dicts(line, config_file)
-                elif len(line.split(':')) == 2:
+                elif len(line.split(':', maxsplit=1)) == 2:
                     line = line.split(':')
-                    if hasattr(self, line[0].strip()):
-                        setattr(self, line[0].strip(), eval(line[1].strip()))
-                elif len(line.split(':')) > 2:
-                    line = line.split(':')
-                    if hasattr(self, line[0].strip()):
-                        lastpart = line[1].strip()
-                        for part in line[2:]:
-                            lastpart += ':'+part.strip()
-                        setattr(self, line[0].strip(), eval(lastpart))
-                
+                    setattr(self, line[0].strip(), eval(line[1].strip()))
                 else:
                     continue
         
@@ -448,6 +478,7 @@ class Mapping(object):
     #        config_file.write('foldername: ' + repr(self.foldername) + '\n')
             config_file.write('number_of_images: ' + str(self.number_of_images) + '\n')
             config_file.write('offset: ' + str(self.offset) + '\n')
+            config_file.write('autotuning_mode: ' + self.autotuning_mode)
             #config_file.write('\nend')
         
         #config_file.close()
@@ -494,7 +525,7 @@ class Mapping(object):
     def verified_unblank(self, timeout=1):
         assert self.as2 is not None, 'Cannot do unblank beam without an instance of as2.'
         if not self.ccd:
-            self.document_controller.queue_task(lambda: logging.warn('Cannot check if beam is unblanked without ccd.'))
+            self.Tuner.logwrite('Cannot check if beam is unblanked without ccd.')
             self.as2.set_property_as_float('C_Blank', 0)
             return
         self.ccd.set_property_as_float('exposure_ms', 50)
@@ -508,8 +539,7 @@ class Mapping(object):
         while value < 5*reference:
             counter += 1
             if time.time()-starttime > timeout:
-                self.document_controller.queue_task(lambda:
-                                                logging.warn('A timeout occured during waiting for beam unblanking.'))
+                self.Tuner.logwrite('A timeout occured during waiting for beam unblanking. Make sure the CCD is in.')
                 break
             value = np.mean(self.ccd.grab_next_to_finish()[0].data)
             time.sleep(0.02)
@@ -560,16 +590,12 @@ class Mapping(object):
                              
         self.save_mapping_config()
         
-        if self.switches.get('do_autotuning'):
-            img = Tuning(frame_parameters=self.frame_parameters.copy(), detectors=self.detectors, event=self.event,
-                         online=self.online, document_controller=self.document_controller, as2=self.as2, 
-                         superscan=self.superscan)
-        else:            
-            img = Imaging(frame_parameters=self.frame_parameters.copy(), detectors=self.detectors, online=self.online,
-                          as2=self.as2, superscan=self.superscan, document_controller=self.document_controller)
+        self.Tuner = Tuning(frame_parameters=self.frame_parameters.copy(), detectors=self.detectors, event=self.event,
+                     online=self.online, document_controller=self.document_controller, as2=self.as2, 
+                     superscan=self.superscan)
 
         if self.number_of_images > 1 and self.switches['do_autotuning'] == True:
-            img.logwrite('Acquiring an image series and using autofocus is currently not possible. ' +
+            self.Tuner.logwrite('Acquiring an image series and using autofocus is currently not possible. ' +
                          'Autofocus will be disabled.', level='warn')
             self.switches['do_autotuning'] = False
             
@@ -603,7 +629,7 @@ class Mapping(object):
             counter += 1
             stagex, stagey, stagex_corrected, stagey_corrected = frame_coord
             stagez, fine_focus = self.interpolation((stagex, stagey))
-            img.logwrite(str(counter) + '/' + str(len(map_coords)) + ': (No. ' +
+            self.Tuner.logwrite(str(counter) + '/' + str(len(map_coords)) + ': (No. ' +
                          str(frame_number[counter-1]['number']) + ') x: ' +str((stagex_corrected)) + ', y: ' +
                          str((stagey_corrected)) + ', z: ' + str((stagez)) + ', focus: ' + str((fine_focus)))
             # only do hardware operations when online
@@ -611,14 +637,10 @@ class Mapping(object):
                 if self.switches.get('blank_beam'):
                     self.as2.set_property_as_float('C_Blank', 1)
     
-                #vt.as2_set_control(self.as2, 'StageOutX', stagex)
-                #vt.as2_set_control(self.as2, 'StageOutY', stagey)
                 self.as2.set_property_as_float('StageOutX', stagex_corrected)
                 self.as2.set_property_as_float('StageOutY', stagey_corrected)
                 if self.switches['use_z_drive']:
-                    #vt.as2_set_control(self.as2, 'StageOutZ', stagez)
                     self.as2.set_property_as_float('StageOutZ', stagez)
-                #vt.as2_set_control(self.as2, 'EHTFocus', fine_focus)
                 self.as2.set_property_as_float('EHTFocus', fine_focus)
     
                 # Wait until movement of stage is done (wait longer time before first frame)
@@ -632,14 +654,8 @@ class Mapping(object):
                 
                 if self.switches.get('do_autotuning'):
                     if self.switches.get('blank_beam'):
-                            #self.as2.set_property_as_float('C_Blank', 0)
-                            #time.sleep(0.7)
-                            #while not self.as2.get_property_as_float('C_Blank') == 0:
-                            #    print('Waiting for beam to be unblanked...')
-                            #    time.sleep(0.02)
                             self.verified_unblank()
-                    #time.sleep(0.1)
-                    data, message = self.handle_autotuning(frame_number[counter-1]['number'], img)
+                    data, message = self.handle_autotuning(frame_number[counter-1]['number'])
 
                     if self.switches.get('blank_beam'):
                             self.as2.set_property_as_float('C_Blank', 1)
@@ -647,37 +663,25 @@ class Mapping(object):
                     # Take frame and save it to disk
                     if self.number_of_images < 2:
                         if self.switches.get('blank_beam'):
-                            self.verified_unblank()
-#                                self.as2.set_property_as_float('C_Blank', 0)
-#                                #time.sleep(0.5)
-#                                while not self.as2.get_property_as_float('C_Blank') == 0:
-#                                    print('Waiting for beam to be unblanked...')
-#                                    time.sleep(0.02)
-#                            time.sleep(0.1)        
-                        data = img.image_grabber(show_live_image=True)
+                            self.verified_unblank()       
+                        data = self.Tuner.image_grabber(show_live_image=True)
                         tifffile.imsave(os.path.join(self.store, name), data)
                     else:
                         if self.switches.get('blank_beam'):
                             self.verified_unblank()
-#                                self.as2.set_property_as_float('C_Blank', 0)
-#                                #time.sleep(0.5)
-#                                while not self.as2.get_property_as_float('C_Blank') == 0:
-#                                    print('Waiting for beam to be unblanked...')
-#                                    time.sleep(0.02)
-#                                time.sleep(0.1)
                         splitname = os.path.splitext(name)    
                         for i in range(self.number_of_images):
                             if pixeltimes is not None:
                                 self.frame_parameters['pixeltime'] = pixeltimes[i]
-                            data = img.image_grabber(frame_parameters=self.frame_parameters, show_live_image=True)
-                            
+                            data = self.Tuner.image_grabber(frame_parameters=self.frame_parameters,
+                                                            show_live_image=True)
                             name = splitname[0] + ('_{:0'+str(len(str(self.number_of_images)))+'d}'
                                                    ).format(i) + splitname[1]
                             tifffile.imsave(os.path.join(self.store, name), data)
                             if self.switches.get('abort_series_on_dirt'):
-                                dirt_mask = img.dirt_detector(image=data)
+                                dirt_mask = self.Tuner.dirt_detector(image=data)
                                 if np.sum(dirt_mask)/np.prod(data.shape) > self.dirt_area:
-                                    img.logwrite('Series was aborted because more than ' +
+                                    self.Tuner.logwrite('Series was aborted because more than ' +
                                                  str(int(self.dirt_area*100)) + '% dirt coverage.')
                                     break
                     
@@ -685,7 +689,7 @@ class Mapping(object):
                         self.as2.set_property_as_float('C_Blank', 1)
                         
                     if self.switches.get('focus_at_edges') and frame_number[counter-1].get('retune'):
-                        self.wait_for_focused(frame_number[counter-1].get('corner'), stagex, stagey, img)
+                        self.wait_for_focused(frame_number[counter-1].get('corner'), stagex, stagey, self.Tuner)
                 
             test_map.append(frame_coord)
     
@@ -718,7 +722,7 @@ class Mapping(object):
             #acquire image and save it
             overview_parameters = {'size_pixels': (4096, 4096), 'center': (0,0), 'pixeltime': 4, \
                                 'fov': over_size, 'rotation': self.frame_parameters['rotation']}
-            image = img.image_grabber(frame_parameters=overview_parameters, show_live_image=True)
+            image = self.Tuner.image_grabber(frame_parameters=overview_parameters, show_live_image=True)
             tifffile.imsave(os.path.join(self.store, 'Overview_{:.0f}_nm.tif'.format(over_size)), image)
     
         if self.event is None or not self.event.is_set():
@@ -746,7 +750,7 @@ class Mapping(object):
             tifffile.imsave(os.path.join(self.store, 'focus_map.tif'), np.asarray(focus_map, dtype='float32'))
         
         #self.superscan.stop_playing()
-        img.logwrite('Done.\n')
+        self.Tuner.logwrite('Done.\n')
 
     def wait_for_focused(self, corner, stagex, stagey, Image, timeout=300, accept_timeout=30):
         self.tune_event.set()
