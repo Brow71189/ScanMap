@@ -1055,7 +1055,6 @@ class Tuning(Peaking):
             self.merit_history[key] = []            
 
         counter = 0
-
         self.imsize = self.frame_parameters['fov']
         
         self.image = self.image_grabber(aberrations={}, show_live_image=True)

@@ -3,7 +3,6 @@ import gettext
 import logging
 import numpy as np
 import threading
-import warnings
 import os
 import time
 
@@ -12,16 +11,11 @@ try:
 except:
     pass
 
-with warnings.catch_warnings():
-    warnings.simplefilter('ignore')
-    import ViennaTools.ViennaTools as vt
-
 from .maptools import mapper, autotune
 
 _ = gettext.gettext
 
 class ScanMapPanelDelegate(object):
-    
     
     def __init__(self, api):
         self.__api = api
@@ -33,9 +27,8 @@ class ScanMapPanelDelegate(object):
         self.as2 = None
         self.ccd = None
         self.coord_dict = {'top-left': None, 'top-right': None, 'bottom-right': None, 'bottom-left': None}
-        self.switches = {'do_autotuning': False, 'use_z_drive': False, 'tune_at_edges': False,
-                         'compensate_stage_error': False, 'acquire_overview': True, 'blank_beam': False,
-                         'abort_series_on_dirt': False}
+        self.switches = {'do_retuning': False, 'use_z_drive': False, 'abort_series_on_dirt': False,
+                         'compensate_stage_error': False, 'acquire_overview': True, 'blank_beam': False}
         self.frame_parameters = {'size_pixels': 2048, 'pixeltime': 0.2, 'fov': 20, 'rotation': 114.5}
         self.offset = 1
         self.number_of_images = 1
@@ -45,10 +38,10 @@ class ScanMapPanelDelegate(object):
         self.tune_event = None
         self.thread = None
         self.thread_communication = None
+        self.retuning_mode = ['edges','manual']
         # Is filled later with the actual checkboxes. For now just the default values are stored
-        self._checkboxes = {'do_autotuning': False, 'use_z_drive': False, 'tune_at_edges': False,
-                            'compensate_stage_error': False, 'acquire_overview': True, 'blank_beam': False,
-                            'abort_series_on_dirt': False}
+        self._checkboxes = {'do_retuning': False, 'use_z_drive': False, 'abort_series_on_dirt': False,
+                            'compensate_stage_error': False, 'acquire_overview': True, 'blank_beam': False}
     
     def create_panel_widget(self, ui, document_controller):
         
@@ -179,6 +172,11 @@ class ScanMapPanelDelegate(object):
             self.drive_coords('bottom-left')
         def drive_br_button_clicked():
             self.drive_coords('bottom-right')
+        
+        def method_combo_box_changed(item):
+            self.retuning_mode[0] = item.replace(' ', '_')
+        def mode_combo_box_changed(item):
+            self.retuning_mode[1] = item.replace(' ', '_')
             
         def save_button_clicked():
             Mapper = mapper.Mapping()            
@@ -256,6 +254,9 @@ class ScanMapPanelDelegate(object):
             if self.savepath is None:
                 logging.warn('You must input a valid savepath to start the map.')
                 return
+            if self.retuning_mode[0] == 'reference' and self.peak_intensity_reference is None:
+                logging.warn('You must record a peak intensity reference when using "reference" mode.')
+                return
             
             Mapper = mapper.Mapping(superscan=self.superscan, as2=self.as2, document_controller=document_controller,
                                     coord_dict=self.coord_dict.copy(), switches=self.switches.copy(), ccd=self.ccd)
@@ -266,8 +267,9 @@ class ScanMapPanelDelegate(object):
             Mapper.savepath = self.savepath
             Mapper.peak_intensity_reference = self.peak_intensity_reference
             Mapper.frame_parameters = self.frame_parameters.copy()
+            Mapper.retuning_mode = self.retuning_mode.copy()
             self.thread_communication = Mapper.gui_communication
-            if self.switches['tune_at_edges']:
+            if self.switches['do_retuning']:
                 self.tune_event = threading.Event()
                 Mapper.tune_event = self.tune_event
             
@@ -335,23 +337,23 @@ class ScanMapPanelDelegate(object):
         save_button_row = ui.create_row_widget()
         done_button_row = ui.create_row_widget()
 
-        column.add_spacing(20)        
+        column.add_spacing(10) 
         column.add(fields_row)
         fields_row.add(left_fields_column)
-        fields_row.add_spacing(10)
+        fields_row.add_spacing(5)
         fields_row.add(right_fields_column)
         left_fields_column.add(left_edit_row1)
         left_fields_column.add_spacing(5)
         left_fields_column.add(left_edit_row2)
         left_fields_column.add_spacing(5)
         left_fields_column.add(left_edit_row3)
-        left_fields_column.add_spacing(20)
+        left_fields_column.add_spacing(10)
         right_fields_column.add(right_edit_row1)
         right_fields_column.add_spacing(5)
         right_fields_column.add(right_edit_row2)
         right_fields_column.add_spacing(5)
         right_fields_column.add(right_edit_row3)
-        right_fields_column.add_spacing(20)
+        right_fields_column.add_spacing(10)
         left_fields_column.add(ui.create_label_widget(_("Save Coordinates")))
         left_fields_column.add_spacing(5)
         right_fields_column.add(ui.create_label_widget(_("Goto Coordinates")))
@@ -360,7 +362,7 @@ class ScanMapPanelDelegate(object):
         left_fields_column.add(left_buttons_row2)
         right_fields_column.add(right_buttons_row1)
         right_fields_column.add(right_buttons_row2)
-        column.add_spacing(20)
+        column.add_spacing(10)
         column.add(checkbox_row1)
         column.add_spacing(5)
         column.add(checkbox_row2)
@@ -372,7 +374,7 @@ class ScanMapPanelDelegate(object):
         column.add(savepath_row)
         column.add_spacing(5)
         column.add(save_button_row)
-        column.add_spacing(20)
+        column.add_spacing(10)
         column.add(done_button_row)
         column.add_stretch()
 
@@ -398,7 +400,7 @@ class ScanMapPanelDelegate(object):
         #                   done_button_row                 #
         #####################################################
         
-        left_edit_row1.add(ui.create_label_widget(_("FOV per Frame (nm): ")))
+        left_edit_row1.add(ui.create_label_widget(_("FOV (nm): ")))
         fov_line_edit = ui.create_line_edit_widget()
         fov_line_edit.text = '20'
         fov_line_edit.on_editing_finished = fov_finished
@@ -410,7 +412,7 @@ class ScanMapPanelDelegate(object):
         size_line_edit.on_editing_finished = size_finished
         right_edit_row1.add(size_line_edit)
         
-        left_edit_row2.add(ui.create_label_widget(_("Scan roation (deg): ")))
+        left_edit_row2.add(ui.create_label_widget(_("Roation (deg): ")))
         rotation_line_edit = ui.create_line_edit_widget()
         rotation_line_edit.text = '114.5'
         rotation_line_edit.on_editing_finished = rotation_finished
@@ -425,11 +427,10 @@ class ScanMapPanelDelegate(object):
         left_edit_row3.add(ui.create_label_widget(_("Pixeltime (us): ")))
         time_line_edit = ui.create_line_edit_widget()
         time_line_edit.text = '0.2'
-        time_line_edit.placeholder_text = 'Number or comma-separated list of numbers'
         time_line_edit.on_editing_finished = time_finished
         left_edit_row3.add(time_line_edit)
         
-        right_edit_row3.add(ui.create_label_widget(_("Images per location: ")))
+        right_edit_row3.add(ui.create_label_widget(_("Series length: ")))
         number_line_edit = ui.create_line_edit_widget()
         number_line_edit.text = '1'
         number_line_edit.on_editing_finished = number_of_images_finished
@@ -456,19 +457,24 @@ class ScanMapPanelDelegate(object):
         abort_button = ui.create_push_button_widget(_("Abort"))
         analyze_button = ui.create_push_button_widget(_("Analyze image"))
    
-        z_drive_checkbox = ui.create_check_box_widget(_("Use Z Drive"))
-        z_drive_checkbox.on_check_state_changed = checkbox_changed
-        autotuning_checkbox = ui.create_check_box_widget(_("Autotuning"))
-        autotuning_checkbox.on_check_state_changed = checkbox_changed
-        tune_at_edges_checkbox = ui.create_check_box_widget(_("Retune at edges"))
-        tune_at_edges_checkbox.on_check_state_changed = checkbox_changed
+        
+        retune_checkbox = ui.create_check_box_widget(_("Retune live, method: "))
+        retune_checkbox.on_check_state_changed = checkbox_changed
+        method_combo_box = ui.create_combo_box_widget()
+        method_combo_box.items = ['edges', 'reference', 'missing peaks']
+        method_combo_box.on_current_item_changed = method_combo_box_changed
+        mode_combo_box = ui.create_combo_box_widget()
+        mode_combo_box.items = ['manual', 'auto']
+        mode_combo_box.on_current_item_changed = mode_combo_box_changed
         overview_checkbox = ui.create_check_box_widget(_("Acquire Overview"))
         overview_checkbox.check_state = 'checked'
         overview_checkbox.on_check_state_changed = checkbox_changed
-        blank_checkbox = ui.create_check_box_widget(_("Blank beam between acquisitions"))
+        blank_checkbox = ui.create_check_box_widget(_("Blank beam between images"))
         blank_checkbox.on_check_state_changed = checkbox_changed
-        correct_stage_errors_checkbox = ui.create_check_box_widget(_("Compensate Stage Movement Errors"))
+        correct_stage_errors_checkbox = ui.create_check_box_widget(_("Correct Stage Movement"))
         correct_stage_errors_checkbox.on_check_state_changed = checkbox_changed
+        z_drive_checkbox = ui.create_check_box_widget(_("Use Z Drive"))
+        z_drive_checkbox.on_check_state_changed = checkbox_changed
         abort_series_on_dirt_checkbox = ui.create_check_box_widget(_("Abort series on more than "))
         correct_stage_errors_checkbox.on_check_state_changed = checkbox_changed
         dirt_area_line_edit = ui.create_line_edit_widget()
@@ -492,56 +498,57 @@ class ScanMapPanelDelegate(object):
         analyze_button.on_clicked = analyze_button_clicked
         
         left_buttons_row1.add(tl_button)
-        left_buttons_row1.add_spacing(3)
+        left_buttons_row1.add_spacing(2)
         left_buttons_row1.add(tr_button)
         
         left_buttons_row2.add(bl_button)
-        left_buttons_row2.add_spacing(3)
+        left_buttons_row2.add_spacing(2)
         left_buttons_row2.add(br_button)
         
         right_buttons_row1.add(drive_tl)
-        right_buttons_row1.add_spacing(3)
+        right_buttons_row1.add_spacing(2)
         right_buttons_row1.add(drive_tr)
         
         right_buttons_row2.add(drive_bl)
-        right_buttons_row2.add_spacing(3)
+        right_buttons_row2.add_spacing(2)
         right_buttons_row2.add(drive_br)
         
-        checkbox_row1.add(autotuning_checkbox)
-        checkbox_row1.add_spacing(4)
-        checkbox_row1.add(tune_at_edges_checkbox)
-        checkbox_row1.add_spacing(4)
-        checkbox_row1.add(z_drive_checkbox)
+        checkbox_row1.add(retune_checkbox)
+        checkbox_row1.add(method_combo_box)
+        #checkbox_row1.add(ui.create_label_widget(_(' mode: ')))
+        checkbox_row1.add(mode_combo_box)
         checkbox_row1.add_stretch()
         
         checkbox_row2.add(overview_checkbox)
-        checkbox_row2.add_spacing(4)
+        checkbox_row2.add_spacing(3)
         checkbox_row2.add(blank_checkbox)
         checkbox_row2.add_stretch()
 
         checkbox_row3.add(correct_stage_errors_checkbox)
+        checkbox_row3.add_spacing(3)
+        checkbox_row3.add(z_drive_checkbox)
         checkbox_row3.add_stretch()
         
         checkbox_row4.add(abort_series_on_dirt_checkbox)
         checkbox_row4.add(dirt_area_line_edit)
-        checkbox_row4.add(ui.create_label_widget(_('% dirt in an image')))
+        checkbox_row4.add(ui.create_label_widget(_('% dirt in image')))
         checkbox_row4.add_stretch()
         
         save_button_row.add(save_button)
-        save_button_row.add_spacing(5)
+        save_button_row.add_spacing(4)
         save_button_row.add(load_button)
-        save_button_row.add_spacing(5)
+        save_button_row.add_spacing(4)
         save_button_row.add(test_button)        
         
         done_button_row.add(done_button)
-        done_button_row.add_spacing(5)
+        done_button_row.add_spacing(4)
         done_button_row.add(abort_button)
-        done_button_row.add_spacing(5)
+        done_button_row.add_spacing(4)
         done_button_row.add(analyze_button)
         
+        self._checkboxes['do_retuning'] = retune_checkbox
         self._checkboxes['use_z_drive'] = z_drive_checkbox
-        self._checkboxes['do_autotuning'] = autotuning_checkbox
-        self._checkboxes['tune_at_edges'] = tune_at_edges_checkbox
+        self._checkboxes['do_autotuning'] = retune_checkbox
         self._checkboxes['acquire_overview'] = overview_checkbox
         self._checkboxes['blank_beam'] = blank_checkbox
         self._checkboxes['compensate_stage_error'] = correct_stage_errors_checkbox
@@ -550,12 +557,10 @@ class ScanMapPanelDelegate(object):
         return column
         
     def save_coords(self, position):
-        try:
-            reload(vt)
-        except:
-            logging.warn('Could not reload ViennaTools!')
-        self.coord_dict[position] = (self.as2.get_property_as_float('StageOutX'), self.as2.get_property_as_float('StageOutY'), 
-                                self.as2.get_property_as_float('StageOutZ'), self.as2.get_property_as_float('EHTFocus'))
+        self.coord_dict[position] = (self.as2.get_property_as_float('StageOutX'),
+                                     self.as2.get_property_as_float('StageOutY'), 
+                                     self.as2.get_property_as_float('StageOutZ'),
+                                     self.as2.get_property_as_float('EHTFocus'))
         logging.info('Saved x: ' +
                      str(self.coord_dict[position][0]) + ', y: ' +
                      str(self.coord_dict[position][1]) + ', z: ' +

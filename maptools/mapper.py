@@ -13,17 +13,17 @@ import numpy as np
 
 with warnings.catch_warnings():
     warnings.simplefilter('ignore')
-    from ViennaTools import ViennaTools as vt
+    #from ViennaTools import ViennaTools as vt
     from ViennaTools import tifffile
 
-from .autotune import Imaging, Tuning, DirtError
-from . import autoalign
+from .autotune import Tuning, DirtError
+#from . import autoalign
 
 
 class Mapping(object):
-    
+
     _corners = ['top-left', 'top-right', 'bottom-right', 'bottom-left']
-    
+
     def __init__(self, **kwargs):
         self.superscan = kwargs.get('superscan')
         self.as2 = kwargs.get('as2')
@@ -48,9 +48,10 @@ class Mapping(object):
         self.foldername = 'map_' + time.strftime('%Y_%m_%d_%H_%M')
         self.offset = kwargs.get('offset', 0)
         self._online = kwargs.get('online')
-        self.autotuning_mode = kwargs.get('autotuning_mode', 'missing_peaks')
+        self.retuning_mode = kwargs.get('retuning_mode', ('missing_peaks', 'manual'))
         self.gui_communication = {}
-        
+        self.missing_peaks = 0
+
     @property
     def online(self):
         if self._online is None:
@@ -64,25 +65,26 @@ class Mapping(object):
     @online.setter
     def online(self, online):
         self._online = online
-        
+
     @property
     def savepath(self):
         return self._savepath
-        
+
     @savepath.setter
     def savepath(self, savepath):
         self._savepath = os.path.normpath(savepath)
-        
-    def create_map_coordinates(self, compensate_stage_error=False, positionfile='C:/Users/ASUser/repos/ScanMap/positioncollection.npz'):
+
+    def create_map_coordinates(self, compensate_stage_error=False,
+                               positionfile='C:/Users/ASUser/repos/ScanMap/positioncollection.npz'):
         imsize = self.frame_parameters['fov']*1e-9
         distance = self.offset*imsize
-        self.num_subframes = np.array((int(np.abs(self.rightX-self.leftX)/(imsize+distance))+1, 
+        self.num_subframes = np.array((int(np.abs(self.rightX-self.leftX)/(imsize+distance))+1,
                                        int(np.abs(self.topY-self.botY)/(imsize+distance))+1))
-    
+
         map_coords = []
-        frame_number = []
-        
-    
+        frame_info = []
+
+
         # add additional lines and frames to number of subframes
         if compensate_stage_error:
             try:
@@ -98,7 +100,7 @@ class Mapping(object):
                 firstlines = data['firstlines']
                 mapnames = data['mapnames']
                 oddlines = data['oddlines']
-                
+
                 # average over all the datasets. This results in 1-D arrays for the different types of coordinates
                 xevenline = np.mean(evenlines[1]*np.array([mapnames['pixelsize']]).T, axis=0)
                 yevenline = np.mean(evenlines[0]*np.array([mapnames['pixelsize']]).T, axis=0)
@@ -113,13 +115,13 @@ class Mapping(object):
                 yevenline = yevenline[np.rint(np.mgrid[0:100:self.num_subframes[1]*1j]).astype(np.int)] * 1e-9
                 yoddline = yoddline[np.rint(np.mgrid[0:100:self.num_subframes[1]*1j]).astype(np.int)] * 1e-9
                 yfirstline = yfirstline[np.rint(np.mgrid[0:100:self.num_subframes[1]*1j]).astype(np.int)] * 1e-9
-                
+
             # Do not use else here to make sure the zero-offset arrays are also created when compensate_stage_error was
             # disabled in the last step.
         if not compensate_stage_error:
             xevenline = xoddline = xfirstline = np.zeros(self.num_subframes[0])
             yevenline = yoddline = yfirstline = np.zeros(self.num_subframes[1])
-            
+
 #            extra_lines = 2  # Number of lines to add at the beginning of the map
 #            extra_frames = 5  # Number of extra moves at each end of a line
 #            oldm = 0.25  # odd line distance mover (additional offset of odd lines, in fractions of (imsize+distance))
@@ -151,81 +153,81 @@ class Mapping(object):
         for j in range(num_subframes[1]):
             for i in range(num_subframes[0]):
                 if j == 0:
-                    map_coords.append(tuple((leftX + i*(imsize+distance) + xfirstline[i], 
+                    map_coords.append(tuple((leftX + i*(imsize+distance) + xfirstline[i],
                                              topY - j*(imsize+distance) - yfirstline[j])) +
                                       tuple((leftX + i*(imsize+distance),
                                             topY - j*(imsize+distance))))
                     if self.switches.get('focus_at_edges') and i == 0:
-                        frame_number.append({'number': j*num_subframes[0]+i, 'retune': True, 'corner': 'top-left'})
+                        frame_info.append({'number': j*num_subframes[0]+i, 'retune': True, 'corner': 'top-left'})
                     else:
-                        frame_number.append({'number': j*num_subframes[0]+i})
+                        frame_info.append({'number': j*num_subframes[0]+i})
                 elif j % 2 == 0:  # Odd lines (have even indices because numbering starts with 0), e.g. map from left to right
-                    map_coords.append(tuple((leftX + i*(imsize+distance) + xoddline[i], 
+                    map_coords.append(tuple((leftX + i*(imsize+distance) + xoddline[i],
                                              topY - j*(imsize+distance) - yoddline[j])) +
                                       tuple((leftX + i*(imsize+distance),
                                             topY - j*(imsize+distance))))
-                        
+
                     if self.switches.get('focus_at_edges') and i == 0:
-                        frame_number.append({'number': j*num_subframes[0]+i, 'retune': True, 'corner': 'top-left'})
+                        frame_info.append({'number': j*num_subframes[0]+i, 'retune': True, 'corner': 'top-left'})
                     else:
-                        frame_number.append({'number': j*num_subframes[0]+i})
-#                    map_coords.append(tuple((leftX+i*(imsize+distance), 
+                        frame_info.append({'number': j*num_subframes[0]+i})
+#                    map_coords.append(tuple((leftX+i*(imsize+distance),
 #                                             topY-j*(imsize+distance) - oldm*(imsize+distance))) +
 #                                      tuple(self.interpolation((leftX + i*(imsize+distance),
 #                                            topY-j*(imsize+distance) - oldm*(imsize+distance)))))
 
-                    # Apply correct (continuous) frame numbering for all cases. If no extra positions are added, just 
+                    # Apply correct (continuous) frame numbering for all cases. If no extra positions are added, just
                     # append the correct frame number. Elsewise append the correct frame number if a non-additional
                     # one, else None
 #                    if not compensate_stage_error:
-#                        frame_number.append(j*num_subframes[0]+i)
+#                        frame_info.append(j*num_subframes[0]+i)
 #                    elif extra_frames <= i < num_subframes[0]-extra_frames and j >= extra_lines:
-#                        frame_number.append((j-extra_lines)*(num_subframes[0]-2*extra_frames)+(i-extra_frames))
+#                        frame_info.append((j-extra_lines)*(num_subframes[0]-2*extra_frames)+(i-extra_frames))
 #                    else:
-#                        frame_number.append(None)
-    
+#                        frame_info.append(None)
+
                 else: # Even lines, e.g. scan from right to left
                     map_coords.append(tuple((leftX + (num_subframes[0] - (i+1))*(imsize + distance) + xevenline[i],
                                              topY-j*(imsize + distance) - yevenline[j])) +
                                       tuple((leftX + (num_subframes[0] - (i+1))*(imsize + distance),
                                              topY-j*(imsize + distance))))
-                    
+
                     if self.switches.get('focus_at_edges') and num_subframes[0]-(i+1) == 0:
-                        frame_number.append({'number': j*num_subframes[0]+(num_subframes[0]-(i+1)), 'retune': True,
+                        frame_info.append({'number': j*num_subframes[0]+(num_subframes[0]-(i+1)), 'retune': True,
                                              'corner': 'top-right'})
                     else:
-                        frame_number.append({'number': j*num_subframes[0]+(num_subframes[0]-(i+1))})
-                                             
+                        frame_info.append({'number': j*num_subframes[0]+(num_subframes[0]-(i+1))})
+
 #                    map_coords.append(tuple((leftX + (num_subframes[0] - (i+1))*(imsize + distance),
 #                                             topY-j*(imsize + distance) - eldm*(imsize + distance))) +
 #                                      tuple(self.interpolation(
 #                                            (leftX + (num_subframes[0] - (i+1))*(imsize + distance),
 #                                             topY-j*(imsize + distance) - eldm*(imsize + distance)))))
-#    
-#                    # Apply correct (continuous) frame numbering for all cases. If no extra positions are added, just 
+#
+#                    # Apply correct (continuous) frame numbering for all cases. If no extra positions are added, just
 #                    # append the correct frame number. Elsewise append the correct frame number if a non-additional
 #                    # one, else None
 #                    if not compensate_stage_error:
-#                        frame_number.append(j*num_subframes[0]+(num_subframes[0]-(i+1)))
+#                        frame_info.append(j*num_subframes[0]+(num_subframes[0]-(i+1)))
 #                    elif extra_frames <= i < num_subframes[0]-extra_frames and j >= extra_lines:
-#                        frame_number.append( (j-extra_lines)*(num_subframes[0]-2*extra_frames) +
+#                        frame_info.append( (j-extra_lines)*(num_subframes[0]-2*extra_frames) +
 #                                             ((num_subframes[0]-2*extra_frames)-(i-extra_frames+1)) )
 #                    else:
-#                        frame_number.append(None)
-    
-        return (map_coords, frame_number)
-    
-    def tuning_necessary(self, number_frame, message):
+#                        frame_info.append(None)
+
+        return (map_coords, frame_info)
+
+    def tuning_necessary(self, frame_info, message):
         """
         returns a tuple in the form (True/False, message)
         """
         self.Tuner.dirt_mask = self.Tuner.dirt_detector()
         if np.sum(self.Tuner.dirt_mask)/(np.shape(self.Tuner.image)[0]*np.shape(self.Tuner.image)[1]) > 0.5:
             message += 'Over 50% dirt coverage. '
-            self.Tuner.logwrite('Over 50% dirt coverage in No. ' + number_frame)
+            self.Tuner.logwrite('Over 50% dirt coverage in No. ' + str(frame_info['number']))
             return (False, None, message)
-        
-        if self.autotuning_mode == 'reference':
+
+        if self.retuning_mode[0] == 'reference':
             graphene_mean = np.mean(self.Tuner.image[self.Tuner.dirt_mask==0])
             self.Tuner.image[self.Tuner.dirt_mask==1] = graphene_mean
             try:
@@ -238,14 +240,13 @@ class Mapping(object):
             else:
                 intensities_sum = np.sum(peaks[0][:,-1])+np.sum(peaks[1][:,-1])
             if intensities_sum < 0.4 * self.peak_intensity_reference:
-                message += ('Retune because peak intensity sum is only {:d} compared to reference ' + 
+                message += ('Retune because peak intensity sum is only {:d} compared to reference ' +
                             '({:d}, {:.1%}). ').format(intensities_sum, self.peak_intensity_reference,
                             intensities_sum/self.peak_intensity_reference)
                 self.Tuner.logwrite(message)
                 return (True, message)
-            else:
-                return (False, message)
-        else:
+
+        elif self.retuning_mode[0] == 'missing_peaks':
             graphene_mean = np.mean(self.Tuner.image[self.Tuner.dirt_mask==0])
             self.Tuner.image[self.Tuner.dirt_mask==1] = graphene_mean
             try:
@@ -257,48 +258,85 @@ class Mapping(object):
                 message += str(detail) + ' '
                 self.Tuner.logwrite(message)
             else:
-                number_peaks = np.count_nonzero(first_order[:,-1])+np.count_nonzero(second_order[:,-1])
-    
+                number_peaks = np.count_nonzero(first_order[:,-1]) + np.count_nonzero(second_order[:,-1])
+
             if number_peaks == 12:
                 self.missing_peaks = 0
             elif number_peaks < 10:
                 message += 'Missing '+str(12 - number_peaks)+' peaks. '
-                self.Tuner.logwrite('No. '+str(number_frame) + ': Missing ' + str(12 - number_peaks) + ' peaks.')
+                self.Tuner.logwrite('No. '+str(frame_info['number']) + ': Missing ' + str(12 - number_peaks) +
+                                    ' peaks.')
                 self.missing_peaks += 12 - number_peaks
-    
+
             if self.missing_peaks > 12:
-                self.Tuner.logwrite('No. '+str(number_frame) + ': Retune because '+str(self.missing_peaks) +
+                self.Tuner.logwrite('No. '+str(frame_info['number']) + ': Retune because '+str(self.missing_peaks) +
                                ' peaks miss in total.')
                 message += 'Retune because '+str(self.missing_peaks)+' peaks miss in total. '
                 return (True, message)
+
+        elif self.retuning_mode[0] == 'edges':
+            if frame_info.get('retune'):
+                return (True, message)
+
+        return (False, message)
+
+    def tuning_successful(self, success, new_point):
+        if success:
+            counter = 0
+            while counter < 10000:
+                if not self.coord_dict.get('new_point_{:04d}'.format(counter)):
+                    self.coord_dict['new_point_{:04d}'.format(counter)] = new_point
+                    break
+                counter += 1
             else:
-                return (False, message)
-    
-    def tuning_successful(self, success):
-        pass
-    
-    def handle_autotuning(self, number_frame):
-        # tests in each frame after aquisition if all 6 reflections in the fft are still there (only for frames where 
+                self.Tuner.logwrite('Could not add new point to coord_dict. Continuing with old ones.')
+
+            if self.retuning_mode[0] == 'reference':
+                pass
+            elif self.retuning_mode[0] == 'missing_peaks':
+                self.missing_peaks = 0
+            else:
+                pass
+        else:
+            if self.retuning_mode[0] == 'reference':
+                pass
+            elif self.retuning_mode[0] == 'missing_peaks':
+                self.missing_peaks = 0
+            else:
+                pass
+
+    def handle_retuning(self, frame_coord, frame_info):
+        # tests in each frame after aquisition if all 6 reflections in the fft are still there (only for frames where
         # less than 50% of the area are covered with dirt). If not all reflections are visible, autofocus is applied
         # and the result is added as offset to the interpolated focus values. The dirt coverage is calculated by
         # considering all pixels intensities that are higher than 0.02 as dirt
-#        Tuner = Tuning(event=self.event, document_controller=self.document_controller, as2=self.as2, 
-#                       superscan=self.superscan)        
-        message = ''
-        tune, message = self.tuning_necessary(number_frame, message)   
+#        Tuner = Tuning(event=self.event, document_controller=self.document_controller, as2=self.as2,
+#                       superscan=self.superscan)
+        message = '\t'
+        tune, return_message = self.tuning_necessary(frame_info, message)
+        message += return_message
         if not tune:
             return message
-        else:
+        elif self.retuning_mode[1] == 'manual':
+            return_message, focused = self.wait_for_focused(message)
+            message += return_message
+            if focused is not None:
+                new_z, newEHTFocus = focused
+                self.tuning_successful(True, frame_coord[:2] + (new_z, newEHTFocus))
+            else:
+                self.tuning_successful(False, None)
+        elif self.retuning_mode[1] == 'auto':
             # find place in the image with least dirt to do tuning there
             clean_spot, size = self.Tuner.find_biggest_clean_spot()
             clean_spot_nm = clean_spot * self.frame_parameters['fov'] / self.frame_parameters['size_pixels']
             tune_frame_parameters = {'size_pixels': (512, 512), 'pixeltime': 8, 'fov': 4,
-                                     'rotation': 0, 'center': clean_spot_nm}
-            data = self.Tuner.image.copy()
+                                     'rotation': self.frame_parameters['rotation'], 'center': clean_spot_nm}
+            if self.switches.get('blank_beam'):
+                self.verified_unblank()
             try:
                 self.Tuner.kill_aberrations(frame_parameters=tune_frame_parameters)
                 if self.event is not None and self.event.is_set():
-                    return (data, message)
+                    return message
             except DirtError:
                 self.Tuner.logwrite('No. '+str(number_frame) + ': Tuning was aborted because of dirt coming in.')
                 message += 'Tuning was aborted because of dirt coming in. '
@@ -308,7 +346,7 @@ class Mapping(object):
 
                 data_new = self.Tuner.image_grabber(frame_parameters = self.frame_parameters)
                 try:
-                    first_order_new, second_order_new = self.Tuner.find_peaks(iamge=data_new,
+                    first_order_new, second_order_new = self.Tuner.find_peaks(image=data_new,
                                                                          imsize=self.frame_parameters['fov'],
                                                                          second_order=True)
                     number_peaks_new = np.count_nonzero(first_order_new[:,-1]) + \
@@ -322,17 +360,11 @@ class Mapping(object):
                     #reset aberrations to values before tuning
                     self.Tuner.image_grabber(acquire_image=False, relative_aberrations=False,
                                         aberrations=self.Tuner.aberrations_tracklist[0])
-                    self.missing_peaks = 0
-                
+                    self.tuning_successful(False, None)
+
                 else:
                     if number_peaks_new > number_peaks:
-                        data = data_new
-                        #add new focus as offset to all coordinates
-                        for i in range(len(self.map_coords)):
-                            temp_coord = np.array(self.map_coords[i])
-                            temp_coord[i][3] += self.Tuner.aberrations['EHTFocus'] * 1e-9
-                            self.map_coords[i] = tuple(temp_coord[i])
-                        self.missing_peaks = 0
+                        self.tuning_successful(False, frame_coord[:3] + (self.Tuner.aberrations['EHTFocus'] * 1e-9,))
                     else:
                         message += 'Dismissed result because it did not improve tuning: ' + \
                                    str(self.Tuner.aberrations) + '. '
@@ -342,25 +374,29 @@ class Mapping(object):
                         #reset aberrations to values before tuning
                         self.Tuner.image_grabber(acquire_image=False, relative_aberrations=False,
                                         aberrations=self.Tuner.aberrations_tracklist[0])
-                        self.missing_peaks=0
-        
-        return (data, message)
+                        self.tuning_successful(False, None)
+            if self.switches.get('blank_beam'):
+                self.as2.set_property_as_float('C_Blank', 1)
+        else:
+            pass
+
+        return message
 
     def interpolation(self, target):
         """
         Bilinear Interpolation between 4 points that do not have to lie on a regular grid.
-    
+
         Parameters
         -----------
         target : Tuple
             (x,y) coordinates of the point you want to interpolate
-    
+
         points : List of tuples
             Defines the corners of a quadrilateral. The points in the list
             are supposed to have the order (top-left, top-right, bottom-right, bottom-left)
             The length of the tuples has to be at least 3 and can be as long as necessary.
             The output will always have the length (points[i] - 2).
-    
+
         Returns
         -------
         interpolated_point : Tuple
@@ -368,24 +404,29 @@ class Mapping(object):
             a number iterating over the list entries).
         """
         result = tuple()
-        points = []        
+        points = []
+        if len(self.coord_dict) > 4:
+            closest_points = find_nearest_neighbors(4, target, list(self.coord_dict.values()))
+            coord_dict = self.sort_quadrangle(closest_points)
+        else:
+            coord_dict = self.coord_dict
 
         for corner in self._corners:
-            points.append(self.coord_dict[corner])    
+            points.append(coord_dict[corner])
         # Bilinear interpolation within 4 points that are not lying on a regular grid.
         m = (target[0]-points[0][0]) / (points[1][0]-points[0][0])
         n = (target[0]-points[3][0]) / (points[2][0]-points[3][0])
-    
+
         Q1 = np.array(points[0]) + m*(np.array(points[1])-np.array(points[0]))
         Q2 = np.array(points[3]) + n*(np.array(points[2])-np.array(points[3]))
-    
+
         l = (target[1]-Q1[1]) / (Q2[1]-Q1[1])
-    
+
         T = Q1 + l*(Q2-Q1)
-    
+
         for j in range(len(points[0])-2):
             result += (T[j+2],)
-    
+
     #Interpolation with Inverse distance weighting with a Thin-PLate-Spline Kernel
     #    for j in range(len(points[0])-2):
     #        interpolated = 0
@@ -397,7 +438,7 @@ class Mapping(object):
     #            sum_weights += weight
     #        result += (interpolated/sum_weights,)
         return result
-                
+
     def load_mapping_config(self, path):
         #config_file = open(os.path.normpath(path))
         #counter = 0
@@ -408,7 +449,7 @@ class Mapping(object):
             #counter += 1
             #line = config_file.readline().strip()
                 line = line.strip()
-            
+
             #if line == 'end':
             #    break
                 if line.startswith('#'):
@@ -421,9 +462,9 @@ class Mapping(object):
                     setattr(self, line[0].strip(), eval(line[1].strip()))
                 else:
                     continue
-        
+
         #config_file.close()
-            
+
     def fill_dicts(self, line, file):
         if hasattr(self, line):
             if getattr(self, line) is None:
@@ -452,10 +493,10 @@ class Mapping(object):
         if not os.path.exists(path):
             os.makedirs(path)
         path = os.path.join(path, 'configs_map.txt')
-        
+
         #config_file = open(path, mode='w+')
         with open(path, mode='w+') as config_file:
-        
+
             config_file.write('# Configurations for ' + self.foldername + '.\n')
             config_file.write('# This file can be loaded to resume the mapping process with the exact same parameters.\n')
             config_file.write('# Only edit this file if you know what you do. ')
@@ -478,20 +519,20 @@ class Mapping(object):
     #        config_file.write('foldername: ' + repr(self.foldername) + '\n')
             config_file.write('number_of_images: ' + str(self.number_of_images) + '\n')
             config_file.write('offset: ' + str(self.offset) + '\n')
-            config_file.write('autotuning_mode: ' + self.autotuning_mode)
+            config_file.write('retuning_mode: ' + self.retuning_mode)
             #config_file.write('\nend')
-        
+
         #config_file.close()
 
-    def sort_quadrangle(self):
+    def sort_quadrangle(self, *args):
         """
         Brings 4 points in the correct order to form a quadrangle.
-    
+
         Parameters
         ----------
         coord_dict : dictionary
             4 points that are supposed to form a quadrangle.
-    
+
         Returns
         ------
         coord_dict_sorted : dictionary
@@ -499,29 +540,31 @@ class Mapping(object):
             Axis of the result are in standard directions, e.g. x points to the right and y to the top.
         """
         result = {}
-        points = []        
-
-        for corner in self._corners:
-            points.append(self.coord_dict[corner])
+        if len(args) > 0:
+            points = args[0]
+        else:
+            points = []
+            for corner in self._corners:
+                points.append(self.coord_dict[corner])
 
         points.sort()
-        
+
         if points[0][1] > points[1][1]:
             result['top-left'] = points[0]
             result['bottom-left'] = points[1]
         elif points[0][1] < points[1][1]:
             result['top-left'] = points[1]
             result['bottom-left'] = points[0]
-    
+
         if points[2][1] > points[3][1]:
             result['top-right'] = points[2]
             result['bottom-right'] = points[3]
         elif points[2][1] < points[3][1]:
             result['top-right'] = points[3]
             result['bottom-right'] = points[2]
-    
+
         return result
-    
+
     def verified_unblank(self, timeout=1):
         assert self.as2 is not None, 'Cannot do unblank beam without an instance of as2.'
         if not self.ccd:
@@ -546,7 +589,7 @@ class Mapping(object):
         else:
             print(str(counter) + ' steps until full unblank.')
         time.sleep(0.02)
-        
+
     def SuperScan_mapping(self, **kwargs):
         """
             This function will take a series of STEM images (subframes) to map a large rectangular sample area.
@@ -556,7 +599,7 @@ class Mapping(object):
             The user has to set the correct focus in all 4 corners. The function will then adjust the focus continuosly during mapping.
             Optionally, automatic focus adjustment is applied (default = off).
             Files will be saved to disk in a folder specified by the user. For each map a subfolder with current date and time is created.
-    
+
         """
         # check for entries in kwargs that override instance variables
         if kwargs.get('event') is not None:
@@ -577,132 +620,131 @@ class Mapping(object):
             self.savepath = kwargs.get('savepath')
         if kwargs.get('foldername') is not None:
             self.foldername = kwargs.get('foldername')
-    
+
         if np.size(self.frame_parameters.get('pixeltime')) > 1 and \
            np.size(self.frame_parameters.get('pixeltime')) != self.number_of_images:
             raise ValueError('The number of given pixeltimes does not match the given number of frames that should ' +
-                             'be recorded per location. You can either input one number or a list with a matching ' + 
+                             'be recorded per location. You can either input one number or a list with a matching ' +
                              'length.')
         pixeltimes = None
         if np.size(self.frame_parameters.get('pixeltime')) > 1:
             pixeltimes = self.frame_parameters.get('pixeltime')
             self.frame_parameters['pixeltime'] = pixeltimes[0]
-                             
+
         self.save_mapping_config()
-        
+
         self.Tuner = Tuning(frame_parameters=self.frame_parameters.copy(), detectors=self.detectors, event=self.event,
-                     online=self.online, document_controller=self.document_controller, as2=self.as2, 
+                     online=self.online, document_controller=self.document_controller, as2=self.as2,
                      superscan=self.superscan)
 
-        if self.number_of_images > 1 and self.switches['do_autotuning'] == True:
-            self.Tuner.logwrite('Acquiring an image series and using autofocus is currently not possible. ' +
-                         'Autofocus will be disabled.', level='warn')
-            self.switches['do_autotuning'] = False
-            
+#        if self.number_of_images > 1 and self.switches['do_autotuning'] == True:
+#            self.Tuner.logwrite('Acquiring an image series and using autofocus is currently not possible. ' +
+#                         'Autofocus will be disabled.', level='warn')
+#            self.switches['do_autotuning'] = False
+
         # Sort coordinates in case they were not in the right order
-        self.coord_dict = self.sort_quadrangle()    
-        # Find bounding rectangle of the four points given by the user        
+        self.coord_dict = self.sort_quadrangle()
+        # Find bounding rectangle of the four points given by the user
         self.leftX = np.amin((self.coord_dict['top-left'][0], self.coord_dict['bottom-left'][0]))
         self.rightX = np.amax((self.coord_dict['top-right'][0], self.coord_dict['bottom-right'][0]))
         self.topY = np.amax((self.coord_dict['top-left'][1], self.coord_dict['top-right'][1]))
         self.botY = np.amin((self.coord_dict['bottom-left'][1], self.coord_dict['bottom-right'][1]))
 
-        # calculate the number of subframes in (x,y). A small distance is kept between the subframes
-        # to ensure they do not overlap
-        map_coords, frame_number = self.create_map_coordinates(compensate_stage_error=
+        map_coords = self.create_map_coordinates(compensate_stage_error=
                                                                self.switches['compensate_stage_error'])
         # create output folder:
         self.store = os.path.join(self.savepath, self.foldername)
         if not os.path.exists(self.store):
             os.makedirs(self.store)
-    
+
+        logfile = open(os.path.join(self.store, 'log.txt'))
         test_map = []
         counter = 0
-        self.missing_peaks = 0
-        bad_frames = {}
-        
         self.write_map_info_file()
-        # Now go to each position in "map_coords" and take a snapshot    
-        for frame_coord in map_coords:
+        # Now go to each position in "map_coords" and take a snapshot
+        for frame_coord, frame_info in map_coords:
             if self.event is not None and self.event.is_set():
                 break
             counter += 1
             stagex, stagey, stagex_corrected, stagey_corrected = frame_coord
             stagez, fine_focus = self.interpolation((stagex, stagey))
             self.Tuner.logwrite(str(counter) + '/' + str(len(map_coords)) + ': (No. ' +
-                         str(frame_number[counter-1]['number']) + ') x: ' +str((stagex_corrected)) + ', y: ' +
+                         str(frame_info['number']) + ') x: ' +str((stagex_corrected)) + ', y: ' +
                          str((stagey_corrected)) + ', z: ' + str((stagez)) + ', focus: ' + str((fine_focus)))
             # only do hardware operations when online
-            if self.online:    
+            if self.online:
                 if self.switches.get('blank_beam'):
                     self.as2.set_property_as_float('C_Blank', 1)
-    
+
                 self.as2.set_property_as_float('StageOutX', stagex_corrected)
                 self.as2.set_property_as_float('StageOutY', stagey_corrected)
                 if self.switches['use_z_drive']:
                     self.as2.set_property_as_float('StageOutZ', stagez)
                 self.as2.set_property_as_float('EHTFocus', fine_focus)
-    
+
                 # Wait until movement of stage is done (wait longer time before first frame)
                 if counter == 1:
                     time.sleep(10) # time in seconds
                 else:
                     time.sleep(2)
-    
-                name = str('%.4d_%.3f_%.3f.tif' % (frame_number[counter-1]['number'], stagex_corrected*1e6,
-                                                   stagey_corrected*1e6))
-                
-                if self.switches.get('do_autotuning'):
-                    if self.switches.get('blank_beam'):
-                            self.verified_unblank()
-                    data, message = self.handle_autotuning(frame_number[counter-1]['number'])
 
-                    if self.switches.get('blank_beam'):
-                            self.as2.set_property_as_float('C_Blank', 1)
-                else:
+                name = str('%.4d_%.3f_%.3f.tif' % (frame_info['number'], stagex_corrected*1e6,
+                                                   stagey_corrected*1e6))
+
+#                if self.switches.get('do_autotuning'):
+#                    if self.switches.get('blank_beam'):
+#                            self.verified_unblank()
+#                    data, message = self.handle_autotuning(frame_info['number'])
+#
+#                    if self.switches.get('blank_beam'):
+#                            self.as2.set_property_as_float('C_Blank', 1)
+#                else:
                     # Take frame and save it to disk
-                    if self.number_of_images < 2:
-                        if self.switches.get('blank_beam'):
-                            self.verified_unblank()       
-                        data = self.Tuner.image_grabber(show_live_image=True)
-                        tifffile.imsave(os.path.join(self.store, name), data)
-                    else:
-                        if self.switches.get('blank_beam'):
-                            self.verified_unblank()
-                        splitname = os.path.splitext(name)    
-                        for i in range(self.number_of_images):
-                            if pixeltimes is not None:
-                                self.frame_parameters['pixeltime'] = pixeltimes[i]
-                            data = self.Tuner.image_grabber(frame_parameters=self.frame_parameters,
-                                                            show_live_image=True)
-                            name = splitname[0] + ('_{:0'+str(len(str(self.number_of_images)))+'d}'
-                                                   ).format(i) + splitname[1]
-                            tifffile.imsave(os.path.join(self.store, name), data)
-                            if self.switches.get('abort_series_on_dirt'):
-                                dirt_mask = self.Tuner.dirt_detector(image=data)
-                                if np.sum(dirt_mask)/np.prod(data.shape) > self.dirt_area:
-                                    self.Tuner.logwrite('Series was aborted because more than ' +
-                                                 str(int(self.dirt_area*100)) + '% dirt coverage.')
-                                    break
-                    
+                if self.number_of_images < 2:
                     if self.switches.get('blank_beam'):
-                        self.as2.set_property_as_float('C_Blank', 1)
-                        
-                    if self.switches.get('focus_at_edges') and frame_number[counter-1].get('retune'):
-                        self.wait_for_focused(frame_number[counter-1].get('corner'), stagex, stagey, self.Tuner)
-                
-            test_map.append(frame_coord)
-    
-        if self.switches['do_autotuning']:
-            bad_frames_file = open(self.store+'bad_frames.txt', 'w')
-            bad_frames_file.write('#This file contains the filenames of \"bad\" frames and the cause for the ' +
-                                  'listing.\n\n')
-            for key, value in bad_frames.items():
-                bad_frames_file.write('{0:30}{1:}\n'.format(key+':', value))
-                
+                        self.verified_unblank()
+                    self.Tuner.image = self.Tuner.image_grabber(show_live_image=True)
+                    tifffile.imsave(os.path.join(self.store, name), self.Tuner.image)
+                else:
+                    if self.switches.get('blank_beam'):
+                        self.verified_unblank()
+                    splitname = os.path.splitext(name)
+                    for i in range(self.number_of_images):
+                        if pixeltimes is not None:
+                            self.frame_parameters['pixeltime'] = pixeltimes[i]
+                        self.Tuner.image = self.Tuner.image_grabber(frame_parameters=self.frame_parameters,
+                                                        show_live_image=True)
+                        name = splitname[0] + ('_{:0'+str(len(str(self.number_of_images)))+'d}'
+                                               ).format(i) + splitname[1]
+                        tifffile.imsave(os.path.join(self.store, name), self.Tuner.image)
+                        if self.switches.get('abort_series_on_dirt'):
+                            dirt_mask = self.Tuner.dirt_detector()
+                            if np.sum(dirt_mask)/np.prod(data.shape) > self.dirt_area:
+                                self.Tuner.logwrite('Series was aborted because more than ' +
+                                             str(int(self.dirt_area*100)) + '% dirt coverage.')
+                                break
+
+                if self.switches.get('blank_beam'):
+                    self.as2.set_property_as_float('C_Blank', 1)
+
+                if self.switches.get('do_retuning'):
+                    message = self.handle_retuning(frame_coord, frame_info)
+                    logfile.write(message)
+
+#                if self.switches.get('focus_at_edges') and frame_info.get('retune'):
+#                    self.wait_for_focused(frame_info.get('corner'), stagex, stagey, self.Tuner)
+            test_map.append(frame_coord + (stagez, fine_focus))
+
+#        if self.switches['do_autotuning']:
+#            bad_frames_file = open(self.store+'bad_frames.txt', 'w')
+#            bad_frames_file.write('#This file contains the filenames of \"bad\" frames and the cause for the ' +
+#                                  'listing.\n\n')
+#            for key, value in bad_frames.items():
+#                bad_frames_file.write('{0:30}{1:}\n'.format(key+':', value))
+
         if self.switches.get('blank_beam'):
             self.as2.set_property_as_float('C_Blank', 0)
-    
+
         #acquire overview image if desired
         if self.online and self.switches['acquire_overview']:
             #Use longest edge as image size
@@ -710,24 +752,24 @@ class Mapping(object):
                 over_size = abs(self.topY-self.botY)*1e9 + 6*self.frame_parameters['fov']
             else:
                 over_size = abs(self.rightX-self.leftX)*1e9 + 6*self.frame_parameters['fov']
-    
+
             #Find center of mapped area:
             map_center = ((self.leftX+self.rightX)/2, (self.topY+self.botY)/2)
             #Goto center
-            #vt.as2_set_control(self.as2, 'StageOutX', map_center[0])
-            #vt.as2_set_control(self.as2, 'StageOutY', map_center[1])
             self.as2.set_property_as_float('StageOutX', map_center[0])
             self.as2.set_property_as_float('StageOutY', map_center[1])
             time.sleep(5)
             #acquire image and save it
             overview_parameters = {'size_pixels': (4096, 4096), 'center': (0,0), 'pixeltime': 4, \
                                 'fov': over_size, 'rotation': self.frame_parameters['rotation']}
-            image = self.Tuner.image_grabber(frame_parameters=overview_parameters, show_live_image=True)
-            tifffile.imsave(os.path.join(self.store, 'Overview_{:.0f}_nm.tif'.format(over_size)), image)
-    
+            self.Tuner.image = self.Tuner.image_grabber(frame_parameters=overview_parameters, show_live_image=True)
+            tifffile.imsave(os.path.join(self.store, 'Overview_{:.0f}_nm.tif'.format(over_size)), self.Tuner.image)
+
         if self.event is None or not self.event.is_set():
             x_map = np.zeros((self.num_subframes[1], self.num_subframes[0]))
             y_map = np.zeros((self.num_subframes[1], self.num_subframes[0]))
+            x_corrected_map = np.zeros((self.num_subframes[1], self.num_subframes[0]))
+            y_corrected_map = np.zeros((self.num_subframes[1], self.num_subframes[0]))
             z_map = np.zeros((self.num_subframes[1], self.num_subframes[0]))
             focus_map = np.zeros((self.num_subframes[1], self.num_subframes[0]))
             for j in range(self.num_subframes[1]):
@@ -735,36 +777,44 @@ class Mapping(object):
                     if j%2 == 0: #Odd lines, e.g. map from left to right
                         x_map[j,i] = test_map[i+j*self.num_subframes[0]][0]
                         y_map[j,i] = test_map[i+j*self.num_subframes[0]][1]
-                        z_map[j,i] = test_map[i+j*self.num_subframes[0]][2]
-                        focus_map[j,i] = test_map[i+j*self.num_subframes[0]][3]
+                        x_corrected_map[j,i] = test_map[i+j*self.num_subframes[0]][2]
+                        y_corrected_map[j,i] = test_map[i+j*self.num_subframes[0]][3]
+                        z_map[j,i] = test_map[i+j*self.num_subframes[0]][4]
+                        focus_map[j,i] = test_map[i+j*self.num_subframes[0]][5]
                     else: #Even lines, e.g. scan from right to left
                         x_map[j,(self.num_subframes[0]-(i+1))] = test_map[i+j*self.num_subframes[0]][0]
                         y_map[j,(self.num_subframes[0]-(i+1))] = test_map[i+j*self.num_subframes[0]][1]
-                        z_map[j,(self.num_subframes[0]-(i+1))] = test_map[i+j*self.num_subframes[0]][2]
-                        focus_map[j,(self.num_subframes[0]-(i+1))] = test_map[i+j*self.num_subframes[0]][3]
-    
-    
+                        x_corrected_map[j,(self.num_subframes[0]-(i+1))] = test_map[i+j*self.num_subframes[0]][2]
+                        y_corrected_map[j,(self.num_subframes[0]-(i+1))] = test_map[i+j*self.num_subframes[0]][3]
+                        z_map[j,(self.num_subframes[0]-(i+1))] = test_map[i+j*self.num_subframes[0]][4]
+                        focus_map[j,(self.num_subframes[0]-(i+1))] = test_map[i+j*self.num_subframes[0]][5]
+
+
             tifffile.imsave(os.path.join(self.store, 'x_map.tif'), np.asarray(x_map, dtype='float32'))
             tifffile.imsave(os.path.join(self.store, 'y_map.tif'), np.asarray(y_map, dtype='float32'))
+            tifffile.imsave(os.path.join(self.store, 'x_corrected_map.tif'), np.asarray(x_map, dtype='float32'))
+            tifffile.imsave(os.path.join(self.store, 'y_corrected_map.tif'), np.asarray(y_map, dtype='float32'))
             tifffile.imsave(os.path.join(self.store, 'z_map.tif'), np.asarray(z_map, dtype='float32'))
             tifffile.imsave(os.path.join(self.store, 'focus_map.tif'), np.asarray(focus_map, dtype='float32'))
-        
-        #self.superscan.stop_playing()
-        self.Tuner.logwrite('Done.\n')
 
-    def wait_for_focused(self, corner, stagex, stagey, Image, timeout=300, accept_timeout=30):
+        #self.superscan.stop_playing()
+        logfile.write('\nDONE')
+        logfile.close()
+        self.Tuner.logwrite('\nDONE\n')
+
+    def wait_for_focused(self, message, timeout=300, accept_timeout=30):
         self.tune_event.set()
-        
+
         accepted = False
         def was_accepted():
             nonlocal accepted
             accepted = True
-            
+
         self.document_controller.show_confirmation_message_box('Please focus now at the current position. Do not ' +
                                                                'change the stage position! If you are done, ' +
-                                                               'press "Done" and the mapping process will continue.' + 
+                                                               'press "Done" and the mapping process will continue.' +
                                                                'Please confirm this message within ' +
-                                                               str(accept_timeout) +  ' seconds, otherwise the map ' + 
+                                                               str(accept_timeout) +  ' seconds, otherwise the map ' +
                                                                'will continue with the old values.',
                                                                was_accepted)
         starttime = time.time()
@@ -773,13 +823,14 @@ class Mapping(object):
                 break
             time.sleep(0.1)
         else:
-            Image.logwrite('Timeout during waiting for confirmation. Continuing with old values.', level='warn')
+            message += 'Timeout during waiting for confirmation. Continuing with old values. '
+            self.Tuner.logwrite(message, level='warn')
             self.superscan.stop_playing()
             self.tune_event.clear()
-            return
-            
+            return (message, None)
+
         if self.switches.get('blank_beam'):
-            self.superscan.set_property_as_float('C_Blank', 0)
+            self.as2.set_property_as_float('C_Blank', 0)
         self.superscan.profile_index(0)
         self.superscan.start_playing()
         starttime = time.time()
@@ -788,25 +839,26 @@ class Mapping(object):
                 break
             time.sleep(0.1)
         else:
-            Image.logwrite('Timeout during waiting for new focus. Keeping old value.', level='warn')
+            message += 'Timeout during waiting for new focus. Keeping old value. '
+            self.Tuner.logwrite(message, level='warn')
             self.superscan.stop_playing()
             self.tune_event.clear()
-            return
-        
-        self.coord_dict[corner] = (stagex, stagey, self.gui_communication.pop('new_z'),
-                                   self.gui_communication.pop('new_EHTFocus'))
+            return (message, None)
+
         self.superscan.stop_playing()
         if self.switches.get('blank_beam'):
-            self.superscan.set_property_as_float('C_Blank', 1)
-        
+            self.as2.set_property_as_float('C_Blank', 1)
+
+        return (message, (self.gui_communication.pop('new_z'), self.gui_communication.pop('new_EHTFocus')))
+
     def write_map_info_file(self):
-    
+
             def translator(switch_state):
                 if switch_state:
                     return 'ON'
                 else:
                     return 'OFF'
-        
+
             config_file = open(os.path.join(self.store, 'map_info.txt'), 'w')
             config_file.write('#This file contains all parameters used for the mapping.\n\n')
             config_file.write('#Map parameters:\n')
@@ -819,7 +871,7 @@ class Mapping(object):
                          'Compensate stage error': translator(self.switches.get('compensate_stage_error'))}
             for key, value in map_paras.items():
                 config_file.write('{0:18}{1:}\n'.format(key+':', value))
-            
+
             config_file.write('\n#Scan parameters:\n')
             scan_paras = {'SuperScan FOV value': str(self.frame_parameters.get('fov')) + ' nm',
                           'Image size': str(self.frame_parameters.get('size_pixels'))+' px',
@@ -829,9 +881,9 @@ class Mapping(object):
                           'Detectors': str(self.detectors)}
             for key, value in scan_paras.items():
                 config_file.write('{0:25}{1:}\n'.format(key+':', value))
-        
+
             config_file.close()
-            
+
 #def find_offset_and_rotation(as2, superscan):
 #    """
 #    This function finds the current rotation of the scan with respect to the stage coordinate system and the offset that has to be set between two neighboured images when no overlap should occur.
