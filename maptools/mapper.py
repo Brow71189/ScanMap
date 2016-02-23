@@ -16,7 +16,7 @@ with warnings.catch_warnings():
     #from ViennaTools import ViennaTools as vt
     from ViennaTools import tifffile
 
-from .autotune import Tuning, DirtError
+from .autotune import Imaging, Tuning, DirtError
 #from . import autoalign
 
 
@@ -33,8 +33,8 @@ class Mapping(object):
         # frame_parameters are: rotation, imsize, impix, pixeltime
         self.frame_parameters = kwargs.get('frame_parameters', {})
         self.detectors = kwargs.get('detectors', {'HAADF': False, 'MAADF': True})
-        # switches are: do_autotuning, use_z_drive, auto_offset, auto_rotation, compensate_stage_error,
-        # acquire_overview, blank_beam, tune_at_edges, abort_series_on_dirt
+        # supported switches are: do_autotuning, use_z_drive, auto_offset, auto_rotation, compensate_stage_error,
+        # acquire_overview, blank_beam, tune_at_edges, abort_series_on_dirt, do_isotope_mapping
         self.switches = kwargs.get('switches', {})
         self.number_of_images = kwargs.get('number_of_images', 1)
         self.dirt_area = kwargs.get('dirt_area', 0.5)
@@ -51,6 +51,7 @@ class Mapping(object):
         self.retuning_mode = kwargs.get('retuning_mode', ('missing_peaks', 'manual'))
         self.gui_communication = {}
         self.missing_peaks = 0
+        self.isotope_mapping_settings = None
 
     @property
     def online(self):
@@ -312,7 +313,7 @@ class Mapping(object):
         # considering all pixels intensities that are higher than 0.02 as dirt
 #        Tuner = Tuning(event=self.event, document_controller=self.document_controller, as2=self.as2,
 #                       superscan=self.superscan)
-        message = '\t'
+        message = '\tTuner: '
         tune, return_message = self.tuning_necessary(frame_info, message)
         message += return_message
         if not tune:
@@ -338,10 +339,11 @@ class Mapping(object):
                 if self.event is not None and self.event.is_set():
                     return message
             except DirtError:
-                self.Tuner.logwrite('No. '+str(number_frame) + ': Tuning was aborted because of dirt coming in.')
+                self.Tuner.logwrite('No. '+ str(frame_info['number']) +
+                                    ': Tuning was aborted because of dirt coming in.')
                 message += 'Tuning was aborted because of dirt coming in. '
             else:
-                self.Tuner.logwrite('No. '+str(number_frame) + ': New tuning: '+str(self.Tuner.aberrations))
+                self.Tuner.logwrite('No. '+ str(frame_info['number']) + ': New tuning: '+str(self.Tuner.aberrations))
                 message += 'New tuning: '+ str(self.Tuner.aberrations) + '. '
 
                 data_new = self.Tuner.image_grabber(frame_parameters = self.frame_parameters)
@@ -354,7 +356,7 @@ class Mapping(object):
                 except RuntimeError:
                     message += 'Dismissed result because it did not improve tuning: ' + \
                                str(self.Tuner.aberrations) + '. '
-                    self.Tuner.logwrite('No. '+str(number_frame) + \
+                    self.Tuner.logwrite('No. '+ str(frame_info['number']) + \
                                    ': Dismissed result because it did not improve tuning: ' + \
                                    str(self.Tuner.aberrations))
                     #reset aberrations to values before tuning
@@ -368,7 +370,7 @@ class Mapping(object):
                     else:
                         message += 'Dismissed result because it did not improve tuning: ' + \
                                    str(self.Tuner.aberrations) + '. '
-                        self.Tuner.logwrite('No. ' + str(number_frame) + \
+                        self.Tuner.logwrite('No. ' + str(frame_info['number']) + \
                                        ': Dismissed result because it did not improve tuning: ' + \
                                        str(self.Tuner.aberrations))
                         #reset aberrations to values before tuning
@@ -380,6 +382,54 @@ class Mapping(object):
         else:
             pass
 
+        return message
+    
+    def handle_isotope_mapping(self, frame_coord, frame_info, name, **kwargs):
+        message = '\tIsotope mapper: '
+        savepath = os.path.join(self.savepath, os.path.splitext(name)[0])        
+        if not os.path.exists(savepath):
+            os.makedirs(savepath)
+        
+        clean_spots = self.Tuner.find_clean_spots(**kwargs)
+        
+        if len(clean_spots) < 1:
+            message += 'No clean spots found. '
+            self.Tuner.logwrite('No. ' + str(frame_info['number']) + ': No clean spots found.')
+            return message
+        
+        frame_parameters = self.isotope_mapping_settings.get('frame_parameters')
+        Imager = Imaging(frame_parameters=frame_parameters)
+        
+        Imager.logwrite('No. ' + str(frame_info['number']) + ': Start ejecting atoms.')
+        
+        if self.switches['blank_beam']:
+            self.verified_unblank()
+        
+        for clean_spot in clean_spots:
+            name = 'spot_y_x_' + str(clean_spot[0]) + '_' + str(clean_spot[1]) + '_'
+            message += (name + ': ')
+            intensity_reference = 0
+            clean_spot_nm = clean_spot * frame_parameters['fov'] / frame_parameters['size_pixels']
+            Imager.frame_parameters['center'] = clean_spot_nm
+            for i in range(self.isotope_mapping_settings.get('max_number_frames', 1)):
+                Imager.image = Imager.image_grabber(show_live_image=True)
+                tifffile.imsave(os.path.join(savepath, name + '{:02d}'.format(i) + '.tif'))
+                if i == 0:
+                    intensity_reference = np.sum(Imager.image)
+                elif (np.sum(Imager.image) < self.isotope_mapping_settings.get('intensity_threshold', 0.8) *
+                      intensity_reference):
+                    message += 'Found missing atom after {:d} frames '.format(i)
+                    Imager.logwrite('Found missing atom after {:d} frames '.format(i))
+                    break
+                elif (np.sum(Imager.image) > 3 - 2*self.isotope_mapping_settings.get('intensity_threshold', 0.8) *
+                      intensity_reference):
+                    message += 'Detected dirt coming in after {:d} frames '.format(i)
+                    Imager.logwrite('Detected dirt coming in after {:d} frames '.format(i))
+                    break
+        
+        if self.switches['blank_beam']:
+            self.as2.set_property_as_float('C_Blank', 1)
+        
         return message
 
     def interpolation(self, target):
@@ -637,11 +687,6 @@ class Mapping(object):
                      online=self.online, document_controller=self.document_controller, as2=self.as2,
                      superscan=self.superscan)
 
-#        if self.number_of_images > 1 and self.switches['do_autotuning'] == True:
-#            self.Tuner.logwrite('Acquiring an image series and using autofocus is currently not possible. ' +
-#                         'Autofocus will be disabled.', level='warn')
-#            self.switches['do_autotuning'] = False
-
         # Sort coordinates in case they were not in the right order
         self.coord_dict = self.sort_quadrangle()
         # Find bounding rectangle of the four points given by the user
@@ -671,6 +716,9 @@ class Mapping(object):
             self.Tuner.logwrite(str(counter) + '/' + str(len(map_coords)) + ': (No. ' +
                          str(frame_info['number']) + ') x: ' +str((stagex_corrected)) + ', y: ' +
                          str((stagey_corrected)) + ', z: ' + str((stagez)) + ', focus: ' + str((fine_focus)))
+            logfile.write(str(counter) + '/' + str(len(map_coords)) + ': (No. ' +
+                         str(frame_info['number']) + ') x: ' +str((stagex_corrected)) + ', y: ' +
+                         str((stagey_corrected)) + ', z: ' + str((stagez)) + ', focus: ' + str((fine_focus)) + ':\n')
             # only do hardware operations when online
             if self.online:
                 if self.switches.get('blank_beam'):
@@ -691,14 +739,6 @@ class Mapping(object):
                 name = str('%.4d_%.3f_%.3f.tif' % (frame_info['number'], stagex_corrected*1e6,
                                                    stagey_corrected*1e6))
 
-#                if self.switches.get('do_autotuning'):
-#                    if self.switches.get('blank_beam'):
-#                            self.verified_unblank()
-#                    data, message = self.handle_autotuning(frame_info['number'])
-#
-#                    if self.switches.get('blank_beam'):
-#                            self.as2.set_property_as_float('C_Blank', 1)
-#                else:
                     # Take frame and save it to disk
                 if self.number_of_images < 2:
                     if self.switches.get('blank_beam'):
@@ -714,9 +754,9 @@ class Mapping(object):
                             self.frame_parameters['pixeltime'] = pixeltimes[i]
                         self.Tuner.image = self.Tuner.image_grabber(frame_parameters=self.frame_parameters,
                                                         show_live_image=True)
-                        name = splitname[0] + ('_{:0'+str(len(str(self.number_of_images)))+'d}'
-                                               ).format(i) + splitname[1]
-                        tifffile.imsave(os.path.join(self.store, name), self.Tuner.image)
+                        new_name = splitname[0] + ('_{:0'+str(len(str(self.number_of_images)))+'d}'
+                                                   ).format(i) + splitname[1]
+                        tifffile.imsave(os.path.join(self.store, new_name), self.Tuner.image)
                         if self.switches.get('abort_series_on_dirt'):
                             dirt_mask = self.Tuner.dirt_detector()
                             if np.sum(dirt_mask)/np.prod(data.shape) > self.dirt_area:
@@ -729,18 +769,13 @@ class Mapping(object):
 
                 if self.switches.get('do_retuning'):
                     message = self.handle_retuning(frame_coord, frame_info)
-                    logfile.write(message)
+                    logfile.write(message + '\n')
+                    
+                if self.switches.get('do_isotope_mapping'):
+                    message = self.handle_isotope_mappping(frame_coord, frame_info, name)
+                    logfile.write(message + '\n')
 
-#                if self.switches.get('focus_at_edges') and frame_info.get('retune'):
-#                    self.wait_for_focused(frame_info.get('corner'), stagex, stagey, self.Tuner)
             test_map.append(frame_coord + (stagez, fine_focus))
-
-#        if self.switches['do_autotuning']:
-#            bad_frames_file = open(self.store+'bad_frames.txt', 'w')
-#            bad_frames_file.write('#This file contains the filenames of \"bad\" frames and the cause for the ' +
-#                                  'listing.\n\n')
-#            for key, value in bad_frames.items():
-#                bad_frames_file.write('{0:30}{1:}\n'.format(key+':', value))
 
         if self.switches.get('blank_beam'):
             self.as2.set_property_as_float('C_Blank', 0)
@@ -797,7 +832,6 @@ class Mapping(object):
             tifffile.imsave(os.path.join(self.store, 'z_map.tif'), np.asarray(z_map, dtype='float32'))
             tifffile.imsave(os.path.join(self.store, 'focus_map.tif'), np.asarray(focus_map, dtype='float32'))
 
-        #self.superscan.stop_playing()
         logfile.write('\nDONE')
         logfile.close()
         self.Tuner.logwrite('\nDONE\n')

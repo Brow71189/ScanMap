@@ -257,7 +257,10 @@ class Imaging(object):
         biggest_spot = np.unravel_index(np.argmax(dist_mask), np.shape(self.mask))
         max_distance = np.amax(dist_mask)
 
-        return (biggest_spot, max_distance)
+        return (np.array(biggest_spot), max_distance)
+    
+    def find_clean_spots(self, size=3, image_overlap=0.1, dirt_overlap=0, **kwargs):
+        pass
 
     def find_dirt_threshold(self, **kwargs):
         """
@@ -300,8 +303,8 @@ class Imaging(object):
             threshold = dirt_end * 1.25
         else:
         # if distance between dirt_start and dirt_end is longer, set threshold to a value
-        # 10% smaller than mean to prevent missing dirt that is actually there in the image
-            threshold = (dirt_end + dirt_start) * 0.45
+        # 16% smaller than mean to prevent missing dirt that is actually there in the image
+            threshold = (dirt_end + dirt_start) * 0.42
 
         #self.dirt_threshold = threshold
 
