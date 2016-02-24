@@ -259,8 +259,70 @@ class Imaging(object):
 
         return (np.array(biggest_spot), max_distance)
     
-    def find_clean_spots(self, size=3, image_overlap=0.1, dirt_overlap=0, **kwargs):
-        pass
+    def find_clean_spots(self, size=3, overlap=0.1, debug_mode=False, **kwargs):
+        """
+        Finds clean spots of the given size in an image. For this to work an image with a bigger FOV has to be there
+        as an instance variable or passed to the function (remember to also set or pass the FOV or correct frame
+        parameters).
+        """
+        if kwargs.get('imsize') is not None:
+            self.imsize = kwargs.pop('imsize')
+        if kwargs.get('frame_parameters') is not None:
+            self.frame_parameters = kwargs.pop('frame_parameters')
+        if kwargs.get('image') is not None:
+            self.image = kwargs.pop('image')
+        if kwargs.get('mask') is not None:
+            self.mask = kwargs.pop('mask')
+        if self.mask is None:
+            self.dirt_detector(**kwargs)
+        if self.imsize is None and self.frame_parameters.get('fov'):
+            self.imsize = self.frame_parameters['fov']
+        
+        if self.imsize is None or self.image is None:
+            raise RuntimeError('An image and its size has to be there in order to find clean spots.')
+        if self.imsize < size:
+            raise RuntimeError('Can not find clean spots that are larger than the image size.')
+        
+        counter = 0
+        mask = self.mask.copy()
+        size_pixels = size/self.imsize*self.shape[0]
+        radius_pixels = size_pixels/2
+        radius_overlap = radius_pixels * (1-overlap)
+        size_pixels = int(np.rint(size_pixels))
+        radius_pixels = int(np.rint(radius_pixels))
+        radius_overlap = int(np.rint(radius_overlap))
+        radius_left = radius_right = radius_top = radius_bottom = radius_overlap
+        clean_spots = []
+        dist = distance_transform_cdt(mask*-1+1)
+        dist[:radius_pixels] = 0
+        dist[-radius_pixels:] = 0
+        dist[:,:radius_pixels] = 0
+        dist[:, -radius_pixels:] = 0
+        while counter < 100:
+            counter +=1
+            maxi = np.unravel_index(np.argmax(dist), dist.shape)
+            radius_left = np.amin((maxi[1], 2*radius_overlap))
+            radius_right = np.amin((dist.shape[1]-maxi[1], 2*radius_overlap))
+            radius_top = np.amin((maxi[0], 2*radius_overlap))
+            radius_bottom = np.amin((dist.shape[0]-maxi[0], 2*radius_overlap))
+            if dist[maxi] > radius_overlap:
+                clean_spots.append(np.array(maxi))
+                
+                dist[maxi[0]-radius_top:maxi[0]+radius_bottom,
+                     maxi[1]-radius_left:maxi[1]+radius_right] = 0
+            else:
+                self.logwrite('Finished because all distances are too small')
+                break
+        else:
+            self.logwrite('Finished because of maximium number of iterations was exceeded')
+        
+        if debug_mode:
+            for clean_spot in clean_spots:
+                mask[clean_spot[0]-radius_pixels:clean_spot[0]+radius_pixels,
+                     clean_spot[1]-radius_pixels:clean_spot[1]+radius_pixels] += 2
+            return (clean_spots, mask)
+        else:
+            return clean_spots
 
     def find_dirt_threshold(self, **kwargs):
         """

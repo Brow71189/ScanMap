@@ -34,7 +34,7 @@ class Mapping(object):
         self.frame_parameters = kwargs.get('frame_parameters', {})
         self.detectors = kwargs.get('detectors', {'HAADF': False, 'MAADF': True})
         # supported switches are: do_autotuning, use_z_drive, auto_offset, auto_rotation, compensate_stage_error,
-        # acquire_overview, blank_beam, tune_at_edges, abort_series_on_dirt, do_isotope_mapping
+        # acquire_overview, blank_beam, tune_at_edges, abort_series_on_dirt, isotope_mapping
         self.switches = kwargs.get('switches', {})
         self.number_of_images = kwargs.get('number_of_images', 1)
         self.dirt_area = kwargs.get('dirt_area', 0.5)
@@ -51,7 +51,7 @@ class Mapping(object):
         self.retuning_mode = kwargs.get('retuning_mode', ('missing_peaks', 'manual'))
         self.gui_communication = {}
         self.missing_peaks = 0
-        self.isotope_mapping_settings = None
+        self.isotope_mapping_settings = kwargs.get('isotope_mapping_settings', {})
 
     @property
     def online(self):
@@ -390,6 +390,8 @@ class Mapping(object):
         if not os.path.exists(savepath):
             os.makedirs(savepath)
         
+        if self.isotope_mapping_settings.get('overlap') is not None:
+            kwargs['overlap'] = self.isotope_mapping_settings['overlap']
         clean_spots = self.Tuner.find_clean_spots(**kwargs)
         
         if len(clean_spots) < 1:
@@ -398,7 +400,12 @@ class Mapping(object):
             return message
         
         frame_parameters = self.isotope_mapping_settings.get('frame_parameters')
-        Imager = Imaging(frame_parameters=frame_parameters)
+        Imager.image = self.Tuner.image
+        Imager.imsize = self.frame_parameters['fov']
+        # Only calculate dirt threshold once per map and pass it to Imager for performance reasons
+        if self.Tuner.dirt_threshold is None:
+            self.Tuner.dirt_threshold = self.Tuner.dirt_detector
+        Imager.dirt_threshold = self.Tuner.dirt_threshold
         
         Imager.logwrite('No. ' + str(frame_info['number']) + ': Start ejecting atoms.')
         
@@ -412,7 +419,7 @@ class Mapping(object):
             clean_spot_nm = clean_spot * frame_parameters['fov'] / frame_parameters['size_pixels']
             Imager.frame_parameters['center'] = clean_spot_nm
             for i in range(self.isotope_mapping_settings.get('max_number_frames', 1)):
-                Imager.image = Imager.image_grabber(show_live_image=True)
+                Imager.image = Imager.image_grabber(show_live_image=True, frame_parameters=frame_parameters)
                 tifffile.imsave(os.path.join(savepath, name + '{:02d}'.format(i) + '.tif'))
                 if i == 0:
                     intensity_reference = np.sum(Imager.image)
@@ -771,7 +778,7 @@ class Mapping(object):
                     message = self.handle_retuning(frame_coord, frame_info)
                     logfile.write(message + '\n')
                     
-                if self.switches.get('do_isotope_mapping'):
+                if self.switches.get('isotope_mapping'):
                     message = self.handle_isotope_mappping(frame_coord, frame_info, name)
                     logfile.write(message + '\n')
 

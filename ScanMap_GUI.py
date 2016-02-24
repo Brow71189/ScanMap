@@ -28,20 +28,24 @@ class ScanMapPanelDelegate(object):
         self.ccd = None
         self.coord_dict = {'top-left': None, 'top-right': None, 'bottom-right': None, 'bottom-left': None}
         self.switches = {'do_retuning': False, 'use_z_drive': False, 'abort_series_on_dirt': False,
-                         'compensate_stage_error': False, 'acquire_overview': True, 'blank_beam': False}
-        self.frame_parameters = {'size_pixels': 2048, 'pixeltime': 0.2, 'fov': 20, 'rotation': 114.5}
+                         'compensate_stage_error': False, 'acquire_overview': True, 'blank_beam': False,
+                         'isotope_mapping': False}
+        self.frame_parameters = {'size_pixels': (2048, 2048), 'pixeltime': 0.2, 'fov': 20, 'rotation': 114.5}
+        self.isotope_frame_parameters = {'size_pixels': (512, 512), 'pixeltime': 1, 'fov': 3}
+        self.isotope_mapping_settings = {'overlap': 0.1, 'max_number_frames': 100, 'intensity_threshold': 0.8}
         self.offset = 1
         self.number_of_images = 1
         self.dirt_area = 0.5
         self.peak_intensity_reference = None
-        self.savepath = None
+        self.savepath = 'Z:/ScanMap/'
         self.tune_event = None
         self.thread = None
         self.thread_communication = None
         self.retuning_mode = ['edges','manual']
         # Is filled later with the actual checkboxes. For now just the default values are stored
         self._checkboxes = {'do_retuning': False, 'use_z_drive': False, 'abort_series_on_dirt': False,
-                            'compensate_stage_error': False, 'acquire_overview': True, 'blank_beam': False}
+                            'compensate_stage_error': False, 'acquire_overview': True, 'blank_beam': False,
+                            'isotope_mapping': False}
     
     def create_panel_widget(self, ui, document_controller):
         
@@ -65,67 +69,121 @@ class ScanMapPanelDelegate(object):
             
         def size_finished(text):
             if len(text) > 0:
-                try:
-                    size = int(text)
-                    self.frame_parameters['size_pixels'] = (size, size)
-                    logging.info('Setting Image Size to: ' + str(size))
-                except ValueError:
-                    logging.warn(text + ' is not a valid size. Please input an integer number.')
-                    size_line_edit.select_all()
+                if self.switches.get('isotope_mapping'):
+                    try:
+                        size = int(text)
+                    except ValueError:
+                        logging.warn(text + ' is not a valid size. Please input an integer number.')
+                        size_line_edit.select_all()
+                    else:
+                        self.isotope_frame_parameters['size_pixels'] = (size, size)
+                        logging.info('Setting isotope mapping image size to: ' + str(size))
+                else:
+                    try:
+                        size = int(text)
+                        self.frame_parameters['size_pixels'] = (size, size)
+                        logging.info('Setting Image Size to: ' + str(size))
+                    except ValueError:
+                        logging.warn(text + ' is not a valid size. Please input an integer number.')
+                        size_line_edit.select_all()
                     
                 self.total_number_frames()
             
         def offset_finished(text):
             if len(text) > 0:
-                try:
-                    offset = float(text)
-                    self.offset = offset
-                    logging.info('Setting Offset to: ' + str(offset))
-                except ValueError:
-                    logging.warn(text + ' is not a valid Offset. Please input a floating point number.')
-                    offset_line_edit.select_all()
+                if self.switches.get('isotope_mapping'):
+                    try:
+                        overlap = float(text)
+                    except ValueError:
+                        logging.warn(text + ' is not a valid overlap. Please input a floating point number.')
+                        offset_line_edit.select_all()
+                    else:
+                        self.isotope_mapping_settings['overlap'] = overlap
+                        logging.info('Setting Overlap to: ' + str(overlap))
+                else:
+                    try:
+                        offset = float(text)
+                    except ValueError:
+                        logging.warn(text + ' is not a valid offset. Please input a floating point number.')
+                        offset_line_edit.select_all()
+                    else:
+                        self.offset = offset
+                        logging.info('Setting Offset to: ' + str(offset))
                     
                 self.total_number_frames()
         
         def time_finished(text):
             if len(text) > 0:
-                try:
-                    pixeltime = float(text)
-                    self.frame_parameters['pixeltime'] = pixeltime
-                    logging.info('Setting pixeltime to: ' + str(pixeltime) + ' us.')
-                except (TypeError, ValueError):
+                if self.switches.get('isotope_mapping'):
                     try:
-                        pixeltime = [float(s) for s in text.split(',')]
-                        self.frame_parameters['pixeltime'] = pixeltime
-                        logging.info('Pixel times will be (in this order): ' + str(pixeltime) + ' us.')
+                        pixeltime = float(text)
                     except ValueError:
-                        logging.warn(text + ' is not a valid Time. Please input a floating point number or a ' +
-                                     'comma-seperated list of floats')
-                        time_line_edit.select_all()
+                            logging.warn(text + ' is not a valid Time. Please input a floating point number.')
+                            time_line_edit.select_all()
+                    else:
+                        self.isotope_frame_parameters['pixeltime'] = pixeltime
+                        logging.info('Setting isotpe mapping pixeltime to: ' + str(pixeltime) + ' us.')
+                else:
+                    try:
+                        pixeltime = float(text)
+                        self.frame_parameters['pixeltime'] = pixeltime
+                        logging.info('Setting pixeltime to: ' + str(pixeltime) + ' us.')
+                    except (TypeError, ValueError):
+                        try:
+                            pixeltime = [float(s) for s in text.split(',')]
+                            self.frame_parameters['pixeltime'] = pixeltime
+                            logging.info('Pixel times will be (in this order): ' + str(pixeltime) + ' us.')
+                        except ValueError:
+                            logging.warn(text + ' is not a valid Time. Please input a floating point number or a ' +
+                                         'comma-seperated list of floats')
+                            time_line_edit.select_all()
                 
                 self.total_number_frames()                
             
         def rotation_finished(text):
             if len(text) > 0:
-                try:
-                    rotation = float(text)
-                    self.frame_parameters['rotation'] = rotation
-                    logging.info('Setting frame rotation to: ' + str(rotation))
-                except ValueError:
-                    logging.warn(text + ' is not a valid Frame Rotation. Please input a floating point number.')
-                    rotation_line_edit.select_all()
+                if self.switches.get('isotope_mapping'):
+                    try:
+                        intensity_threshold = float(text)
+                    except ValueError:
+                        logging.warn(text +
+                                     ' is not a valid intensity threshold. Please input a floating point number.')
+                        rotation_line_edit.select_all()
+                    else:
+                        self.isotope_mapping_settings['intensity_threshold'] = intensity_threshold
+                        logging.info('Setting intensity threshold for ejecting one atom to: ' +
+                                     str(intensity_threshold))
+                else:
+                    try:
+                        rotation = float(text)
+                    except ValueError:
+                        logging.warn(text + ' is not a valid Frame Rotation. Please input a floating point number.')
+                        rotation_line_edit.select_all()
+                    else:
+                        self.frame_parameters['rotation'] = rotation
+                        logging.info('Setting frame rotation to: ' + str(rotation))
                 
         def number_of_images_finished(text):
             if len(text) > 0:
-                try:
-                    self.number_of_images = int(text)
-                    if self.number_of_images > 1:
-                        logging.info(str(self.number_of_images)+ ' images will be recorded at each location.')
+                if self.switches.get('isotope_mapping'):
+                    try:
+                        max_frames = int(text)
+                    except ValueError:
+                        logging.warn(text + ' is not a valid number. Please input an integer number.')
+                        number_line_edit.select_all()
                     else:
-                        logging.info('One image will be recorded at each location.')
-                except ValueError:
-                    logging.warn(text + ' is not a valid number. Please input an integer number.')
-                    number_line_edit.select_all()
+                        self.isotope_mapping_settings['max_number_frames'] = max_frames
+                        logging.info('Setting the maximum number of frames per atom eject site to ' + str(max_frames))
+                else:
+                    try:
+                        self.number_of_images = int(text)
+                        if self.number_of_images > 1:
+                            logging.info(str(self.number_of_images)+ ' images will be recorded at each location.')
+                        else:
+                            logging.info('One image will be recorded at each location.')
+                    except ValueError:
+                        logging.warn(text + ' is not a valid number. Please input an integer number.')
+                        number_line_edit.select_all()
                     
                 self.total_number_frames()
                 
@@ -151,6 +209,22 @@ class ScanMapPanelDelegate(object):
         def checkbox_changed(check_state):
             for key, value in self._checkboxes.items():
                 self.switches[key] = value.checked
+                
+        def isotope_checkbox_changed(check_state):
+            checkbox_changed(check_state)
+            
+            if check_state == 'checked':
+                mode_label.text = 'Isotope mapping settings:'
+                rotation_label.text = 'Intensity threshold: '
+                offset_label.text = 'Overlap (images): '
+                series_label.text = 'Max frames: '
+            else:
+                mode_label.text = 'Low-dose mapping settings:'
+                rotation_label.text = 'Rotation (deg): '
+                offset_label.text = 'Offset (images): '
+                series_label.text = 'Series length: '
+                
+            sync_gui()           
         
         def tl_button_clicked():
             self.save_coords('top-left')
@@ -267,6 +341,8 @@ class ScanMapPanelDelegate(object):
             Mapper.savepath = self.savepath
             Mapper.peak_intensity_reference = self.peak_intensity_reference
             Mapper.frame_parameters = self.frame_parameters.copy()
+            self.isotope_mapping_settings['frame_parameters'] = self.isotope_frame_parameters.copy()
+            Mapper.isotope_mapping_settings = self.isotope_mapping_settings().copy()
             Mapper.retuning_mode = self.retuning_mode.copy()
             self.thread_communication = Mapper.gui_communication
             if self.switches['do_retuning']:
@@ -306,15 +382,27 @@ class ScanMapPanelDelegate(object):
         def sync_gui():
             for key, value in self._checkboxes.items():
                 value.checked = self.switches.get(key, False)
-                
-            fov_line_edit.text = str(self.frame_parameters.get('fov'))
-            size_line_edit.text = str(self.frame_parameters.get('size_pixels')[0])
-            rotation_line_edit.text = str(self.frame_parameters.get('rotation'))
-            offset_line_edit.text = str(self.offset)
-            time_line_edit.text = str(self.frame_parameters.get('pixeltime'))
-            number_line_edit.text = str(self.number_of_images)
-            savepath_line_edit.text = str(self.savepath)
             
+            if self.switches.get('isotope_mapping'):
+                fov_line_edit.text = str(self.isotope_frame_parameters.get('fov'))
+                size_line_edit.text = str(self.isotope_frame_parameters.get('size_pixels')[0])
+                rotation_line_edit.text = str(self.isotope_mapping_settings.get('intensity_threshold'))
+                offset_line_edit.text = str(self.isotope_mapping_settings.get('overlap'))
+                time_line_edit.text = str(self.isotope_frame_parameters.get('pixeltime'))
+                number_line_edit.text = str(self.isotope_mapping_settings.get('max_number_frames'))
+                savepath_line_edit.text = str(self.savepath)
+                dirt_area_line_edit.text = '{:.0f}'.format(self.dirt_area*100)
+            else:
+                fov_line_edit.text = str(self.frame_parameters.get('fov'))
+                size_line_edit.text = str(self.frame_parameters.get('size_pixels')[0])
+                rotation_line_edit.text = str(self.frame_parameters.get('rotation'))
+                offset_line_edit.text = str(self.offset)
+                time_line_edit.text = str(self.frame_parameters.get('pixeltime'))
+                number_line_edit.text = str(self.number_of_images)
+                savepath_line_edit.text = str(self.savepath)
+                dirt_area_line_edit.text = '{:.0f}'.format(self.dirt_area*100)
+        
+        mode_row = ui.create_row_widget()
         fields_row = ui.create_row_widget()
         
         left_fields_column = ui.create_column_widget()
@@ -333,11 +421,16 @@ class ScanMapPanelDelegate(object):
         checkbox_row2 = ui.create_row_widget()
         checkbox_row3 = ui.create_row_widget()
         checkbox_row4 = ui.create_row_widget()
+        checkbox_row5 = ui.create_row_widget()
         savepath_row = ui.create_row_widget()
         save_button_row = ui.create_row_widget()
         done_button_row = ui.create_row_widget()
 
-        column.add_spacing(10) 
+        column.add_spacing(10)
+        column.add(mode_row)
+        mode_label = ui.create_label_widget(_("Low-dose mapping settings:"))
+        mode_row.add(mode_label)
+        column.add_spacing(5)
         column.add(fields_row)
         fields_row.add(left_fields_column)
         fields_row.add_spacing(5)
@@ -371,6 +464,8 @@ class ScanMapPanelDelegate(object):
         column.add_spacing(5)
         column.add(checkbox_row4)
         column.add_spacing(5)
+        column.add(checkbox_row5)
+        column.add_spacing(5)
         column.add(savepath_row)
         column.add_spacing(5)
         column.add(save_button_row)
@@ -378,6 +473,8 @@ class ScanMapPanelDelegate(object):
         column.add(done_button_row)
         column.add_stretch()
 
+        #####################################################
+        #                   mode_row                        #
         #####################################################
         #                  fields_row                       #
         #   left_fields_column  ###    right_fields_column  #
@@ -396,51 +493,60 @@ class ScanMapPanelDelegate(object):
         #                   checkbox_row1                   #
         #                   checkbox_row2                   #
         #                   checkbox_row3                   #
+        #                   checkbox_row4                   #
+        #                   checkbox_row5                   #
         #                    savepath_row                   #
         #                   done_button_row                 #
         #####################################################
         
+        
         left_edit_row1.add(ui.create_label_widget(_("FOV (nm): ")))
         fov_line_edit = ui.create_line_edit_widget()
-        fov_line_edit.text = '20'
+        fov_line_edit.text = str(self.frame_parameters.get('fov'))
         fov_line_edit.on_editing_finished = fov_finished
         left_edit_row1.add(fov_line_edit)
         
         right_edit_row1.add(ui.create_label_widget(_("Framesize (px): ")))
         size_line_edit = ui.create_line_edit_widget()
-        size_line_edit.text = '2048'
+        size_line_edit.text = str(self.frame_parameters.get('size_pixels'))
         size_line_edit.on_editing_finished = size_finished
         right_edit_row1.add(size_line_edit)
         
-        left_edit_row2.add(ui.create_label_widget(_("Roation (deg): ")))
+        rotation_label = ui.create_label_widget(_("Rotation (deg): "))
+        left_edit_row2.add(rotation_label)
         rotation_line_edit = ui.create_line_edit_widget()
-        rotation_line_edit.text = '114.5'
+        rotation_line_edit.text = str(self.frame_parameters.get('rotation'))
         rotation_line_edit.on_editing_finished = rotation_finished
         left_edit_row2.add(rotation_line_edit)
         
-        right_edit_row2.add(ui.create_label_widget(_("Offset (images): ")))
+        offset_label = ui.create_label_widget(_("Offset (images): "))
+        right_edit_row2.add(offset_label)
         offset_line_edit = ui.create_line_edit_widget()
-        offset_line_edit.text = '1'
+        offset_line_edit.text = str(self.offset)
         offset_line_edit.on_editing_finished = offset_finished
         right_edit_row2.add(offset_line_edit)
         
         left_edit_row3.add(ui.create_label_widget(_("Pixeltime (us): ")))
         time_line_edit = ui.create_line_edit_widget()
-        time_line_edit.text = '0.2'
+        time_line_edit.text = str(self.frame_parameters.get('pixeltime'))
         time_line_edit.on_editing_finished = time_finished
         left_edit_row3.add(time_line_edit)
         
-        right_edit_row3.add(ui.create_label_widget(_("Series length: ")))
+        series_label = ui.create_label_widget(_("Series length: "))
+        right_edit_row3.add(series_label)
         number_line_edit = ui.create_line_edit_widget()
-        number_line_edit.text = '1'
+        number_line_edit.text = str(self.number_of_images)
         number_line_edit.on_editing_finished = number_of_images_finished
         right_edit_row3.add(number_line_edit)
         
         savepath_row.add(ui.create_label_widget(_("Savepath: ")))
         savepath_line_edit = ui.create_line_edit_widget()
-        savepath_line_edit.text = "Z:/ScanMap/"
+        savepath_line_edit.text = self.savepath
         savepath_line_edit.on_editing_finished = saving_finished
         savepath_row.add(savepath_line_edit)
+        dirt_area_line_edit = ui.create_line_edit_widget()
+        dirt_area_line_edit.text = '{:.0f}'.format(self.dirt_area*100)
+        dirt_area_line_edit.on_editing_finished = dirt_area_finished
 
         tl_button = ui.create_push_button_widget(_("Top\nLeft"))
         tr_button = ui.create_push_button_widget(_("Top\nRight"))
@@ -456,8 +562,7 @@ class ScanMapPanelDelegate(object):
         done_button = ui.create_push_button_widget(_("Done"))
         abort_button = ui.create_push_button_widget(_("Abort"))
         analyze_button = ui.create_push_button_widget(_("Analyze image"))
-   
-        
+           
         retune_checkbox = ui.create_check_box_widget(_("Retune live, method: "))
         retune_checkbox.on_check_state_changed = checkbox_changed
         method_combo_box = ui.create_combo_box_widget()
@@ -477,10 +582,8 @@ class ScanMapPanelDelegate(object):
         z_drive_checkbox.on_check_state_changed = checkbox_changed
         abort_series_on_dirt_checkbox = ui.create_check_box_widget(_("Abort series on more than "))
         correct_stage_errors_checkbox.on_check_state_changed = checkbox_changed
-        dirt_area_line_edit = ui.create_line_edit_widget()
-        dirt_area_line_edit.text = '50'
-        dirt_area_line_edit.on_editing_finished = dirt_area_finished
-        
+        isotope_mapping_checkbox = ui.create_check_box_widget(_("Isotope mapping mode"))
+        isotope_mapping_checkbox.on_check_state_changed = isotope_checkbox_changed        
         
         tl_button.on_clicked = tl_button_clicked
         tr_button.on_clicked = tr_button_clicked
@@ -534,6 +637,9 @@ class ScanMapPanelDelegate(object):
         checkbox_row4.add(ui.create_label_widget(_('% dirt in image')))
         checkbox_row4.add_stretch()
         
+        checkbox_row5.add(isotope_mapping_checkbox)
+        checkbox_row5.add_stretch()
+        
         save_button_row.add(save_button)
         save_button_row.add_spacing(4)
         save_button_row.add(load_button)
@@ -553,6 +659,7 @@ class ScanMapPanelDelegate(object):
         self._checkboxes['blank_beam'] = blank_checkbox
         self._checkboxes['compensate_stage_error'] = correct_stage_errors_checkbox
         self._checkboxes['abort_series_on_dirt'] = abort_series_on_dirt_checkbox
+        self._checkboxes['isotope_mapping'] = isotope_mapping_checkbox
 
         return column
         
@@ -603,7 +710,7 @@ class ScanMapPanelDelegate(object):
                          % (num_subframes[0]*num_subframes[1]*(self.frame_parameters['fov']*1e-3)**2))
             logging.info('Approximate mapping time: %.0f s' 
                          % (num_subframes[0]*num_subframes[1]*(self.frame_parameters['size_pixels'][0]**2
-                            *np.sum(self.frame_parameters['pixeltime'])*1e-6 + 4)))
+                            *np.mean(self.frame_parameters['pixeltime'])*1e-6*self.number_of_images + 4)))
     
 
 class ScanMapExtension(object):
