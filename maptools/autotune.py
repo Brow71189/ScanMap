@@ -24,10 +24,10 @@ from scipy.signal import fftconvolve
 #import matplotlib as plt
 
 #try:
-with warnings.catch_warnings():
-    warnings.simplefilter('ignore')
-    import ViennaTools.ViennaTools as vt
-    from ViennaTools import tifffile
+#with warnings.catch_warnings():
+#    warnings.simplefilter('ignore')
+#    #import ViennaTools.ViennaTools as vt
+#    from . import tifffile
 #except:
 #    try:
 #        import ViennaTools as vt

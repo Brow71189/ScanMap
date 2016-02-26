@@ -57,13 +57,24 @@ class ScanMapPanelDelegate(object):
         
         def fov_finished(text):
             if len(text) > 0:
-                try:
-                    fov = float(text)
-                    self.frame_parameters['fov'] = fov
-                    logging.info('Setting FOV to: ' + str(fov) + ' nm.')
-                except ValueError:
-                    logging.warn(text + ' is not a valid FOV. Please input a floating point number.')
-                    fov_line_edit.select_all()
+                if self.switches.get('isotope_mapping'):
+                    try:
+                        fov = float(text)
+                    except ValueError:
+                        logging.warn(text + ' is not a valid FOV. Please input a floating point number.')
+                        fov_line_edit.select_all()
+                    else:
+                        self.isotope_frame_parameters['fov'] = fov
+                        logging.info('Setting isotope mapping FOV to: ' + str(fov) + ' nm.')
+                else:
+                    try:
+                        fov = float(text)
+                    except ValueError:
+                        logging.warn(text + ' is not a valid FOV. Please input a floating point number.')
+                        fov_line_edit.select_all()
+                    else:
+                        self.frame_parameters['fov'] = fov
+                        logging.info('Setting FOV to: ' + str(fov) + ' nm.')
                     
                 self.total_number_frames()
             
@@ -118,7 +129,7 @@ class ScanMapPanelDelegate(object):
                     try:
                         pixeltime = float(text)
                     except ValueError:
-                            logging.warn(text + ' is not a valid Time. Please input a floating point number.')
+                            logging.warn(text + ' is not a valid time. Please input a floating point number.')
                             time_line_edit.select_all()
                     else:
                         self.isotope_frame_parameters['pixeltime'] = pixeltime
@@ -126,17 +137,19 @@ class ScanMapPanelDelegate(object):
                 else:
                     try:
                         pixeltime = float(text)
-                        self.frame_parameters['pixeltime'] = pixeltime
-                        logging.info('Setting pixeltime to: ' + str(pixeltime) + ' us.')
                     except (TypeError, ValueError):
                         try:
                             pixeltime = [float(s) for s in text.split(',')]
-                            self.frame_parameters['pixeltime'] = pixeltime
-                            logging.info('Pixel times will be (in this order): ' + str(pixeltime) + ' us.')
                         except ValueError:
-                            logging.warn(text + ' is not a valid Time. Please input a floating point number or a ' +
+                            logging.warn(text + ' is not a valid time. Please input a floating point number or a ' +
                                          'comma-seperated list of floats')
                             time_line_edit.select_all()
+                        else:
+                            self.frame_parameters['pixeltime'] = pixeltime
+                            logging.info('Pixel times will be (in this order): ' + str(pixeltime) + ' us.')
+                    else:
+                        self.frame_parameters['pixeltime'] = pixeltime
+                        logging.info('Setting pixeltime to: ' + str(pixeltime) + ' us.')
                 
                 self.total_number_frames()                
             

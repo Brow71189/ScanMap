@@ -14,7 +14,7 @@ import numpy as np
 with warnings.catch_warnings():
     warnings.simplefilter('ignore')
     #from ViennaTools import ViennaTools as vt
-    from ViennaTools import tifffile
+    from . import tifffile
 
 from .autotune import Imaging, Tuning, DirtError
 #from . import autoalign
@@ -400,6 +400,7 @@ class Mapping(object):
             return message
         
         frame_parameters = self.isotope_mapping_settings.get('frame_parameters')
+        Imager = Imaging()
         Imager.image = self.Tuner.image
         Imager.imsize = self.frame_parameters['fov']
         # Only calculate dirt threshold once per map and pass it to Imager for performance reasons
@@ -423,12 +424,14 @@ class Mapping(object):
                 tifffile.imsave(os.path.join(savepath, name + '{:02d}'.format(i) + '.tif'))
                 if i == 0:
                     intensity_reference = np.sum(Imager.image)
-                elif (np.sum(Imager.image) < self.isotope_mapping_settings.get('intensity_threshold', 0.8) *
+                elif (self.isotope_mapping_settings.get('intensity_threshold') > 0 and
+                      np.sum(Imager.image) < self.isotope_mapping_settings.get('intensity_threshold', 0.8) *
                       intensity_reference):
                     message += 'Found missing atom after {:d} frames '.format(i)
                     Imager.logwrite('Found missing atom after {:d} frames '.format(i))
                     break
-                elif (np.sum(Imager.image) > 3 - 2*self.isotope_mapping_settings.get('intensity_threshold', 0.8) *
+                elif (self.isotope_mapping_settings.get('intenstiy_threshold') > 0 and
+                      np.sum(Imager.image) > 3 - 2*self.isotope_mapping_settings.get('intensity_threshold', 0.8) *
                       intensity_reference):
                     message += 'Detected dirt coming in after {:d} frames '.format(i)
                     Imager.logwrite('Detected dirt coming in after {:d} frames '.format(i))

@@ -18,7 +18,7 @@ from scipy import optimize, ndimage
 
 with warnings.catch_warnings():
     warnings.simplefilter('ignore')
-    from ViennaTools import tifffile
+    from . import tifffile
 
 #from nion.swift import Application
 #from nion.swift.model import Image
