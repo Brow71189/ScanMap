@@ -400,11 +400,9 @@ class Mapping(object):
             return message
         
         frame_parameters = self.isotope_mapping_settings.get('frame_parameters')
-        Imager.image = self.Tuner.image
-        Imager.imsize = self.frame_parameters['fov']
+#        Imager.image = self.Tuner.image
+#        Imager.imsize = self.frame_parameters['fov']
         # Only calculate dirt threshold once per map and pass it to Imager for performance reasons
-        if self.Tuner.dirt_threshold is None:
-            self.Tuner.dirt_threshold = self.Tuner.dirt_detector
         Imager.dirt_threshold = self.Tuner.dirt_threshold
         
         Imager.logwrite('No. ' + str(frame_info['number']) + ': Start ejecting atoms.')
@@ -421,6 +419,10 @@ class Mapping(object):
             for i in range(self.isotope_mapping_settings.get('max_number_frames', 1)):
                 Imager.image = Imager.image_grabber(show_live_image=True, frame_parameters=frame_parameters)
                 tifffile.imsave(os.path.join(savepath, name + '{:02d}'.format(i) + '.tif'))
+                if np.sum(Imager.dirt_detector()) > 0:
+                    message += 'Detected dirt in current frame. Going to next one.'
+                    Imager.logwrite('Detected dirt in current frame. Going to next one.')
+                    break
                 if i == 0:
                     intensity_reference = np.sum(Imager.image)
                 elif (np.sum(Imager.image) < self.isotope_mapping_settings.get('intensity_threshold', 0.8) *
@@ -428,11 +430,11 @@ class Mapping(object):
                     message += 'Found missing atom after {:d} frames '.format(i)
                     Imager.logwrite('Found missing atom after {:d} frames '.format(i))
                     break
-                elif (np.sum(Imager.image) > 3 - 2*self.isotope_mapping_settings.get('intensity_threshold', 0.8) *
-                      intensity_reference):
-                    message += 'Detected dirt coming in after {:d} frames '.format(i)
-                    Imager.logwrite('Detected dirt coming in after {:d} frames '.format(i))
-                    break
+#                elif (np.sum(Imager.image) > 3 - 2*self.isotope_mapping_settings.get('intensity_threshold', 0.8) *
+#                      intensity_reference):
+#                    message += 'Detected dirt coming in after {:d} frames '.format(i)
+#                    Imager.logwrite('Detected dirt coming in after {:d} frames '.format(i))
+#                    break
         
         if self.switches['blank_beam']:
             self.as2.set_property_as_float('C_Blank', 1)
