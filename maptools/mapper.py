@@ -400,6 +400,7 @@ class Mapping(object):
             return message
         
         frame_parameters = self.isotope_mapping_settings.get('frame_parameters')
+        Imager = Imaging()
 #        Imager.image = self.Tuner.image
 #        Imager.imsize = self.frame_parameters['fov']
         # Only calculate dirt threshold once per map and pass it to Imager for performance reasons
@@ -578,7 +579,8 @@ class Mapping(object):
     #        config_file.write('foldername: ' + repr(self.foldername) + '\n')
             config_file.write('number_of_images: ' + str(self.number_of_images) + '\n')
             config_file.write('offset: ' + str(self.offset) + '\n')
-            config_file.write('retuning_mode: ' + self.retuning_mode)
+            config_file.write('retuning_mode: ' + str(self.retuning_mode) + '\n')
+            config_file.write('dirt_area: ' + str(self.dirt_area))
             #config_file.write('\nend')
 
         #config_file.close()
