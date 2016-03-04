@@ -508,7 +508,7 @@ class ScanMapPanelDelegate(object):
         
         right_edit_row1.add(ui.create_label_widget(_("Framesize (px): ")))
         size_line_edit = ui.create_line_edit_widget()
-        size_line_edit.text = str(self.frame_parameters.get('size_pixels'))
+        size_line_edit.text = str(self.frame_parameters.get('size_pixels')[0])
         size_line_edit.on_editing_finished = size_finished
         right_edit_row1.add(size_line_edit)
         
