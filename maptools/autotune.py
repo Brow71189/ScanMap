@@ -661,8 +661,7 @@ class Imaging(object):
                     impix = self.shape[0]+kernelpixel-1
                     imsize = impix/self.shape[0]*self.imsize
                     rotation = self.frame_parameters.get('rotation', 0)
-                    multiplicator = self.frame_parameters.get('pixeltime', 0)*100+1
-                    self.delta_graphene = (self.graphene_generator(imsize, impix, rotation)+0.002)*multiplicator
+                    self.delta_graphene = self.graphene_generator(imsize, impix, rotation)
 
                 frequencies = np.matrix(np.fft.fftshift(np.fft.fftfreq(kernelpixel, self.imsize/self.shape[0])))
                 x = np.array(np.tile(frequencies, np.size(frequencies)).reshape((kernelpixel,kernelpixel)))
@@ -704,7 +703,8 @@ class Imaging(object):
                 kernel = np.abs(np.fft.fftshift(np.fft.ifft2(np.fft.fftshift(kernel))))**2
                 kernel /= np.sum(kernel)
                 #im = cv2.filter2D(im, -1, kernel)
-                im = fftconvolve(self.delta_graphene, kernel, mode='valid')
+                multiplicator = self.frame_parameters.get('pixeltime', 0)*100+1
+                im = fftconvolve((self.delta_graphene+0.002)*multiplicator, kernel, mode='valid')
                 im = np.random.poisson(lam=im.flatten(), size=np.size(im)).astype(im.dtype)
 
                 if debug_mode:
