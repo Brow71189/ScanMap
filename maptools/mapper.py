@@ -158,7 +158,7 @@ class Mapping(object):
                                              topY - j*(imsize+distance) - yfirstline[j])) +
                                       tuple((leftX + i*(imsize+distance),
                                             topY - j*(imsize+distance))))
-                    if self.switches.get('focus_at_edges') and i == 0:
+                    if self.retuning_mode[0] == 'edges' and i == 0:
                         frame_info.append({'number': j*num_subframes[0]+i, 'retune': True, 'corner': 'top-left'})
                     else:
                         frame_info.append({'number': j*num_subframes[0]+i})
@@ -168,7 +168,7 @@ class Mapping(object):
                                       tuple((leftX + i*(imsize+distance),
                                             topY - j*(imsize+distance))))
 
-                    if self.switches.get('focus_at_edges') and i == 0:
+                    if self.retuning_mode[0] == 'edges' and i == 0:
                         frame_info.append({'number': j*num_subframes[0]+i, 'retune': True, 'corner': 'top-left'})
                     else:
                         frame_info.append({'number': j*num_subframes[0]+i})
@@ -222,13 +222,13 @@ class Mapping(object):
         """
         returns a tuple in the form (True/False, message)
         """
-        self.Tuner.dirt_mask = self.Tuner.dirt_detector()
-        if np.sum(self.Tuner.dirt_mask)/(np.shape(self.Tuner.image)[0]*np.shape(self.Tuner.image)[1]) > 0.5:
-            message += 'Over 50% dirt coverage. '
-            self.Tuner.logwrite('Over 50% dirt coverage in No. ' + str(frame_info['number']))
-            return (False, None, message)
 
         if self.retuning_mode[0] == 'reference':
+            self.Tuner.dirt_mask = self.Tuner.dirt_detector()
+            if np.sum(self.Tuner.dirt_mask)/(np.shape(self.Tuner.image)[0]*np.shape(self.Tuner.image)[1]) > 0.5:
+                message += 'Over 50% dirt coverage. '
+                self.Tuner.logwrite('Over 50% dirt coverage in No. ' + str(frame_info['number']))
+                return (False, message)
             graphene_mean = np.mean(self.Tuner.image[self.Tuner.dirt_mask==0])
             self.Tuner.image[self.Tuner.dirt_mask==1] = graphene_mean
             try:
@@ -248,6 +248,11 @@ class Mapping(object):
                 return (True, message)
 
         elif self.retuning_mode[0] == 'missing_peaks':
+            self.Tuner.dirt_mask = self.Tuner.dirt_detector()
+            if np.sum(self.Tuner.dirt_mask)/(np.shape(self.Tuner.image)[0]*np.shape(self.Tuner.image)[1]) > 0.5:
+                message += 'Over 50% dirt coverage. '
+                self.Tuner.logwrite('Over 50% dirt coverage in No. ' + str(frame_info['number']))
+                return (False, message)
             graphene_mean = np.mean(self.Tuner.image[self.Tuner.dirt_mask==0])
             self.Tuner.image[self.Tuner.dirt_mask==1] = graphene_mean
             try:
@@ -384,9 +389,9 @@ class Mapping(object):
 
         return message
     
-    def handle_isotope_mapping(self, frame_coord, frame_info, name, **kwargs):
+    def handle_isotope_mapping(self, frame_coord, frame_info, frame_name, **kwargs):
         message = '\tIsotope mapper: '
-        savepath = os.path.join(self.savepath, os.path.splitext(name)[0])        
+        savepath = os.path.join(self.savepath, self.foldername, os.path.splitext(frame_name)[0])        
         if not os.path.exists(savepath):
             os.makedirs(savepath)
         
@@ -400,7 +405,7 @@ class Mapping(object):
             return message
         
         frame_parameters = self.isotope_mapping_settings.get('frame_parameters')
-        Imager = Imaging()
+        Imager = Imaging(as2=self.as2, superscan=self.superscan, document_controller=self.document_controller)
 #        Imager.image = self.Tuner.image
 #        Imager.imsize = self.frame_parameters['fov']
         # Only calculate dirt threshold once per map and pass it to Imager for performance reasons
@@ -419,7 +424,7 @@ class Mapping(object):
             Imager.frame_parameters['center'] = clean_spot_nm
             for i in range(self.isotope_mapping_settings.get('max_number_frames', 1)):
                 Imager.image = Imager.image_grabber(show_live_image=True, frame_parameters=frame_parameters)
-                tifffile.imsave(os.path.join(savepath, name + '{:02d}'.format(i) + '.tif'))
+                tifffile.imsave(os.path.join(savepath, name + '{:02d}'.format(i) + '.tif'), Imager.image)
                 if np.sum(Imager.dirt_detector()) > 0:
                     message += 'Detected dirt in current frame. Going to next one.'
                     Imager.logwrite('Detected dirt in current frame. Going to next one.')
@@ -466,8 +471,12 @@ class Mapping(object):
         result = tuple()
         points = []
         if len(self.coord_dict) > 4:
+            print(self.coord_dict)
             closest_points = find_nearest_neighbors(4, target, list(self.coord_dict.values()))
-            coord_dict = self.sort_quadrangle(closest_points)
+            raw_closest_points = []
+            for point in closest_points:
+                raw_closest_points.append(point[1:])
+            coord_dict = self.sort_quadrangle(raw_closest_points)
         else:
             coord_dict = self.coord_dict
 
@@ -518,7 +527,7 @@ class Mapping(object):
                     line = line[1:].strip()
                     self.fill_dicts(line, config_file)
                 elif len(line.split(':', maxsplit=1)) == 2:
-                    line = line.split(':')
+                    line = line.split(':', maxsplit=1)
                     setattr(self, line[0].strip(), eval(line[1].strip()))
                 else:
                     continue
@@ -610,14 +619,14 @@ class Mapping(object):
 
         points.sort()
 
-        if points[0][1] > points[1][1]:
+        if points[0][1] >= points[1][1]:
             result['top-left'] = points[0]
             result['bottom-left'] = points[1]
         elif points[0][1] < points[1][1]:
             result['top-left'] = points[1]
             result['bottom-left'] = points[0]
 
-        if points[2][1] > points[3][1]:
+        if points[2][1] >= points[3][1]:
             result['top-right'] = points[2]
             result['bottom-right'] = points[3]
         elif points[2][1] < points[3][1]:
@@ -706,19 +715,21 @@ class Mapping(object):
         self.topY = np.amax((self.coord_dict['top-left'][1], self.coord_dict['top-right'][1]))
         self.botY = np.amin((self.coord_dict['bottom-left'][1], self.coord_dict['bottom-right'][1]))
 
-        map_coords = self.create_map_coordinates(compensate_stage_error=
+        map_coords, map_infos = self.create_map_coordinates(compensate_stage_error=
                                                                self.switches['compensate_stage_error'])
         # create output folder:
         self.store = os.path.join(self.savepath, self.foldername)
         if not os.path.exists(self.store):
             os.makedirs(self.store)
 
-        logfile = open(os.path.join(self.store, 'log.txt'))
+        logfile = open(os.path.join(self.store, 'log.txt'), mode='w')
         test_map = []
         counter = 0
         self.write_map_info_file()
         # Now go to each position in "map_coords" and take a snapshot
-        for frame_coord, frame_info in map_coords:
+        for i in range(len(map_coords)):
+            frame_coord = map_coords[i]
+            frame_info = map_infos[i]
             if self.event is not None and self.event.is_set():
                 break
             counter += 1
@@ -783,7 +794,7 @@ class Mapping(object):
                     logfile.write(message + '\n')
                     
                 if self.switches.get('isotope_mapping'):
-                    message = self.handle_isotope_mappping(frame_coord, frame_info, name)
+                    message = self.handle_isotope_mapping(frame_coord, frame_info, name)
                     logfile.write(message + '\n')
 
             test_map.append(frame_coord + (stagez, fine_focus))
@@ -854,7 +865,7 @@ class Mapping(object):
         def was_accepted():
             nonlocal accepted
             accepted = True
-
+        self.document_controller.queue_task(lambda:
         self.document_controller.show_confirmation_message_box('Please focus now at the current position. Do not ' +
                                                                'change the stage position! If you are done, ' +
                                                                'press "Done" and the mapping process will continue.' +
@@ -862,6 +873,7 @@ class Mapping(object):
                                                                str(accept_timeout) +  ' seconds, otherwise the map ' +
                                                                'will continue with the old values.',
                                                                was_accepted)
+        )
         starttime = time.time()
         while time.time() - starttime < accept_timeout:
             if accepted:
@@ -876,7 +888,10 @@ class Mapping(object):
 
         if self.switches.get('blank_beam'):
             self.as2.set_property_as_float('C_Blank', 0)
-        self.superscan.profile_index(0)
+        
+        def set_profile_to_puma():
+            self.superscan.profile_index = 0
+        self.document_controller.queue_task(set_profile_to_puma)
         self.superscan.start_playing()
         starttime = time.time()
         while time.time() - starttime < timeout:
@@ -993,5 +1008,7 @@ def find_nearest_neighbors(number, target, points):
         if distance < nearest[0][0]:
             nearest[0] = (distance,) + point
             nearest.sort(reverse=True)
-
-    return nearest.sort()
+    
+    nearest.sort()
+    
+    return nearest

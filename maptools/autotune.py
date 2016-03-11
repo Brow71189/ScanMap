@@ -116,7 +116,7 @@ class Imaging(object):
 
     @property
     def mask(self):
-        if self._mask == None:
+        if self._mask is None:
             assert self.image is not None, 'No image was found for which a mask could be computed.'
             self._mask = self.dirt_detector()
         return self._mask
@@ -555,6 +555,7 @@ class Imaging(object):
 #                    channels_enabled[0] = True
 #                if self.detectors['MAADF']:
 #                    channels_enabled[1] = True
+                print('Center: ' + str(self.frame_parameters.get('center')))
                 default_params = ss.SS_Functions_SS_GetFrameParamsForProfile2(1)
                 ss.SS_Functions_SS_SetFrameParamsForProfile(1,
                                                   self.frame_parameters.get('size_pixels', (default_params[0],

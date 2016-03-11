@@ -342,7 +342,7 @@ class ScanMapPanelDelegate(object):
             Mapper.peak_intensity_reference = self.peak_intensity_reference
             Mapper.frame_parameters = self.frame_parameters.copy()
             self.isotope_mapping_settings['frame_parameters'] = self.isotope_frame_parameters.copy()
-            Mapper.isotope_mapping_settings = self.isotope_mapping_settings().copy()
+            Mapper.isotope_mapping_settings = self.isotope_mapping_settings.copy()
             Mapper.retuning_mode = self.retuning_mode.copy()
             self.thread_communication = Mapper.gui_communication
             if self.switches['do_retuning']:
@@ -376,8 +376,8 @@ class ScanMapPanelDelegate(object):
             peaks = Peak.find_peaks(half_line_thickness=2, position_tolerance = 10, second_order=True)
             intensities_sum = np.sum(peaks[0][:,-1])+np.sum(peaks[1][:,-1])
             self.peak_intensity_reference = intensities_sum
-            logging.info('Measured peak intensities in {} from {} to: {:d}.'.format(selected_data_item._data_item.title,
-                         str(selected_data_item.data_and_metadata.timestamp).split('.')[0]), intensities_sum)
+            logging.info('Measured peak intensities in {} from {} to: {:.0f}.'.format(selected_data_item._data_item.title,
+                         str(selected_data_item.data_and_metadata.timestamp).split('.')[0], intensities_sum))
             
         def sync_gui():
             for key, value in self._checkboxes.items():
@@ -654,7 +654,6 @@ class ScanMapPanelDelegate(object):
         
         self._checkboxes['do_retuning'] = retune_checkbox
         self._checkboxes['use_z_drive'] = z_drive_checkbox
-        self._checkboxes['do_autotuning'] = retune_checkbox
         self._checkboxes['acquire_overview'] = overview_checkbox
         self._checkboxes['blank_beam'] = blank_checkbox
         self._checkboxes['compensate_stage_error'] = correct_stage_errors_checkbox
