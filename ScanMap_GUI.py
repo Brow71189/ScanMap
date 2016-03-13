@@ -260,6 +260,9 @@ class ScanMapPanelDelegate(object):
             Mapper.offset = self.offset
             Mapper.savepath = self.savepath
             Mapper.frame_parameters = self.frame_parameters.copy()
+            Mapper.retuning_mode = self.retuning_mode.copy()
+            Mapper.isotope_mapping_settings = self.isotope_mapping_settings.copy()
+            Mapper.isotope_mapping_settings['frame_parameters'] = self.isotope_frame_parameters.copy()
             
             Mapper.save_mapping_config()
             logging.info('Saved config file to: ' + os.path.join(Mapper.savepath, Mapper.foldername, 'configs_map.txt'))
@@ -277,9 +280,14 @@ class ScanMapPanelDelegate(object):
                 self.offset = Mapper.offset
                 self.savepath = Mapper.savepath
                 self.frame_parameters = Mapper.frame_parameters.copy()
+                self.retuning_mode = Mapper.retuning_mode.copy()
+                if self.switches.get('isotope_mapping'):
+                    self.isotope_frame_parameters = Mapper.isotope_mapping_settings.pop('frame_parameters',
+                                                                                self.isotope_frame_parameters).copy()
+                    self.isotope_mapping_settings = Mapper.isotope_mapping_settings.copy()
                 sync_gui()
                 logging.info('Loaded all mapping configs successfully.')
-                sync_gui()
+                #sync_gui()
         
         def test_button_clicked():
             if None in self.frame_parameters.values():
@@ -382,6 +390,9 @@ class ScanMapPanelDelegate(object):
         def sync_gui():
             for key, value in self._checkboxes.items():
                 value.checked = self.switches.get(key, False)
+            
+            method_combo_box._ComboBoxWidget__combo_box_widget.current_item = self.retuning_mode[0]
+            mode_combo_box._ComboBoxWidget__combo_box_widget.current_item = self.retuning_mode[1]
             
             if self.switches.get('isotope_mapping'):
                 fov_line_edit.text = str(self.isotope_frame_parameters.get('fov'))

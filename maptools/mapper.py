@@ -48,7 +48,7 @@ class Mapping(object):
         self.foldername = 'map_' + time.strftime('%Y_%m_%d_%H_%M')
         self.offset = kwargs.get('offset', 0)
         self._online = kwargs.get('online')
-        self.retuning_mode = kwargs.get('retuning_mode', ('missing_peaks', 'manual'))
+        self.retuning_mode = kwargs.get('retuning_mode', ['missing_peaks', 'manual'])
         self.gui_communication = {}
         self.missing_peaks = 0
         self.isotope_mapping_settings = kwargs.get('isotope_mapping_settings', {})
@@ -547,13 +547,13 @@ class Mapping(object):
                     break
                 elif subline.startswith('#'):
                     continue
-                elif subline.endswith('}'):
-                    subline = subline[:-1]
-                    subline = subline.split(':')
-                    getattr(self, line)[subline[0].strip()] = eval(subline[1].strip())
-                    break
+#                elif subline.endswith('}'):
+#                    subline = subline[:-1]
+#                    subline = subline.split(':')
+#                    getattr(self, line)[subline[0].strip()] = eval(subline[1].strip())
+#                    break
                 else:
-                    subline = subline.split(':')
+                    subline = subline.split(':', maxsplit=1)
                     getattr(self, line)[subline[0].strip()] = eval(subline[1].strip())
 
     def save_mapping_config(self, path=None):
@@ -583,6 +583,11 @@ class Mapping(object):
             for key, value in self.frame_parameters.items():
                 config_file.write('\t' + str(key) + ': ' + str(value) + '\n')
             config_file.write('}\n')
+            if self.switches.get('isotope_mapping'):
+                config_file.write('\n{ isotope_mapping_settings\n')
+                for key, value in self.isotope_mapping_settings.items():
+                    config_file.write('\t' + str(key) + ': ' + str(value) + '\n')
+                config_file.write('}\n')
             config_file.write('\n# Other parameters\n')
             config_file.write('savepath: ' + repr(self.savepath) + '\n')
     #        config_file.write('foldername: ' + repr(self.foldername) + '\n')
