@@ -241,8 +241,8 @@ class Mapping(object):
             else:
                 intensities_sum = np.sum(peaks[0][:,-1])+np.sum(peaks[1][:,-1])
             if intensities_sum < 0.4 * self.peak_intensity_reference:
-                message += ('Retune because peak intensity sum is only {:d} compared to reference ' +
-                            '({:d}, {:.1%}). ').format(intensities_sum, self.peak_intensity_reference,
+                message += ('Retune because peak intensity sum is only {:.0f} compared to reference ' +
+                            '({:.0f}, {:.1%}). ').format(intensities_sum, self.peak_intensity_reference,
                             intensities_sum/self.peak_intensity_reference)
                 self.Tuner.logwrite(message)
                 return (True, message)
@@ -320,7 +320,7 @@ class Mapping(object):
 #                       superscan=self.superscan)
         message = '\tTuner: '
         tune, return_message = self.tuning_necessary(frame_info, message)
-        message += return_message
+        message = return_message
         if not tune:
             return message
         elif self.retuning_mode[1] == 'manual':
@@ -388,34 +388,34 @@ class Mapping(object):
             pass
 
         return message
-    
+
     def handle_isotope_mapping(self, frame_coord, frame_info, frame_name, **kwargs):
         message = '\tIsotope mapper: '
-        savepath = os.path.join(self.savepath, self.foldername, os.path.splitext(frame_name)[0])        
+        savepath = os.path.join(self.savepath, self.foldername, os.path.splitext(frame_name)[0])
         if not os.path.exists(savepath):
             os.makedirs(savepath)
-        
+
         if self.isotope_mapping_settings.get('overlap') is not None:
             kwargs['overlap'] = self.isotope_mapping_settings['overlap']
         clean_spots = self.Tuner.find_clean_spots(**kwargs)
-        
+
         if len(clean_spots) < 1:
             message += 'No clean spots found. '
             self.Tuner.logwrite('No. ' + str(frame_info['number']) + ': No clean spots found.')
             return message
-        
+
         frame_parameters = self.isotope_mapping_settings.get('frame_parameters')
         Imager = Imaging(as2=self.as2, superscan=self.superscan, document_controller=self.document_controller)
 #        Imager.image = self.Tuner.image
 #        Imager.imsize = self.frame_parameters['fov']
         # Only calculate dirt threshold once per map and pass it to Imager for performance reasons
         Imager.dirt_threshold = self.Tuner.dirt_threshold
-        
+
         Imager.logwrite('No. ' + str(frame_info['number']) + ': Start ejecting atoms.')
-        
+
         if self.switches['blank_beam']:
             self.verified_unblank()
-        
+
         for clean_spot in clean_spots:
             name = 'spot_y_x_' + str(clean_spot[0]) + '_' + str(clean_spot[1]) + '_'
             message += (name + ': ')
@@ -441,10 +441,10 @@ class Mapping(object):
 #                    message += 'Detected dirt coming in after {:d} frames '.format(i)
 #                    Imager.logwrite('Detected dirt coming in after {:d} frames '.format(i))
 #                    break
-        
+
         if self.switches['blank_beam']:
             self.as2.set_property_as_float('C_Blank', 1)
-        
+
         return message
 
     def interpolation(self, target):
@@ -471,7 +471,6 @@ class Mapping(object):
         result = tuple()
         points = []
         if len(self.coord_dict) > 4:
-            print(self.coord_dict)
             closest_points = find_nearest_neighbors(4, target, list(self.coord_dict.values()))
             raw_closest_points = []
             for point in closest_points:
@@ -797,7 +796,7 @@ class Mapping(object):
                 if self.switches.get('do_retuning'):
                     message = self.handle_retuning(frame_coord, frame_info)
                     logfile.write(message + '\n')
-                    
+
                 if self.switches.get('isotope_mapping'):
                     message = self.handle_isotope_mapping(frame_coord, frame_info, name)
                     logfile.write(message + '\n')
@@ -893,7 +892,7 @@ class Mapping(object):
 
         if self.switches.get('blank_beam'):
             self.as2.set_property_as_float('C_Blank', 0)
-        
+
         def set_profile_to_puma():
             self.superscan.profile_index = 0
         self.document_controller.queue_task(set_profile_to_puma)
@@ -906,11 +905,11 @@ class Mapping(object):
         else:
             message += 'Timeout during waiting for new focus. Keeping old value. '
             self.Tuner.logwrite(message, level='warn')
-            self.superscan.stop_playing()
+            self.superscan.abort_playing()
             self.tune_event.clear()
             return (message, None)
 
-        self.superscan.stop_playing()
+        self.superscan.abort_playing()
         if self.switches.get('blank_beam'):
             self.as2.set_property_as_float('C_Blank', 1)
 
@@ -1013,7 +1012,7 @@ def find_nearest_neighbors(number, target, points):
         if distance < nearest[0][0]:
             nearest[0] = (distance,) + point
             nearest.sort(reverse=True)
-    
+
     nearest.sort()
-    
+
     return nearest
