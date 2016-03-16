@@ -309,7 +309,7 @@ class ScanMapPanelDelegate(object):
             if self.thread is not None and self.thread.is_alive():
                 if self.tune_event is not None and self.tune_event.is_set():
                     self.thread_communication['new_EHTFocus'] = self.as2.get_property_as_float('EHTFocus')
-                    self.thread_communication['new_z'] = self.as2.get_property_as_float('StageOutX')
+                    self.thread_communication['new_z'] = self.as2.get_property_as_float('StageOutZ')
                     self.tune_event.clear()
                     return
                 else:

@@ -17,6 +17,7 @@ with warnings.catch_warnings():
     from ViennaTools import tifffile
 
 from .autotune import Imaging, Tuning, DirtError
+from scipy.interpolate import Rbf
 #from . import autoalign
 
 
@@ -292,6 +293,8 @@ class Mapping(object):
             while counter < 10000:
                 if not self.coord_dict.get('new_point_{:04d}'.format(counter)):
                     self.coord_dict['new_point_{:04d}'.format(counter)] = new_point
+                    if hasattr(self, interpolator):
+                        delattr(self, interpolator)
                     break
                 counter += 1
             else:
@@ -478,7 +481,7 @@ class Mapping(object):
             coord_dict = self.sort_quadrangle(raw_closest_points)
         else:
             coord_dict = self.coord_dict
-
+        print(coord_dict)
         for corner in self._corners:
             points.append(coord_dict[corner])
         # Bilinear interpolation within 4 points that are not lying on a regular grid.
@@ -506,7 +509,26 @@ class Mapping(object):
     #            sum_weights += weight
     #        result += (interpolated/sum_weights,)
         return result
-
+    
+    def interpolation_rbf(self, target):
+        if not hasattr(self, interpolator):
+            x = []
+            y = []
+            z = []
+            focus = []
+            
+            for value in self.coord_dict.values():
+                x.append(value[0])
+                y.append(value[1])
+                z.append(value[2])
+                focus.append(value[3])
+            
+            self.interpolator = []
+            self.interpolator.append(Rbf(x, y, z, function='inverse'))
+            self.interpolator.append(Rbf(x, y, focus, function='inverse'))
+        
+        return (interpolator[0](*target), interpolator[1](*target))
+    
     def load_mapping_config(self, path):
         #config_file = open(os.path.normpath(path))
         #counter = 0
@@ -738,7 +760,7 @@ class Mapping(object):
                 break
             counter += 1
             stagex, stagey, stagex_corrected, stagey_corrected = frame_coord
-            stagez, fine_focus = self.interpolation((stagex, stagey))
+            stagez, fine_focus = self.interpolation_rbf((stagex, stagey))
             self.Tuner.logwrite(str(counter) + '/' + str(len(map_coords)) + ': (No. ' +
                          str(frame_info['number']) + ') x: ' +str((stagex_corrected)) + ', y: ' +
                          str((stagey_corrected)) + ', z: ' + str((stagez)) + ', focus: ' + str((fine_focus)))
