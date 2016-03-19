@@ -43,8 +43,8 @@ from . import autoalign
 #    except:
 #        pass
 
-try:    
-    from superscan import SuperScanPy as ss    
+try:
+    from superscan import SuperScanPy as ss
 except:
     logging.warn('Could not import SuperScanPy. Maybe you are running in offline mode.')
 #global variable to store aberrations when simulating them (see function image_grabber() for details)
@@ -116,7 +116,7 @@ class Imaging(object):
 
     @property
     def mask(self):
-        if self._mask == None:
+        if self._mask is None:
             assert self.image is not None, 'No image was found for which a mask could be computed.'
             self._mask = self.dirt_detector()
         return self._mask
@@ -124,17 +124,17 @@ class Imaging(object):
     @mask.setter
     def mask(self, mask):
         self._mask = mask
-        
+
     @property
     def frame_parameters(self):
         return self._frame_parameters
-    
+
     @frame_parameters.setter
     def frame_parameters(self, frame_parameters):
         for key in frame_parameters.keys():
             self._frame_parameters[key] = frame_parameters[key]
         self.delta_graphene = None
-        
+
     @frame_parameters.deleter
     def frame_parameters(self):
         self._frame_parameters = {}
@@ -251,14 +251,14 @@ class Imaging(object):
         """
         if self.mask is None:
             self.mask = self.dirt_detector(**kwargs)
-        
+
         dist_mask = distance_transform_cdt(self.mask*-1+1)
-        
+
         biggest_spot = np.unravel_index(np.argmax(dist_mask), np.shape(self.mask))
         max_distance = np.amax(dist_mask)
 
         return (np.array(biggest_spot), max_distance)
-    
+
     def find_clean_spots(self, size=3, overlap=0.1, debug_mode=False, **kwargs):
         """
         Finds clean spots of the given size in an image. For this to work an image with a bigger FOV has to be there
@@ -277,12 +277,12 @@ class Imaging(object):
             self.dirt_detector(**kwargs)
         if self.imsize is None and self.frame_parameters.get('fov'):
             self.imsize = self.frame_parameters['fov']
-        
+
         if self.imsize is None or self.image is None:
             raise RuntimeError('An image and its size has to be there in order to find clean spots.')
         if self.imsize < size:
             raise RuntimeError('Can not find clean spots that are larger than the image size.')
-        
+
         counter = 0
         mask = self.mask.copy()
         size_pixels = size/self.imsize*self.shape[0]
@@ -307,7 +307,7 @@ class Imaging(object):
             radius_bottom = np.amin((dist.shape[0]-maxi[0], 2*radius_overlap))
             if dist[maxi] > radius_overlap:
                 clean_spots.append(np.array(maxi))
-                
+
                 dist[maxi[0]-radius_top:maxi[0]+radius_bottom,
                      maxi[1]-radius_left:maxi[1]+radius_right] = 0
             else:
@@ -315,7 +315,7 @@ class Imaging(object):
                 break
         else:
             self.logwrite('Finished because of maximium number of iterations was exceeded')
-        
+
         if debug_mode:
             for clean_spot in clean_spots:
                 mask[clean_spot[0]-radius_pixels:clean_spot[0]+radius_pixels,
@@ -355,7 +355,7 @@ class Imaging(object):
                 if mask_size < 0.01:
                     dirt_end = threshold
                     break
-    
+
                 mask_sizes.append(mask_size)
 
         # determine if there was really dirt present and return an appropriate threshold
@@ -544,7 +544,7 @@ class Imaging(object):
 
             if acquire_image:
                 assert self.superscan is not None, \
-                    'You have to provide an instance of superscan in order to perform superscan-related operations.'                
+                    'You have to provide an instance of superscan in order to perform superscan-related operations.'
                 #self.record_parameters = self.create_record_parameters(self.frame_parameters, self.detectors)
                 #self.superscan.set_frame_parameters(**self.record_parameters)
                 #if self.superscan.is_playing:
@@ -555,6 +555,11 @@ class Imaging(object):
 #                    channels_enabled[0] = True
 #                if self.detectors['MAADF']:
 #                    channels_enabled[1] = True
+                if self.frame_parameters.get('center') is not None:
+                    self.as2.set_property_as_float('CSH.y', self.frame_parameters.get('center')[0]*1e-9)
+                    self.as2.set_property_as_float('CSH.x', self.frame_parameters.get('center')[1]*1e-9)
+                    time.sleep(0.5)
+
                 default_params = ss.SS_Functions_SS_GetFrameParamsForProfile2(1)
                 ss.SS_Functions_SS_SetFrameParamsForProfile(1,
                                                   self.frame_parameters.get('size_pixels', (default_params[0],
@@ -592,17 +597,21 @@ class Imaging(object):
                     self.logwrite('Waiting for frame to be fully transfered.')
                     return_image = np.asarray(ss.SS_Functions_SS_GetImageForFrame(frame_nr, 0))
                     time.sleep(0.02)
-                    
+
+                if self.frame_parameters.get('center') is not None:
+                    self.as2.set_property_as_float('CSH.y', 0.0)
+                    self.as2.set_property_as_float('CSH.x', 0.0)
+
                 if self.detectors['HAADF'] and self.detectors['MAADF']:
                     data = np.asarray(ss.SS_Functions_SS_GetImageForFrame(frame_nr, 1))
                     return_image = [return_image, data]
-                
+
                 if show_live_image:
                     if self.live_data_item_MAADF is None and self.detectors['MAADF']:
                         self.live_data_item_MAADF = self.document_controller.library.create_data_item('Live (MAADF)')
                     if self.live_data_item_HAADF is None and self.detectors['HAADF']:
                         self.live_data_item_HAADF = self.document_controller.library.create_data_item('Live (HAADF)')
-                    
+
                     if self.detectors['HAADF'] and self.detectors['MAADF']:
                         self.live_data_item_HAADF.set_data(return_image[0])
                         self.live_data_item_MAADF.set_data(return_image[1])
@@ -610,7 +619,7 @@ class Imaging(object):
                         self.live_data_item_HAADF.set_data(return_image)
                     elif self.detectors['MAADF']:
                         self.live_data_item_MAADF.set_data(return_image)
-                        
+
                 #im = self.superscan.grab_next_to_start(channels_enabled=channels_enabled)
 #                if len(im) > 1:
 #                    return_image = []
@@ -643,7 +652,7 @@ class Imaging(object):
                         self.aberrations[key] = global_aberrations.get(key, 0) + kwargs['aberrations'].get(key, 0)
                     else:
                         self.aberrations[key] = kwargs['aberrations'].get(key, global_aberrations.get(key, 0))
-                
+
             # Write current values to global aberrations if they should be kept (which is similar to applying them to
             # the hardware in online mode)
             if not reset_aberrations:
@@ -656,13 +665,12 @@ class Imaging(object):
                 # of the image size (in pixels)
                 kernelsize = 2
                 kernelpixel = int(self.shape[0]/kernelsize)
-                
+
                 if self.delta_graphene is None:
                     impix = self.shape[0]+kernelpixel-1
                     imsize = impix/self.shape[0]*self.imsize
                     rotation = self.frame_parameters.get('rotation', 0)
-                    multiplicator = self.frame_parameters.get('pixeltime', 0)*100+1
-                    self.delta_graphene = (self.graphene_generator(imsize, impix, rotation)+0.002)*multiplicator
+                    self.delta_graphene = self.graphene_generator(imsize, impix, rotation)
 
                 frequencies = np.matrix(np.fft.fftshift(np.fft.fftfreq(kernelpixel, self.imsize/self.shape[0])))
                 x = np.array(np.tile(frequencies, np.size(frequencies)).reshape((kernelpixel,kernelpixel)))
@@ -704,7 +712,8 @@ class Imaging(object):
                 kernel = np.abs(np.fft.fftshift(np.fft.ifft2(np.fft.fftshift(kernel))))**2
                 kernel /= np.sum(kernel)
                 #im = cv2.filter2D(im, -1, kernel)
-                im = fftconvolve(self.delta_graphene, kernel, mode='valid')
+                multiplicator = self.frame_parameters.get('pixeltime', 0)*100+1
+                im = fftconvolve((self.delta_graphene+0.002)*multiplicator, kernel, mode='valid')
                 im = np.random.poisson(lam=im.flatten(), size=np.size(im)).astype(im.dtype)
 
                 if debug_mode:
@@ -768,7 +777,7 @@ class Peaking(Imaging):
             assert self.image is not None, 'Can not calculate the fft because no image is given.'
             self._fft = np.fft.fftshift(np.fft.fft2(self.image))
         return self._fft
-            
+
     @fft.setter
     def fft(self, fft):
         self._fft = fft
@@ -985,8 +994,11 @@ class Peaking(Imaging):
 class Tuning(Peaking):
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
-        self._merits = {'peaks': self.astig_2f, 'symmetry': self.astig_3f, 'combined': self.combined, 
-                        'astig_2f': self.astig_2f, 'astig_3f': self.astig_3f, 'coma': self.coma, 'intensity': self.coma}
+        self._merits = {'peaks': self.astig_2f, 'symmetry': self.astig_3f, 'combined': self.combined,
+                        'astig_2f': self.astig_2f, 'astig_3f': self.astig_3f, 'coma': self.coma, 'intensity': self.coma,
+                        }
+        self._merit_lookup = {'EHTFocus': 'intensity', 'C12_a': 'astig_2f', 'C21_a': 'intensity', 'C23_a': 'astig_3f',
+                              'C12_b': 'astig_2f', 'C21_b': 'intensity', 'C23_b': 'astig_3f'}
         self.steps = kwargs.get('steps')
         self.keys = kwargs.get('keys')
         self.event = kwargs.get('event')
@@ -1000,17 +1012,38 @@ class Tuning(Peaking):
         self.run_history = {}
         for key in self._merits.keys():
             self.run_history[key] = []
-            
+
+    @property
+    def merit_lookup(self):
+        return self._merit_lookup
+
     @property
     def merits(self):
         return self._merits
+    
+    def append_merit(self, merit_dict, location=None):
+        if location is None:
+            location = self.merit_history
+        if not isinstance(location, (list, tuple)):
+            location = (location,)
+        for element in location:
+            for key, value in merit_dict.items():
+                element[key].append(value)
+                
+    def calculate_merit(self):
+        result = {}
+        for key in self.keys:
+            if result.get(self.merit_lookup[key]) is None:
+                result[self.merit_lookup[key]] = self.merits[self.merit_lookup[key]]()
         
+        return result
+
     def find_direction(self, key, dirt_detection=True, merit='astig_2f', merit_tolerance=0.1):
         step_multiplicators = [1, 0.5, 2]
         step_multiplicator = None
-        
-        current = self.merit_history[merit][-1]
-            
+
+        current = {merit: self.merit_history[merit][-1]}
+
         for step_multiplicator in step_multiplicators:
             self.logwrite('Finding direction of ' + key + ' with stepsize ' + \
                           str(self.steps[key]*step_multiplicator) + '.')
@@ -1020,48 +1053,49 @@ class Tuning(Peaking):
             self.image = self.image_grabber(aberrations=aberrations, show_live_image=True)
             self.mask = self.dirt_detector() if dirt_detection else None
             try:
-                #plus = self.tuning_merit()
-                plus = self.merits[merit]()
+                #plus = self.merits[merit]()
+                plus = self.calculate_merit()
             except RuntimeError:
-                plus = 1e5
+                plus = {merit: 1e5}
             except DirtError:
                 if self.online:
                     self.aberrations = self.aberrations_tracklist[-1].copy()
                     self.image_grabber(acquire_image=False)
-    
+
                 self.logwrite('Tuning ended because of too high dirt coverage.', level='warn')
                 raise
-    
+
             #passing 2xstepsize to image_grabber to get from +1 to -1
             aberrations = {key: -2.0*self.steps[key]*step_multiplicator}
             #changes += -2.0*self.steps[key]*step_multiplicator
             self.image = self.image_grabber(aberrations=aberrations, show_live_image=True)
             self.mask = self.dirt_detector() if dirt_detection else None
             try:
-                #minus = self.tuning_merit()
-                minus = self._merits[merit]()
+                #minus = self._merits[merit]()
+                minus = self.calculate_merit()
             except RuntimeError:
-                minus = 1e5
+                minus = {merit: 1e5}
             except DirtError:
                 if self.online:
                     self.aberrations = self.aberrations_tracklist[-1].copy()
                     self.image_grabber(acquire_image=False)
-    
+
                 self.logwrite('Tuning ended because of too high dirt coverage.', level='warn')
                 raise
-    
-            if minus < plus and minus < current*(1+merit_tolerance):
+
+            if minus[merit] < plus[merit] and minus[merit] < current[merit]*(1+merit_tolerance):
                 direction = -1
                 current = minus
                 #setting the stepsize to new value
                 self.steps[key] *= step_multiplicator
                 # save best tuning
-                self.merit_history[merit].append(current)
+                #self.merit_history[merit].append(current)
+                self.append_merit(current)
                 # Save new configuration
                 #self.aberrations_tracklist.append(self.aberrations.copy())
                 break
-    
-            elif plus < minus and plus < current*(1+merit_tolerance):
+
+            elif plus[merit] < minus[merit] and plus[merit] < current[merit]*(1+merit_tolerance):
                 direction = 1
                 current = plus
                 #setting the stepsize to new value
@@ -1072,8 +1106,9 @@ class Tuning(Peaking):
                 #update hardware
                 self.image_grabber(acquire_image=False, aberrations=aberrations)
                 # save best tuning
-                self.merit_history[merit].append(current)
-                # Save new configuration                
+                #self.merit_history[merit].append(current)
+                self.append_merit(current)
+                # Save new configuration
                 #self.aberrations_tracklist.append(self.aberrations.copy())
                 break
             else:
@@ -1089,14 +1124,14 @@ class Tuning(Peaking):
             #self.image_grabber(acquire_image=False)
             #reduce stepsize for next iteration
             #self.steps[key] *= 0.5
-        
+
         self.logwrite('Latest ' + merit + ' merit: ' + str(current))
         return direction
 
     def kill_aberrations(self, dirt_detection=True, merit = 'astig_2f', **kwargs):
         # Backup original frame parameters
-        original_frame_parameters = self.frame_parameters.copy()        
-        
+        original_frame_parameters = self.frame_parameters.copy()
+
         # Check input for arguments that override class variables
         if kwargs.get('steps') is not None:
             self.steps = kwargs['steps']
@@ -1113,38 +1148,49 @@ class Tuning(Peaking):
         if self.keys is None:
             self.keys = ['EHTFocus', 'C12_a', 'C21_a', 'C23_a', 'C12_b', 'C21_b', 'C23_b']
         
+        # Check if merit should be adapted automatically to current aberration
+        auto_merit = False
+        if merit == 'auto':
+            merit = self.merit_lookup[self.keys[0]]
+            auto_merit = True
+
         step_originals = self.steps.copy()
         self.aberrations_tracklist = []
         self.merit_history = {}
         for key in self._merits.keys():
-            self.merit_history[key] = []            
+            self.merit_history[key] = []
 
         counter = 0
         self.imsize = self.frame_parameters['fov']
-        
+
         self.image = self.image_grabber(aberrations={}, show_live_image=True)
         self.mask = self.dirt_detector() if dirt_detection else None
-        
+
         try:
-            #current = self.tuning_merit()
-            current = self._merits[merit]()
+            #current = self._merits[merit]()
+            current = self.calculate_merit()
         except RuntimeError as detail:
-            current = 1e5
+            #current = 1e5
+            current = {}
+            for key in self.keys:
+                if current.get(self.merit_lookup[key]) is None:
+                    current[self.merit_lookup[key]] = 1e5
             print(str(detail))
         except DirtError:
             self.frame_parameters = original_frame_parameters.copy()
             self.logwrite('Tuning ended because of too high dirt coverage.', level='warn')
             raise
-            
-        self.merit_history[merit].append(current)
-        self.run_history[merit].append(current)
-        
-        # append current corrector configuration to aberrations_tracklist 
+
+        #self.merit_history[merit].append(current)
+        #self.run_history[merit].append(current)
+        self.append_merit(current, location=(self.merit_history, self.run_history))
+
+        # append current corrector configuration to aberrations_tracklist
         self.aberrations_tracklist.append(self.aberrations.copy())
 
         #total_tunings.append(current)
         self.logwrite('Appending start value: ' + str(current))
-
+        
         while counter < 3:
             if self.event is not None and self.event.is_set():
                 break
@@ -1159,7 +1205,7 @@ class Tuning(Peaking):
                                   ((self.run_history[merit][-2]+self.run_history[merit][-1])*0.5)*100)) + '%.')
 
             if len(self.run_history[merit]) > 1:
-                if np.abs((self.run_history[merit][-2] - self.run_history[merit][-1]) / 
+                if np.abs((self.run_history[merit][-2] - self.run_history[merit][-1]) /
                           ((self.run_history[merit][-2] + self.run_history[merit][-1])*0.5)) < 0.02:
                     self.logwrite('Finished tuning successfully after %d runs.' %(counter))
                     break
@@ -1172,11 +1218,13 @@ class Tuning(Peaking):
                     break
 
                 self.logwrite('Working on: '+ key)
+                if auto_merit:
+                    merit = self.merit_lookup[key]
                 try:
                     direction = self.find_direction(key, dirt_detection=dirt_detection, merit=merit)
                 except DirtError:
                     raise
-                
+
                 if direction == 0:
                     self.logwrite('Could not find a direction to improve ' + key + '. Going to next aberration.')
                     continue
@@ -1184,7 +1232,11 @@ class Tuning(Peaking):
                     stringed_direction = 'positive' if direction > 0 else 'negative'
                     self.logwrite('Trying to improve ' + key + ' with stepsize ' +
                                   str(self.steps[key]) + ' in ' + stringed_direction  + ' direction.')
-                    current = self.merit_history[merit][-1]
+                    #current = self.merit_history[merit][-1]
+                    current = {}
+                    for key2 in self.keys:
+                        if current.get(self.merit_lookup[key2]) is None:
+                            current[self.merit_lookup[key2]] = self.merit_history[self.merit_lookup[key2]][-1]
 
                 small_counter = 1
                 while True:
@@ -1194,8 +1246,8 @@ class Tuning(Peaking):
                     self.image = self.image_grabber(aberrations=aberrations, show_live_image=True)
                     self.mask = self.dirt_detector() if dirt_detection else None
                     try:
-                        #next_frame = self.tuning_merit()
-                        next_frame = self._merits[merit]()
+                        #next_frame = self._merits[merit]()
+                        next_frame = self.calculate_merit()
                     except RuntimeError:
                         aberrations = {key: -direction*self.steps[key]}
                         #changes -= direction*self.steps[key]
@@ -1210,7 +1262,7 @@ class Tuning(Peaking):
                         self.logwrite('Tuning ended because of too high dirt coverage.', level='warn')
                         raise
 
-                    if next_frame >= current:
+                    if next_frame[merit] >= current[merit]:
                         aberrations = {key: -direction*self.steps[key]}
                         #changes -= direction*self.steps[key]
                         #update hardware
@@ -1223,23 +1275,23 @@ class Tuning(Peaking):
 
                 #only keep changes if they improve the overall tuning
                 if len(self.merit_history[merit]) > 0:
-                    if current > np.amin(self.merit_history[merit]):
+                    if current[merit] > np.amin(self.merit_history[merit]):
                         self.image = self.image_grabber(show_live_image=True)
                         self.mask = self.dirt_detector() if dirt_detection else None
                         try:
-                            #current  = self.tuning_merit()
-                            current = self._merits[merit]()
+                            #current = self._merits[merit]()
+                            current = self.calculate_merit()
                         except DirtError:
                             self.frame_parameters = original_frame_parameters.copy()
                             self.logwrite('Tuning ended because of too high dirt coverage.', level='warn')
                             raise
-                        if current > np.amin(self.merit_history[merit]):
+                        if current[merit] > np.amin(self.merit_history[merit]):
                             self.aberrations = self.aberrations_tracklist[-1].copy()
                             self.image = self.image_grabber(show_live_image=True)
                             self.mask = self.dirt_detector() if dirt_detection else None
                             try:
-                                #current  = self.tuning_merit()
-                                current = self._merits[merit]()
+                                #current = self._merits[merit]()
+                                current = self.calculate_merit()
                             except DirtError:
                                 self.frame_parameters = original_frame_parameters.copy()
                                 self.logwrite('Tuning ended because of too high dirt coverage.', level='warn')
@@ -1247,30 +1299,36 @@ class Tuning(Peaking):
                             self.logwrite('Dismissed changes at '+ key)
                         else:
                             self.logwrite('Kept changes at '+ key + ' after measuring again.')
-                            self.logwrite('Found new best tuning with ' + merit  + ' merit: '  + str(current) + 
+                            self.logwrite('Found new best tuning with ' + merit  + ' merit: '  + str(current) +
                                       ' by changing ' + key + ' to ' + str(self.aberrations[key]) + '.')
-                            self.merit_history[merit].append(current)
+                            #self.merit_history[merit].append(current)
+                            self.append_merit(current)
                             self.aberrations_tracklist.append(self.aberrations.copy())
                     else:
-                        self.logwrite('Found new best tuning with ' + merit  + ' merit: '  + str(current) + 
+                        self.logwrite('Found new best tuning with ' + merit  + ' merit: '  + str(current) +
                                       ' by changing ' + key + ' to ' + str(self.aberrations[key]) + '.')
-                        self.merit_history[merit].append(current)
+                        #self.merit_history[merit].append(current)
+                        self.append_merit(current)
                         self.aberrations_tracklist.append(self.aberrations.copy())
                 else:
-                    self.logwrite('Found new best tuning with ' + merit  + ' merit: '  + str(current) + 
+                    self.logwrite('Found new best tuning with ' + merit  + ' merit: '  + str(current) +
                                   ' by changing ' + key + ' to ' + str(self.aberrations[key]) + '.')
-                    self.merit_history[merit].append(current)
+                    #self.merit_history[merit].append(current)
+                    self.append_merit(current)
                     self.aberrations_tracklist.append(self.aberrations.copy())
                 #reduce stepsize for next iteration
                 #self.steps[key] *= 0.5
                 # append current corrector configuration to aberrations_tracklist
-                
+
 
 #            if len(part_tunings) > 0:
 #                self.logwrite('Appending best value of this run to total_tunings: '+str(np.amin(part_tunings)))
 #                self.merit_history[merit].append(np.amin(part_tunings))
 #                #total_lens.append(np.amax(part_lens))
-            self.run_history[merit].append(self.merit_history[merit][-1])
+            #self.run_history[merit].append(self.merit_history[merit][-1])
+            for key2, value in self.merit_history.items():
+                if len(value) > 0:
+                    self.run_history[key2].append(value[-1])
             self.logwrite('Finished run number '+str(counter+1)+' in '+str(time.time()-start_time)+' s.')
             counter += 1
         # This else belongs to the while loop. It is executed when the loop ends 'normally', e.g not through
@@ -1310,26 +1368,27 @@ class Tuning(Peaking):
             intensities.append(peak[3])
         for peak in peaks_second:
             intensities.append(peak[3])
-        self.logwrite('intensity sum: ' + str(np.sum(intensities)) + '\tintensity first var/mean: ' + 
-                      str(np.std(intensities[:6])/np.mean(intensities[:6])) + '\tintensity second var/mean: ' + 
+        self.logwrite('intensity sum: ' + str(np.sum(intensities)) + '\tintensity first var/mean: ' +
+                      str(np.std(intensities[:6])/np.mean(intensities[:6])) + '\tintensity second var/mean: ' +
                       str(np.std(intensities[6:])/np.mean(intensities[6:])))
-        
+
         return 1/(np.sum(intensities)) * 1e4 + np.std(intensities[:6])/np.mean(intensities[:6])
-               
+
     def astig_3f(self):
         try:
             ffil = self.fourier_filter()
         except RuntimeError as detail:
-            print(str(detail))            
+            print(str(detail))
             return 1000
 
         #if self.mask is None:
-        print((self.measure_symmetry(ffil)[1], np.std(ffil)))
-        return 1/np.sum(self.measure_symmetry(ffil)[1], np.std(ffil))
+        res=(self.measure_symmetry(ffil)[1], np.std(ffil))
+        print(res)
+        return 1/np.sum(res)
         #else:
         #    return 1/np.prod(self.measure_symmetry(ffil)[1]*(1.0-np.sum(self.mask)/mean),
         #            np.std(ffil[self.mask==0])/mean)
-               
+
     def coma(self):
         # Check if peaks are already stored and if second order is there
         if len(np.shape(self.peaks)) < 2:
@@ -1344,8 +1403,8 @@ class Tuning(Peaking):
             intensities.append(peak[3])
         for peak in peaks_second:
             intensities.append(peak[3])
-        self.logwrite('intensity sum: ' + str(np.sum(intensities)) + '\tintensity first var/mean: ' + 
-                      str(np.std(intensities[:6])/np.mean(intensities[:6])) + '\tintensity second var/mean: ' + 
+        self.logwrite('intensity sum: ' + str(np.sum(intensities)) + '\tintensity first var/mean: ' +
+                      str(np.std(intensities[:6])/np.mean(intensities[:6])) + '\tintensity second var/mean: ' +
                       str(np.std(intensities[6:])/np.mean(intensities[6:])))
         return 1/(np.sum(np.array(intensities))) * 1e4
 
@@ -1363,7 +1422,7 @@ class Tuning(Peaking):
 
 #        print('sum intensities: ' + str(np.sum(intensities)/1e3) + '\tvar intensities: ' +
 #              str(np.std(intensities)/np.sum(intensities)) + '\tsymmetry: ' + str(symmetry))
-        
+
         return np.sum(intensities, symmetry)
 
 

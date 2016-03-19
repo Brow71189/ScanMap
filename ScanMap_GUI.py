@@ -273,6 +273,9 @@ class ScanMapPanelDelegate(object):
             Mapper.offset = self.offset
             Mapper.savepath = self.savepath
             Mapper.frame_parameters = self.frame_parameters.copy()
+            Mapper.retuning_mode = self.retuning_mode.copy()
+            Mapper.isotope_mapping_settings = self.isotope_mapping_settings.copy()
+            Mapper.isotope_mapping_settings['frame_parameters'] = self.isotope_frame_parameters.copy()
             
             Mapper.save_mapping_config()
             logging.info('Saved config file to: ' + os.path.join(Mapper.savepath, Mapper.foldername, 'configs_map.txt'))
@@ -290,9 +293,14 @@ class ScanMapPanelDelegate(object):
                 self.offset = Mapper.offset
                 self.savepath = Mapper.savepath
                 self.frame_parameters = Mapper.frame_parameters.copy()
+                self.retuning_mode = Mapper.retuning_mode.copy()
+                if self.switches.get('isotope_mapping'):
+                    self.isotope_frame_parameters = Mapper.isotope_mapping_settings.pop('frame_parameters',
+                                                                                self.isotope_frame_parameters).copy()
+                    self.isotope_mapping_settings = Mapper.isotope_mapping_settings.copy()
                 sync_gui()
                 logging.info('Loaded all mapping configs successfully.')
-                sync_gui()
+                #sync_gui()
         
         def test_button_clicked():
             if None in self.frame_parameters.values():
@@ -314,7 +322,7 @@ class ScanMapPanelDelegate(object):
             if self.thread is not None and self.thread.is_alive():
                 if self.tune_event is not None and self.tune_event.is_set():
                     self.thread_communication['new_EHTFocus'] = self.as2.get_property_as_float('EHTFocus')
-                    self.thread_communication['new_z'] = self.as2.get_property_as_float('StageOutX')
+                    self.thread_communication['new_z'] = self.as2.get_property_as_float('StageOutZ')
                     self.tune_event.clear()
                     return
                 else:
@@ -355,7 +363,7 @@ class ScanMapPanelDelegate(object):
             Mapper.peak_intensity_reference = self.peak_intensity_reference
             Mapper.frame_parameters = self.frame_parameters.copy()
             self.isotope_mapping_settings['frame_parameters'] = self.isotope_frame_parameters.copy()
-            Mapper.isotope_mapping_settings = self.isotope_mapping_settings().copy()
+            Mapper.isotope_mapping_settings = self.isotope_mapping_settings.copy()
             Mapper.retuning_mode = self.retuning_mode.copy()
             self.thread_communication = Mapper.gui_communication
             if self.switches['do_retuning']:
@@ -389,12 +397,15 @@ class ScanMapPanelDelegate(object):
             peaks = Peak.find_peaks(half_line_thickness=2, position_tolerance = 10, second_order=True)
             intensities_sum = np.sum(peaks[0][:,-1])+np.sum(peaks[1][:,-1])
             self.peak_intensity_reference = intensities_sum
-            logging.info('Measured peak intensities in {} from {} to: {:d}.'.format(selected_data_item._data_item.title,
-                         str(selected_data_item.data_and_metadata.timestamp).split('.')[0]), intensities_sum)
+            logging.info('Measured peak intensities in {} from {} to: {:.0f}.'.format(selected_data_item._data_item.title,
+                         str(selected_data_item.data_and_metadata.timestamp).split('.')[0], intensities_sum))
             
         def sync_gui():
             for key, value in self._checkboxes.items():
                 value.checked = self.switches.get(key, False)
+            
+            method_combo_box._ComboBoxWidget__combo_box_widget.current_item = self.retuning_mode[0]
+            mode_combo_box._ComboBoxWidget__combo_box_widget.current_item = self.retuning_mode[1]
             
             if self.switches.get('isotope_mapping'):
                 fov_line_edit.text = str(self.isotope_frame_parameters.get('fov'))
@@ -521,7 +532,7 @@ class ScanMapPanelDelegate(object):
         
         right_edit_row1.add(ui.create_label_widget(_("Framesize (px): ")))
         size_line_edit = ui.create_line_edit_widget()
-        size_line_edit.text = str(self.frame_parameters.get('size_pixels'))
+        size_line_edit.text = str(self.frame_parameters.get('size_pixels')[0])
         size_line_edit.on_editing_finished = size_finished
         right_edit_row1.add(size_line_edit)
         
@@ -667,7 +678,6 @@ class ScanMapPanelDelegate(object):
         
         self._checkboxes['do_retuning'] = retune_checkbox
         self._checkboxes['use_z_drive'] = z_drive_checkbox
-        self._checkboxes['do_autotuning'] = retune_checkbox
         self._checkboxes['acquire_overview'] = overview_checkbox
         self._checkboxes['blank_beam'] = blank_checkbox
         self._checkboxes['compensate_stage_error'] = correct_stage_errors_checkbox
