@@ -28,7 +28,7 @@ integration_radius = 1
 dirt_threshold = 0.5
 save_images = False
 savepath = None
-merit = 'peaks'
+merit = 'auto'
 
 class SuperScanTunerPanelDelegate(object):
     def __init__(self, api):
@@ -324,7 +324,7 @@ class SuperScanTunerPanelDelegate(object):
         
         combo_box_row = ui.create_row_widget()
         combo_box = ui.create_combo_box_widget()
-        combo_box.items = ['astig_2f', 'coma', 'astig_3f', 'combined']
+        combo_box.items = ['auto', 'astig_2f', 'coma', 'astig_3f', 'combined']
         combo_box.on_current_item_changed = merit_combo_box_changed
         combo_box_row.add(ui.create_label_widget('Merit used for tuning: '))
         combo_box_row.add(combo_box)
