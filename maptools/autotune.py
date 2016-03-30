@@ -530,17 +530,17 @@ class Imaging(object):
             if kwargs.get('aberrations') is not None:
                 for key in keys:
                     if relative_aberrations:
-                        self.aberrations[key] = vt.as2_get_control(self.as2, controls[key]) * 1e9 + \
+                        self.aberrations[key] = self.as2.get_property_as_float(controls[key]) * 1e9 + \
                                                 kwargs['aberrations'].get(key, 0)
                     else:
                         self.aberrations[key] = \
-                            kwargs['aberrations'].get(key, vt.as2_get_control(self.as2, controls[key]) * 1e9)
+                            kwargs['aberrations'].get(key, self.as2.get_property_as_float(controls[key]) * 1e9)
 
                     if reset_aberrations:
-                        originals[key] = vt.as2_get_control(self.as2, controls[key]) * 1e9
+                        originals[key] = self.as2.get_property_as_float(controls[key]) * 1e9
             # Apply corrector values to the Hardware
             for key in self.aberrations.keys():
-                vt.as2_set_control(self.as2, controls[key], self.aberrations[key] * 1e-9)
+                self.as2.set_property_as_float(controls[key], self.aberrations[key] * 1e-9)
 
             if acquire_image:
                 assert self.superscan is not None, \
@@ -1372,7 +1372,7 @@ class Tuning(Peaking):
                       str(np.std(intensities[:6])/np.mean(intensities[:6])) + '\tintensity second var/mean: ' +
                       str(np.std(intensities[6:])/np.mean(intensities[6:])))
 
-        return 1/(np.sum(intensities)) * 1e4 + np.std(intensities[:6])/np.mean(intensities[:6])
+        return 1/np.sum(intensities) * 1e3 + np.std(intensities[:6])/np.mean(intensities[:6])
 
     def astig_3f(self):
         try:
@@ -1406,7 +1406,7 @@ class Tuning(Peaking):
         self.logwrite('intensity sum: ' + str(np.sum(intensities)) + '\tintensity first var/mean: ' +
                       str(np.std(intensities[:6])/np.mean(intensities[:6])) + '\tintensity second var/mean: ' +
                       str(np.std(intensities[6:])/np.mean(intensities[6:])))
-        return 1/(np.sum(np.array(intensities))) * 1e4
+        return 1/(np.sum(np.array(intensities))) * 1e3
 
     def measure_symmetry(self, filtered_image):
         point_mirrored = np.flipud(np.fliplr(filtered_image))
