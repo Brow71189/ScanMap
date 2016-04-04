@@ -25,14 +25,14 @@ except:
 #######################################################################################################################    
 #######################################################################################################################
 #######################################################################################################################
-dirpath = '/3tb/maps_data/map_2015_09_28_16_47'
+dirpath = '/home/mittelberger/Documents/jk-randomwalk/divac-seq3-lowdose'
 #dirpath = '/3tb/Dark_noise/'
-imsize = 22
+imsize = 4
 #graphene_threshold = 0.0033
-graphene_threshold = 0.015
+graphene_threshold = 0
 light_threshold = -1
 #light_threshold = 0
-heavy_threshold = 0.048
+heavy_threshold = 0.006
 dirt_border = 30
 minimum_graphene_area=0.3
 #######################################################################################################################
@@ -95,18 +95,24 @@ def rotation_radius(Peak, find_distortions=True):
                 angles.append(at.positive_angle(np.arctan2(-peak[0], peak[1])))
                 radii.append(np.sqrt(np.sum(peak**2)))
             
-        sum_rotation = 0
-        for angle in angles:
-#            while angle > np.pi/3.0:
-#                angle -= np.pi/3.0
-            sum_rotation += angle%(np.pi/3)
+#        sum_rotation = 0
+#        for angle in angles:
+##            while angle > np.pi/3.0:
+##                angle -= np.pi/3.0
+#            sum_rotation += angle%(np.pi/3)
+        angles2 = np.array(angles)%np.pi/3
+        cos_angles = np.cos(angles2 * 6)
+        sin_angles = np.sin(angles2 * 6)
+        mean_angle = at.positive_angle(np.arctan2(np.mean(sin_angles), np.mean(cos_angles))) / 6
+        #mean_angle = angles[0]
         
         if find_distortions:
-            return (sum_rotation/float(len(angles)), np.mean(radii), np.count_nonzero(peaks_first[:,-1]) + 
+            #sum_rotation/float(len(angles))
+            return (mean_angle, np.mean(radii), np.count_nonzero(peaks_first[:,-1]) + 
                     np.count_nonzero(peaks_second[:,-1]), np.sum(peaks_first[:,-1]) + 
                     np.sum(peaks_second[:,-1])) + fit_ellipse(angles, radii)
         else:
-            return (sum_rotation/float(len(angles)), np.mean(radii), np.count_nonzero(peaks_first[:,-1]) + 
+            return (mean_angle, np.mean(radii), np.count_nonzero(peaks_first[:,-1]) + 
                     np.count_nonzero(peaks_second[:,-1]), np.sum(peaks_first[:,-1])+np.sum(peaks_second[:,-1]))
     
 def calculate_counts(image, threshold=1e-9):
@@ -215,7 +221,7 @@ def subframes_preprocessing(filename, dirname, imsize, counts_threshold=1e-9, gr
     except RuntimeError as detail:
         print('Error in '+ filename + ': ' + str(detail))
         rotation = ellipse_a = ellipse_b = angle = np.NaN
-        number_peaks = peak_intensities_sum = 0
+        number_peaks = peak_intensities_sum = radius = 0
         #peaks = None
         success = False
     
@@ -249,8 +255,14 @@ def subframes_preprocessing(filename, dirname, imsize, counts_threshold=1e-9, gr
             fft = np.log(np.abs(Peak.fft)).astype(np.float32)
             center = np.array(np.shape(image))/2
             ell = np.ones(np.shape(fft), dtype='float32')
-            cv2.ellipse(ell, (tuple(center), (ellipse_a*2, ellipse_b*2), -angle*180/np.pi), 2)
-            cv2.ellipse(ell, (tuple(center), (ellipse_a*2*np.sqrt(3), ellipse_b*2*np.sqrt(3)), -angle*180/np.pi), 2)
+            cv2.ellipse(ell, (tuple(center), (ellipse_a*2, ellipse_b*2), -angle*180/np.pi), 4)
+            cv2.ellipse(ell, (tuple(center), (ellipse_a*2*np.sqrt(3), ellipse_b*2*np.sqrt(3)), -angle*180/np.pi), 4)
+            if np.isfinite(rotation):
+                endpoint = np.array((np.cos(rotation), -np.sin(rotation)))
+                endpoint *= radius
+                endpoint = np.rint(endpoint)
+                endpoint += center
+                cv2.line(ell, tuple(center.astype(np.int)), tuple(endpoint.astype(np.int)), 4)
             fft *= ell
             savesize = int(2.0*imsize/0.213)
             tifffile.imsave(dirname+'fft_'+dirname.split('/')[-2]+'/'+filename,
@@ -271,8 +283,9 @@ if __name__ == '__main__':
     matched_dirlist = []
     for filename in dirlist:
         try:
-            int(filename[0:4])
-            matched_dirlist.append(filename)
+            #int(filename[0:4])
+            if filename.endswith('.tif'):
+                matched_dirlist.append(filename)
         except:
             pass
     matched_dirlist.sort()
