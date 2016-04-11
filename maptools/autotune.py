@@ -658,7 +658,9 @@ class Imaging(object):
             if not reset_aberrations:
                 for key in self.aberrations.keys():
                     global_aberrations[key] = self.aberrations[key]
-
+            
+            print(self.aberrations)
+            
             if acquire_image:
                 # Create x and y coordinates such that resulting beam has the same scale as the image.
                 # The size of the kernel which is used for image convolution is chosen to be "1/kernelsize"
@@ -997,6 +999,8 @@ class Tuning(Peaking):
         self._merits = {'peaks': self.astig_2f, 'symmetry': self.astig_3f, 'combined': self.combined,
                         'astig_2f': self.astig_2f, 'astig_3f': self.astig_3f, 'coma': self.coma, 'intensity': self.coma,
                         }
+#        self._merit_lookup = {'EHTFocus': 'intensity', 'C12_a': 'astig_2f', 'C21_a': 'intensity', 'C23_a': 'astig_3f',
+#                              'C12_b': 'astig_2f', 'C21_b': 'intensity', 'C23_b': 'astig_3f'}
         self._merit_lookup = {'EHTFocus': 'intensity', 'C12_a': 'astig_2f', 'C21_a': 'intensity', 'C23_a': 'astig_3f',
                               'C12_b': 'astig_2f', 'C21_b': 'intensity', 'C23_b': 'astig_3f'}
         self.steps = kwargs.get('steps')
@@ -1038,8 +1042,8 @@ class Tuning(Peaking):
         
         return result
 
-    def find_direction(self, key, dirt_detection=True, merit='astig_2f', merit_tolerance=0.1):
-        step_multiplicators = [1, 0.5, 2]
+    def find_direction(self, key, dirt_detection=True, merit='astig_2f', merit_tolerance=0):
+        step_multiplicators = [0.5, 1, 2]
         step_multiplicator = None
 
         current = {merit: self.merit_history[merit][-1]}
@@ -1091,6 +1095,8 @@ class Tuning(Peaking):
                 # save best tuning
                 #self.merit_history[merit].append(current)
                 self.append_merit(current)
+                # append aberrations
+                self.aberrations_tracklist.append(self.aberrations.copy())
                 # Save new configuration
                 #self.aberrations_tracklist.append(self.aberrations.copy())
                 break
@@ -1108,6 +1114,8 @@ class Tuning(Peaking):
                 # save best tuning
                 #self.merit_history[merit].append(current)
                 self.append_merit(current)
+                # append aberrations
+                self.aberrations_tracklist.append(self.aberrations.copy())
                 # Save new configuration
                 #self.aberrations_tracklist.append(self.aberrations.copy())
                 break
@@ -1262,7 +1270,7 @@ class Tuning(Peaking):
                         self.logwrite('Tuning ended because of too high dirt coverage.', level='warn')
                         raise
 
-                    if next_frame[merit] >= current[merit]:
+                    if next_frame[merit] > current[merit] or next_frame['intensity'] > current['intensity']:
                         aberrations = {key: -direction*self.steps[key]}
                         #changes -= direction*self.steps[key]
                         #update hardware
@@ -1274,7 +1282,7 @@ class Tuning(Peaking):
                     current = next_frame
 
                 #only keep changes if they improve the overall tuning
-                if len(self.merit_history[merit]) > 0:
+                if False:#len(self.merit_history[merit]) > 0:
                     if current[merit] > np.amin(self.merit_history[merit]):
                         self.image = self.image_grabber(show_live_image=True)
                         self.mask = self.dirt_detector() if dirt_detection else None
@@ -1351,7 +1359,7 @@ class Tuning(Peaking):
 #                pass
 #        else:
 #            image_grabber(acquire_image=False, **kwargs)
-        self.steps = step_originals.copy()
+        #self.steps = step_originals.copy()
         self.frame_parameters = original_frame_parameters.copy()
 
     def astig_2f(self):
@@ -1372,7 +1380,9 @@ class Tuning(Peaking):
                       str(np.std(intensities[:6])/np.mean(intensities[:6])) + '\tintensity second var/mean: ' +
                       str(np.std(intensities[6:])/np.mean(intensities[6:])))
 
-        return 1/np.sum(intensities) * 1e3 + np.std(intensities[:6])/np.mean(intensities[:6])
+        #return 1/np.sum(intensities) * 1e3 + np.std(intensities[:6])/np.mean(intensities[:6])
+        return np.sqrt((intensities[0] - intensities[1])**2 + (intensities[0] - intensities[2])**2 +
+                       (intensities[1] - intensities[2])**2)
 
     def astig_3f(self):
         try:
@@ -1382,8 +1392,9 @@ class Tuning(Peaking):
             return 1000
 
         #if self.mask is None:
-        res=(self.measure_symmetry(ffil)[1], np.std(ffil))
+        res=self.measure_symmetry(ffil)#, np.std(ffil))
         print(res)
+        res = res[1]
         return 1/np.sum(res)
         #else:
         #    return 1/np.prod(self.measure_symmetry(ffil)[1]*(1.0-np.sum(self.mask)/mean),
@@ -1403,14 +1414,15 @@ class Tuning(Peaking):
             intensities.append(peak[3])
         for peak in peaks_second:
             intensities.append(peak[3])
-        self.logwrite('intensity sum: ' + str(np.sum(intensities)) + '\tintensity first var/mean: ' +
-                      str(np.std(intensities[:6])/np.mean(intensities[:6])) + '\tintensity second var/mean: ' +
-                      str(np.std(intensities[6:])/np.mean(intensities[6:])))
-        return 1/(np.sum(np.array(intensities))) * 1e3
+#        self.logwrite('intensity sum: ' + str(np.sum(intensities)) + '\tintensity first var/mean: ' +
+#                      str(np.std(intensities[:6])/np.mean(intensities[:6])) + '\tintensity second var/mean: ' +
+#                      str(np.std(intensities[6:])/np.mean(intensities[6:])))
+        return 1/(np.sum(np.array(intensities))) * 1e4
 
     def measure_symmetry(self, filtered_image):
         point_mirrored = np.flipud(np.fliplr(filtered_image))
-        return autoalign.find_shift(filtered_image, point_mirrored, ratio=0.142/self.imsize/2)
+        return autoalign.find_shift(filtered_image[50:-50, 50:-50], point_mirrored[50:-50, 50:-50],
+                                    ratio=0.142/self.imsize/2)
 
     def combined(self, abort_tuning_threshold=0.5):
         if self.mask is not None:

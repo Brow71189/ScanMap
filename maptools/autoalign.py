@@ -110,7 +110,8 @@ def align_series_fft(dirname):
 
 def correlation(im1, im2):
     """"Calculates the cross-correlation of two images im1 and im2. Images have to be numpy arrays."""
-    return np.sum( (im1-np.mean(im1)) * (im2-np.mean(im2)) / ( np.std(im1) * np.std(im2) ) ) / np.prod(np.shape(im1))
+    #return np.sum( (im1-np.mean(im1)) * (im2-np.mean(im2)) / ( np.std(im1) * np.std(im2) ) ) / np.prod(np.shape(im1))
+    return np.sum((im1) * (im2)) / np.sqrt(np.sum((im1)**2) * np.sum((im2)**2))
 
 def translated_correlation(translation, im1, im2):
     """Returns the correct correlation between two images. Im2 is moved with respect to im1 by the vector 'translation'"""
@@ -141,7 +142,7 @@ def find_shift(im1, im2, ratio=0.1):
         start_values = []
         for j in (-1,0,1):
             for i in (-1,0,1):
-                start_values.append( np.array((j*shape[0]*ratio, i*shape[1]*ratio))+1 )
+                start_values.append( np.array((j*shape[0]*ratio, i*shape[1]*ratio)) )
         #start_values = np.array( ( (1,1), (shape[0]*ratio, shape[1]*ratio),  (-shape[0]*ratio, -shape[1]*ratio), (shape[0]*ratio, -shape[1]*ratio), (-shape[0]*ratio, shape[1]*ratio) ) )
         function_values = np.zeros(len(start_values))
         for i in range(len(start_values)):
@@ -149,7 +150,8 @@ def find_shift(im1, im2, ratio=0.1):
         start_value = start_values[np.argmin(function_values)]
     else:
         start_value = (0,0)
-    res = optimize.minimize(translated_correlation, start_value, method='Nelder-Mead', args=(im1,im2))
+    print(start_value)
+    res = optimize.minimize(translated_correlation, start_value, method='Nelder-Mead', args=(im1,im2), options={'ftol':1e-12})
     return (res.x, -res.fun)
 
 def rot_dist(im1, im2, ratio=None):
