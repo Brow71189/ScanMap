@@ -977,8 +977,8 @@ class Peaking(Imaging):
             return peaks
 
     def fourier_filter(self, filter_radius=10, **kwargs):
-        # check if peaks are already saved and if second order is there
-        if len(np.shape(self.peaks)) < 2:
+        # check if peaks are already saved and if second order is there (if a new image is provided also recalculate)
+        if len(np.shape(self.peaks)) < 2 or kwargs.get('image') is not None:
             self.peaks = self.find_peaks(second_order=True, **kwargs)
         xdata = np.mgrid[-filter_radius:filter_radius+1, -filter_radius:filter_radius+1]
         mask = gaussian2D(xdata, 0, 0, filter_radius/2, filter_radius/2, 1, 0)
@@ -1001,8 +1001,8 @@ class Tuning(Peaking):
                         }
 #        self._merit_lookup = {'EHTFocus': 'intensity', 'C12_a': 'astig_2f', 'C21_a': 'intensity', 'C23_a': 'astig_3f',
 #                              'C12_b': 'astig_2f', 'C21_b': 'intensity', 'C23_b': 'astig_3f'}
-        self._merit_lookup = {'EHTFocus': 'intensity', 'C12_a': 'astig_2f', 'C21_a': 'intensity', 'C23_a': 'astig_3f',
-                              'C12_b': 'astig_2f', 'C21_b': 'intensity', 'C23_b': 'astig_3f'}
+        self._merit_lookup = {'EHTFocus': 'intensity', 'C12_a': 'astig_2f', 'C21_a': 'astig_3f', 'C23_a': 'astig_3f',
+                              'C12_b': 'astig_2f', 'C21_b': 'astig_3f', 'C23_b': 'astig_3f'}
         self.steps = kwargs.get('steps')
         self.keys = kwargs.get('keys')
         self.event = kwargs.get('event')
@@ -1042,11 +1042,12 @@ class Tuning(Peaking):
         
         return result
 
-    def find_direction(self, key, dirt_detection=True, merit='astig_2f', merit_tolerance=0):
-        step_multiplicators = [0.5, 1, 2]
+    def find_direction(self, key, dirt_detection=True, merit='astig_2f', merit_tolerance=0.1):
+        step_multiplicators = [1, 0.5, 2]
+        #step_multiplicators.sort(key=lambda a: np.random.rand())
         step_multiplicator = None
 
-        current = {merit: self.merit_history[merit][-1]}
+        current = {merit: self.merit_history[merit][-1], 'intensity': self.merit_history['intensity'][-1]}
 
         for step_multiplicator in step_multiplicators:
             self.logwrite('Finding direction of ' + key + ' with stepsize ' + \
@@ -1087,7 +1088,10 @@ class Tuning(Peaking):
                 self.logwrite('Tuning ended because of too high dirt coverage.', level='warn')
                 raise
 
-            if minus[merit] < plus[merit] and minus[merit] < current[merit]*(1+merit_tolerance):
+            if (minus[merit] < plus[merit] and minus[merit] < current[merit]*(1+merit_tolerance) and
+                minus['intensity'] < plus['intensity'] and
+                minus['intensity'] < current['intensity']*(1+merit_tolerance)):
+                    
                 direction = -1
                 current = minus
                 #setting the stepsize to new value
@@ -1101,7 +1105,10 @@ class Tuning(Peaking):
                 #self.aberrations_tracklist.append(self.aberrations.copy())
                 break
 
-            elif plus[merit] < minus[merit] and plus[merit] < current[merit]*(1+merit_tolerance):
+            elif (plus[merit] < minus[merit] and plus[merit] < current[merit]*(1+merit_tolerance) and
+                  plus['intensity'] < minus['intensity'] and
+                  plus['intensity'] < current['intensity']*(1+merit_tolerance)):
+                      
                 direction = 1
                 current = plus
                 #setting the stepsize to new value
@@ -1152,9 +1159,10 @@ class Tuning(Peaking):
 
         # Apply default values if one required parameter is not set
         if self.steps is None:
-            self.steps = {'EHTFocus': 1, 'C12_a': 1, 'C12_b': 1, 'C21_a': 150, 'C21_b': 150, 'C23_a': 75, 'C23_b': 75}
+            self.steps = {'EHTFocus': 1, 'C12_a': 1, 'C12_b': 1, 'C21_a': 150, 'C21_b': 150, 'C23_a': 50, 'C23_b': 50}
         if self.keys is None:
-            self.keys = ['EHTFocus', 'C12_a', 'C21_a', 'C23_a', 'C12_b', 'C21_b', 'C23_b']
+            #self.keys = ['EHTFocus', 'C12_a', 'C21_a', 'C23_a', 'C12_b', 'C21_b', 'C23_b']
+            self.keys = ['EHTFocus', 'C21_a','C21_b', 'C23_a', 'C23_b', 'C12_a', 'C12_b']
         
         # Check if merit should be adapted automatically to current aberration
         auto_merit = False
@@ -1199,7 +1207,7 @@ class Tuning(Peaking):
         #total_tunings.append(current)
         self.logwrite('Appending start value: ' + str(current))
         
-        while counter < 3:
+        while counter < 10:
             if self.event is not None and self.event.is_set():
                 break
             start_time = time.time()
@@ -1209,12 +1217,12 @@ class Tuning(Peaking):
 
             if len(self.run_history[merit]) > 1:
                 self.logwrite('Improved tuning by ' +
-                              str(np.abs((self.run_history[merit][-2] - self.run_history[merit][-1]) /
-                                  ((self.run_history[merit][-2]+self.run_history[merit][-1])*0.5)*100)) + '%.')
+                              str(np.abs((self.run_history['intensity'][-2] - self.run_history['intensity'][-1]) /
+                              ((self.run_history['intensity'][-2]+self.run_history['intensity'][-1])*0.5)*100)) + '%.')
 
-            if len(self.run_history[merit]) > 1:
-                if np.abs((self.run_history[merit][-2] - self.run_history[merit][-1]) /
-                          ((self.run_history[merit][-2] + self.run_history[merit][-1])*0.5)) < 0.02:
+            if len(self.run_history['intensity']) > 1:
+                if np.abs((self.run_history['intensity'][-2] - self.run_history['intensity'][-1]) /
+                          ((self.run_history['intensity'][-2] + self.run_history['intensity'][-1])*0.5)) < 0.02:
                     self.logwrite('Finished tuning successfully after %d runs.' %(counter))
                     break
 
@@ -1339,6 +1347,7 @@ class Tuning(Peaking):
                     self.run_history[key2].append(value[-1])
             self.logwrite('Finished run number '+str(counter+1)+' in '+str(time.time()-start_time)+' s.')
             counter += 1
+            #self.keys.sort(key=lambda a: np.random.rand())
         # This else belongs to the while loop. It is executed when the loop ends 'normally', e.g not through
         # break.
         else:
@@ -1359,7 +1368,7 @@ class Tuning(Peaking):
 #                pass
 #        else:
 #            image_grabber(acquire_image=False, **kwargs)
-        #self.steps = step_originals.copy()
+        self.steps = step_originals.copy()
         self.frame_parameters = original_frame_parameters.copy()
 
     def astig_2f(self):
@@ -1382,7 +1391,7 @@ class Tuning(Peaking):
 
         #return 1/np.sum(intensities) * 1e3 + np.std(intensities[:6])/np.mean(intensities[:6])
         return np.sqrt((intensities[0] - intensities[1])**2 + (intensities[0] - intensities[2])**2 +
-                       (intensities[1] - intensities[2])**2)
+                       (intensities[1] - intensities[2])**2)/np.sum(intensities[0:3])
 
     def astig_3f(self):
         try:
@@ -1392,9 +1401,10 @@ class Tuning(Peaking):
             return 1000
 
         #if self.mask is None:
+        ffil = scipy.ndimage.gaussian_filter(ffil, 4)
         res=self.measure_symmetry(ffil)#, np.std(ffil))
         print(res)
-        res = res[1]
+        res = (res[1], np.std(ffil))
         return 1/np.sum(res)
         #else:
         #    return 1/np.prod(self.measure_symmetry(ffil)[1]*(1.0-np.sum(self.mask)/mean),

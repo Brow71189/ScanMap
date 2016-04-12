@@ -151,7 +151,7 @@ def find_shift(im1, im2, ratio=0.1):
     else:
         start_value = (0,0)
     print(start_value)
-    res = optimize.minimize(translated_correlation, start_value, method='Nelder-Mead', args=(im1,im2), options={'ftol':1e-12})
+    res = optimize.minimize(translated_correlation, start_value, method='Nelder-Mead', args=(im1,im2))
     return (res.x, -res.fun)
 
 def rot_dist(im1, im2, ratio=None):
