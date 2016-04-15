@@ -13,32 +13,8 @@ from scipy.stats.mstats import theilslopes
 import scipy.ndimage as ndimage
 import matplotlib.pyplot as plt
 import matplotlib.animation as animation
-#import matplotlib.pyplot as plt
-#from multiprocessing import Pool, Lock, Array
-#from ctypes import c_float
-    
-#def find_position(name, added, over, shape_over, size_frames, size_overview, color):
-#    #global added, l, over, shape_over, size_frame, size_overview, color
-#    
-#    im = cv2.imread(dirpath+name, -1)
-#    shape_im = np.shape(im)
-#    scale = (size_frames/float(shape_im[0])/(size_overview/float(shape_over[0])))
-#    im = cv2.resize(im, None, fx=scale, fy=scale, interpolation=cv2.INTER_AREA)
-#    result = cv2.matchTemplate(over, im, method=cv2.TM_SQDIFF_NORMED)
-#    maxi = (np.argmin(result), result.shape)
-#    l.acquire()
-#    try:
-#        added[maxi:] += im.ravel()
-#        cv2.rectangle(added, (maxi[1],maxi[0]), (maxi[1]+im.shape[1], maxi[0]+im.shape[0]), color, thickness=2)
-#        cv2.putText(added, name[0:4], (maxi[1]-4,maxi[0]-2), cv2.FONT_HERSHEY_PLAIN, 3, color, thickness=2)
-#    except Exception as detail:
-#        print('Error in '+name+': '+str(detail))
-#    finally:
-#        l.release()
-#
-#def init(l):
-#    global lock
-#    lock=l
+
+
 class Positionfinder(object):
     
     def __init__(self, *args, **kwargs):
@@ -57,7 +33,6 @@ class Positionfinder(object):
         self.topborder = []
         self.rightborder = []
         self.bottomborder = []
-        self.allborders = []
         self.colored_borders = None
         self.colored_positions = None
         self.colored_optimized_positions = None
@@ -67,10 +42,10 @@ class Positionfinder(object):
         self.positions = None
         self.optimized_positions = None
         self.data_to_save = kwargs.get('data_to_save', ['scaledframes', 'leftborder', 'topborder', 'rightborder',
-                                                        'bottomborder', 'allborders', 'corners', 'border_parameters',
+                                                        'bottomborder', 'corners', 'border_parameters',
                                                         'positions', 'optimized_positions', 'options'])
         self.data_to_load = kwargs.get('data_to_load', ['scaledframes', 'leftborder', 'topborder', 'rightborder',
-                                                        'bottomborder', 'allborders', 'corners', 'border_parameters',
+                                                        'bottomborder', 'corners', 'border_parameters',
                                                         'positions', 'optimized_positions', 'options'])
         self.loaded_data = []
         self.positions_to_relax = []
@@ -280,8 +255,7 @@ class Positionfinder(object):
         print('\nStarted finding the borders of the map...')
         #positions = []
         if 'leftborder' in self.loaded_data and 'topborder' in self.loaded_data and 'rightborder' in self.loaded_data \
-        and 'bottomborder' in self.loaded_data and 'allborders':
-            
+        and 'bottomborder' in self.loaded_data:
             print('Loaded borders from disk.')
         else:
             for i in range(len(self.scaledframes)):
@@ -289,22 +263,18 @@ class Positionfinder(object):
                     position = self.find_position(i)
                     if position[1] > min_correlation:
                         self.topborder.append(((i, position[1]), position[0]))
-                        self.allborders.append(((i, position[1]), position[0]))
                 elif i > len(self.scaledframes)-self.number_frames[0]:
                     position = self.find_position(i)
                     if position[1] > min_correlation:
                         self.bottomborder.append(((i, position[1]), position[0]))
-                        self.allborders.append(((i, position[1]), position[0]))
                 elif i%self.number_frames[0] == 0:
                     position = self.find_position(i)
                     if position[1] > min_correlation:
                         self.leftborder.append(((i, position[1]), position[0]))
-                        self.allborders.append(((i, position[1]), position[0]))
                 elif (i+1)%self.number_frames[0] == 0:
                     position = self.find_position(i)
                     if position[1] > min_correlation:
                         self.rightborder.append(((i, position[1]), position[0]))
-                        self.allborders.append(((i, position[1]), position[0]))
     
                 if i%(np.rint(len(self.scaledframes)/50)) == 0:
                     print('Done {:.0f} / {:.0f} ({:.1%})'.format(i, len(self.scaledframes), i/len(self.scaledframes)),
@@ -316,12 +286,13 @@ class Positionfinder(object):
         added = np.zeros((3,)+np.shape(self.overview))
         added[2] = self.overview
         color = float(np.mean(self.overview))
-        for i in range(len(self.allborders)):
-            added[1,self.allborders[i][1][0]:self.allborders[i][1][0]+self.scaledframes[i].shape[0],
-                  self.allborders[i][1][1]:self.allborders[i][1][1]+self.scaledframes[i].shape[1]] = \
-                  self.scaledframes[self.allborders[i][0][0]]
-            cv2.putText(added[0], str(int(self.allborders[i][0][0])), (int(np.rint(self.allborders[i][1][1]-4)),
-                        int(np.rint(self.allborders[i][1][0]-2))), cv2.FONT_HERSHEY_PLAIN, 2, color, thickness=2)
+        for border in [self.topborder, self.rightborder, self.bottomborder, self.leftborder]:
+            for i in range(len(border)):
+                added[1,border[i][1][0]:border[i][1][0]+self.scaledframes[i].shape[0],
+                      border[i][1][1]:border[i][1][1]+self.scaledframes[i].shape[1]] = \
+                      self.scaledframes[border[i][0][0]]
+                cv2.putText(added[0], str(int(border[i][0][0])), (int(np.rint(border[i][1][1]-4)),
+                            int(np.rint(border[i][1][0]-2))), cv2.FONT_HERSHEY_PLAIN, 2, color, thickness=2)
         
         added = np.swapaxes(added, 0, 2)
         added = np.swapaxes(added, 0, 1)
@@ -394,7 +365,33 @@ class Positionfinder(object):
         added = added.astype('uint8')
         
         self.colored_optimized_positions = added
-    
+        
+    def update_borders(self):
+        """
+        Deletes the current border paramters and corners and calculates them again from the edges of optimized_positions
+        """
+        loaded_corners = False
+        if 'corners' in self.loaded_data:
+            self.loaded_data.remove('corners')
+            loaded_corners = True
+            
+        self.corners = []
+        self.border_parameters = []
+        self.topborder = np.array(self.topborder)
+        self.bottomborder = np.array(self.bottomborder)
+        self.leftborder = np.array(self.leftborder)
+        self.rightborder = np.array(self.rightborder)
+        
+        self.topborder[:, 1] = self.optimized_positions[0]
+        self.bottomborder[:, 1] = self.optimized_positions[-1]
+        self.leftborder[:, 1] = self.optimized_positions[:, 0]
+        self.rightborder[:, 1] = self.optimized_positions[:, -1]
+        
+        self.find_corners()
+        
+        if loaded_corners:
+            self.load_data.append('corners')
+        
     def find_corners(self):
         # Fit lines to borders
         print('\nFinding corners of the map.')
@@ -402,44 +399,15 @@ class Positionfinder(object):
             print('Loaded corners from disk.')
         else:
             top = np.array(self.topborder)
-#            topslope = np.median(top[:, 1, 0][1:]-top[:, 1, 0][:-1]) / np.median(top[:, 1, 1][1:]-top[:, 1, 1][:-1])
-#            topoffset = np.median(top[:, 1, 0]) - topslope * np.median(top[:, 1, 1])
-#            print(topslope)
-#            print(topoffset)
-#            topperc1 = np.percentile(top[:, 1, 0], 20)
-#            topperc2 = np.percentile(top[:, 1, 0], 80)
-#            top = top[:, 1][top[:, 1, 0]>topperc1]
-#            top = top[top[:, 0]<topperc2]
             self.border_parameters.append(self.fit_line(top[:, 1, 1], top[:, 1, 0]))
 
             right = np.array(self.rightborder)
-#            rightslope = np.median(right[:, 1, 0][1:]-right[:, 1, 0][:-1]) / \
-#                         np.median(right[:, 1, 1][1:]-right[:, 1, 1][:-1])
-#            rightoffset = -rightslope*np.median(right[:, 1, 1])
-#            rightperc1 = np.percentile(right[:, 1, 1], 20)
-#            rightperc2 = np.percentile(right[:, 1, 1], 80)
-#            right = right[:, 1][right[:, 1, 1]>rightperc1]
-#            right = right[right[:, 1]<rightperc2]
             self.border_parameters.append(self.fit_line(right[:, 1, 1], right[:, 1, 0]))
 
             bottom = np.array(self.bottomborder)
-#            bottomslope = np.median(bottom[:, 1, 0][1:]-bottom[:, 1, 0][:-1]) / \
-#                         np.median(bottom[:, 1, 1][1:]-bottom[:, 1, 1][:-1])
-#            bottomoffset = np.median(bottom[:, 1, 0])
-#            bottomperc1 = np.percentile(bottom[:, 1, 0], 20)
-#            bottomperc2 = np.percentile(bottom[:, 1, 0], 80)
-#            bottom = bottom[:, 1][bottom[:, 1, 0]>bottomperc1]
-#            bottom = bottom[bottom[:, 0]<bottomperc2]
             self.border_parameters.append(self.fit_line(bottom[:, 1, 1], bottom[:, 1, 0]))
 
             left = np.array(self.leftborder)
-#            leftslope = np.median(left[:, 1, 0][1:]-left[:, 1, 0][:-1]) / \
-#                         np.median(left[:, 1, 1][1:]-left[:, 1, 1][:-1])
-#            leftoffset = -rightslope*np.median(left[:, 1, 1])
-#            leftperc1 = np.percentile(left[:, 1, 1], 20)
-#            leftperc2 = np.percentile(left[:, 1, 1], 80)
-#            left = left[:, 1][left[:, 1, 1]>leftperc1]
-#            left = left[left[:, 1]<leftperc2]
             self.border_parameters.append(self.fit_line(left[:, 1, 1], left[:, 1, 0]))
             
             # Now calculate pairwise intersections to get corners
@@ -452,37 +420,6 @@ class Positionfinder(object):
         print('Finished finding the corners.\n')
         
     def plot_border_fits(self):
-        # Top
-#        top = np.array(self.topborder)
-#        topxrange = np.arange(np.amin(top[:, 1, 1]), np.amax(top[:, 1, 1]))
-#        plt.gci()
-#        plt.plot(topxrange, self.linear(topxrange, *self.border_parameters[0]), 'r-')
-#        # Right
-#        #right = np.array(self.rightborder)
-#        rightxrange = np.arange(self.overview.shape[1]-1) #np.arange(np.amin(right[:, 1, 1]), np.amax(right[:, 1, 1]))
-#        righty = self.linear(rightxrange, *self.border_parameters[1])
-#        rightxrange = rightxrange[righty<self.overview.shape[0]-200]
-#        righty = righty[righty<self.overview.shape[0]-200]
-#        rightxrange = rightxrange[righty>200]
-#        righty = righty[righty>200]
-#        plt.gci()
-#        plt.plot(rightxrange, righty, 'r-')
-#        # Bottom
-#        bottom = np.array(self.bottomborder)
-#        bottomxrange = np.arange(np.amin(bottom[:, 1, 1]), np.amax(bottom[:, 1, 1]))
-#        plt.gci()
-#        plt.plot(bottomxrange, self.linear(bottomxrange, *self.border_parameters[2]), 'r-')
-#        # Left
-#        #left = np.array(self.leftborder)
-#        leftxrange = np.arange(self.overview.shape[1]-1) #leftxrange = np.arange(np.amin(left[:, 1, 1]), np.amax(left[:, 1, 1]))
-#        lefty = self.linear(leftxrange, *self.border_parameters[3])
-#        leftxrange = leftxrange[lefty<self.overview.shape[0]-100]
-#        lefty = lefty[lefty<self.overview.shape[0]-100]
-#        leftxrange = leftxrange[lefty>100]
-#        lefty = lefty[lefty>100]
-#        plt.gci()
-#        plt.plot(leftxrange, lefty, 'r-')
-    
         corners = list(self.corners.copy())
         corners.append(self.corners[0])
         corners = np.array(corners)
@@ -937,52 +874,8 @@ if __name__=='__main__':
 #    Finder.data_to_load.remove('borders')
 #    Finder.data_to_load = []
     Finder.data_to_load = ['scaledframes']
-#    Finder.data_to_load = ['scaledframes', 'leftborder', 'topborder', 'rightborder', 'bottomborder', 'allborders',
+#    Finder.data_to_load = ['scaledframes', 'leftborder', 'topborder', 'rightborder', 'bottomborder',
 #                           'options']
     Finder.main(save_plots=True, plot_results=True, border_min_correlation=0.0,
                 optimize_searchrange=3, optimize_min_correlation=0.85, outlier_tolerance=0.6, relax_searchrange=3,
                 relax_min_correlation=0.7, choose_frame=4, discard_final_result=False, use_saved_parameters=True)
-#    Finder.get_framelist()    
-#    Finder.load_data()
-#    Finder.scale_images()
-#    Finder.find_borders(min_correlation=0.6)
-#    Finder.find_corners()
-#    Finder.place_subframes()
-#    Finder.optimize_positions(searchradius=3)
-#    
-#    Finder.draw_borders()
-#    fig1 = plt.figure(1)
-#    plt.imshow(Finder.colored_borders)
-#    Finder.plot_border_fits()
-##    
-##    Finder.draw_positions()
-##    fig2 = plt.figure(2)
-##    plt.imshow(Finder.colored_positions)
-#    
-#    Finder.draw_optimized_positions()
-#    fig3 = plt.figure(3)
-#    plt.imshow(Finder.colored_optimized_positions)
-#
-#    for i in range(20):
-#        Finder.remove_outliers(tolerance=0.8)
-##    Finder.draw_optimized_positions()
-##    fig4 = plt.figure(4)
-##    plt.imshow(Finder.colored_optimized_positions)
-#    
-#        Finder.interpolate_positions()
-##    Finder.draw_optimized_positions()
-##    fig5 = plt.figure(5)
-##    plt.imshow(Finder.colored_optimized_positions)
-#    
-#        Finder.relax_positions(searchradius=3, min_correlation=0.6)
-#        
-#    Finder.draw_optimized_positions()
-#    fig6 = plt.figure(6)
-#    plt.imshow(Finder.colored_optimized_positions)
-#    
-#    Finder.interpolate_positions()
-#    Finder.draw_optimized_positions()
-#    fig7 = plt.figure(7)
-#    plt.imshow(Finder.colored_optimized_positions)
-#    
-#    Finder.save_data()
