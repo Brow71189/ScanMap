@@ -588,7 +588,7 @@ class Positionfinder(object):
                         
         print('Finished optimizing frame positions.')
         
-    def relax_positions(self, relax_searchrange=3, relax_min_correlation=0.6):
+    def relax_positions(self, relax_searchrange=1, relax_min_correlation=0.6):
         searchradius = relax_searchrange
         min_correlation = relax_min_correlation
         print('\nRelaxing positions of the given frames...')
@@ -920,14 +920,14 @@ class Positionfinder(object):
             
 if __name__=='__main__':
     
-    dirpath = '/3tb/maps_data/map_2016_01_09_00_01'
+    dirpath = '/3tb/maps_data/map_26_03_2015_19_40'
     
 #    overview = '/3tb/maps_data/map_2015_08_18_17_07/Overview_1576.59891322_nm.tif'
     
-    size_overview = 479 #nm
-    size_frames = 16 #nm
+    size_overview = 524 #nm
+    size_frames = 12 #nm
     #number of frames in x- and y-direction
-    number_frames = (13,13)
+    number_frames = (12,17)
     
     Finder = Positionfinder(number_frames=number_frames, size_overview=size_overview, size_frames=size_frames,
                             framepath=dirpath)
@@ -939,7 +939,7 @@ if __name__=='__main__':
     Finder.data_to_load = ['scaledframes']
 #    Finder.data_to_load = ['scaledframes', 'leftborder', 'topborder', 'rightborder', 'bottomborder', 'allborders',
 #                           'options']
-    Finder.main(save_plots=True, plot_results=False, border_min_correlation=0.4,
+    Finder.main(save_plots=True, plot_results=True, border_min_correlation=0.0,
                 optimize_searchrange=3, optimize_min_correlation=0.85, outlier_tolerance=0.6, relax_searchrange=3,
                 relax_min_correlation=0.7, choose_frame=4, discard_final_result=False, use_saved_parameters=True)
 #    Finder.get_framelist()    

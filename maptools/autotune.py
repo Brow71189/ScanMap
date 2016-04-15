@@ -8,7 +8,7 @@ Created on Thu Mar 12 16:54:54 2015
 import logging
 import time
 #import os
-import warnings
+#import warnings
 #from threading import Event
 
 import numpy as np
@@ -714,9 +714,13 @@ class Imaging(object):
                 kernel = np.abs(np.fft.fftshift(np.fft.ifft2(np.fft.fftshift(kernel))))**2
                 kernel /= np.sum(kernel)
                 #im = cv2.filter2D(im, -1, kernel)
-                multiplicator = self.frame_parameters.get('pixeltime', 0)*100+1
+                if self.frame_parameters.get('pixeltime', 0) < 0:
+                    multiplicator = 1
+                else:
+                    multiplicator = self.frame_parameters.get('pixeltime', 0)*100+1
                 im = fftconvolve((self.delta_graphene+0.002)*multiplicator, kernel, mode='valid')
-                im = np.random.poisson(lam=im.flatten(), size=np.size(im)).astype(im.dtype)
+                if self.frame_parameters.get('pixeltime', 0) >= 0:
+                    im = np.random.poisson(lam=im.flatten(), size=np.size(im)).astype(im.dtype)
 
                 if debug_mode:
                     return_image = (im.reshape(self.shape).astype('float32'), kernel)

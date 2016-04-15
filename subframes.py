@@ -25,14 +25,14 @@ except:
 #######################################################################################################################    
 #######################################################################################################################
 #######################################################################################################################
-dirpath = '/home/mittelberger/Documents/jk-randomwalk/divac-seq3-lowdose'
+dirpath = '/home/mittelberger/Documents/giacomo/astig_christian'
 #dirpath = '/3tb/Dark_noise/'
-imsize = 4
+imsize = 20
 #graphene_threshold = 0.0033
 graphene_threshold = 0
 light_threshold = -1
 #light_threshold = 0
-heavy_threshold = 0.006
+heavy_threshold = -1
 dirt_border = 30
 minimum_graphene_area=0.3
 #######################################################################################################################
@@ -180,7 +180,7 @@ def create_mask(Peak, graphene_threshold, light_threshold, heavy_threshold, dirt
 
 def subframes_preprocessing(filename, dirname, imsize, counts_threshold=1e-9, graphene_threshold=0, light_threshold=0, 
                             heavy_threshold=0.02, median_blur_diameter=39, gaussian_blur_radius=3,
-                            minimum_graphene_area=0.5, dirt_border=100, save_fft=True):
+                            minimum_graphene_area=0.5, dirt_border=100, save_fft=True, counts_divisor=None):
     """
     Returns tuple of the form:
             (filename, success, dirt coverage, counts divisor, angle of lattice rotation, mean peak radius)
@@ -226,7 +226,8 @@ def subframes_preprocessing(filename, dirname, imsize, counts_threshold=1e-9, gr
         success = False
     
     #Get counts divisor for image
-    counts_divisor = calculate_counts(image, threshold=counts_threshold)[0]
+    if counts_divisor is None:        
+        counts_divisor = calculate_counts(image, threshold=counts_threshold)[0]
     #Calculate actual counts in image and "translate" it to 16bit unsigned integer.
     image[image<0]=0.0
     image = np.asarray(np.rint(image/counts_divisor), dtype='uint16')
@@ -284,7 +285,7 @@ if __name__ == '__main__':
     for filename in dirlist:
         try:
             #int(filename[0:4])
-            if filename.endswith('.tif'):
+            if filename.startswith('image'):
                 matched_dirlist.append(filename)
         except:
             pass
@@ -297,7 +298,8 @@ if __name__ == '__main__':
                             {'graphene_threshold': graphene_threshold, 'light_threshold': light_threshold,
                              'heavy_threshold': heavy_threshold, 'dirt_border':dirt_border, 'median_blur_diameter': 67,
                              'gaussian_blur_radius': 4, 'save_fft': True,
-                             'minimum_graphene_area': minimum_graphene_area}) for filename in matched_dirlist]
+                             'minimum_graphene_area': minimum_graphene_area,
+                             'counts_divisor': 1/5000}) for filename in matched_dirlist]
     res_list = [p.get() for p in res]
     pool.close()
     pool.terminate()
