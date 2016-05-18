@@ -607,18 +607,7 @@ class Imaging(object):
                     return_image = [return_image, data]
 
                 if show_live_image:
-                    if self.live_data_item_MAADF is None and self.detectors['MAADF']:
-                        self.live_data_item_MAADF = self.document_controller.library.create_data_item('Live (MAADF)')
-                    if self.live_data_item_HAADF is None and self.detectors['HAADF']:
-                        self.live_data_item_HAADF = self.document_controller.library.create_data_item('Live (HAADF)')
-
-                    if self.detectors['HAADF'] and self.detectors['MAADF']:
-                        self.live_data_item_HAADF.set_data(return_image[0])
-                        self.live_data_item_MAADF.set_data(return_image[1])
-                    elif self.detectors['HAADF']:
-                        self.live_data_item_HAADF.set_data(return_image)
-                    elif self.detectors['MAADF']:
-                        self.live_data_item_MAADF.set_data(return_image)
+                    self.show_live_image(return_image)
 
                 #im = self.superscan.grab_next_to_start(channels_enabled=channels_enabled)
 #                if len(im) > 1:
@@ -748,6 +737,20 @@ class Imaging(object):
                 self.document_controller.queue_task(lambda: logging.error(str(msg)))
             else:
                 self.document_controller.queue_task(lambda: logging.debug(str(msg)))
+
+    def show_live_image(self, image):
+        if self.live_data_item_MAADF is None and self.detectors['MAADF']:
+            self.live_data_item_MAADF = self.document_controller.library.create_data_item('Live (MAADF)')
+        if self.live_data_item_HAADF is None and self.detectors['HAADF']:
+            self.live_data_item_HAADF = self.document_controller.library.create_data_item('Live (HAADF)')
+
+        if self.detectors['HAADF'] and self.detectors['MAADF']:
+            self.live_data_item_HAADF.set_data(image[0])
+            self.live_data_item_MAADF.set_data(image[1])
+        elif self.detectors['HAADF']:
+            self.live_data_item_HAADF.set_data(image)
+        elif self.detectors['MAADF']:
+            self.live_data_item_MAADF.set_data(image)
 
 class Peaking(Imaging):
 

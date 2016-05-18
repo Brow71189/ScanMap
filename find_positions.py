@@ -383,14 +383,14 @@ class Positionfinder(object):
         self.rightborder = np.array(self.rightborder)
         
         self.topborder[:, 1] = self.optimized_positions[0]
-        self.bottomborder[:, 1] = self.optimized_positions[-1]
-        self.leftborder[:, 1] = self.optimized_positions[:, 0]
-        self.rightborder[:, 1] = self.optimized_positions[:, -1]
+        self.bottomborder[:, 1] = self.optimized_positions[-1, :-1]
+        self.leftborder[:, 1] = self.optimized_positions[:-1, 0]
+        self.rightborder[:, 1] = self.optimized_positions[:-2, -1]
         
         self.find_corners()
         
         if loaded_corners:
-            self.load_data.append('corners')
+            self.loaded_data.append('corners')
         
     def find_corners(self):
         # Fit lines to borders
@@ -525,7 +525,7 @@ class Positionfinder(object):
                         
         print('Finished optimizing frame positions.')
         
-    def relax_positions(self, relax_searchrange=1, relax_min_correlation=0.6):
+    def relax_positions(self, relax_searchrange=0.5, relax_min_correlation=0.3):
         searchradius = relax_searchrange
         min_correlation = relax_min_correlation
         print('\nRelaxing positions of the given frames...')
@@ -857,7 +857,7 @@ class Positionfinder(object):
             
 if __name__=='__main__':
     
-    dirpath = '/3tb/maps_data/map_26_03_2015_19_40'
+    dirpath = '/3tb/maps_data/map_26_03_2015_17_28'
     
 #    overview = '/3tb/maps_data/map_2015_08_18_17_07/Overview_1576.59891322_nm.tif'
     
@@ -873,9 +873,10 @@ if __name__=='__main__':
 #    Finder.data_to_load.remove('positions')
 #    Finder.data_to_load.remove('borders')
 #    Finder.data_to_load = []
-    Finder.data_to_load = ['scaledframes']
-#    Finder.data_to_load = ['scaledframes', 'leftborder', 'topborder', 'rightborder', 'bottomborder',
+#    Finder.data_to_load = ['scaledframes', 'borders']
+#    Finder.data_to_load = ['scaledframes', 'leftborder', 'topborder', 'rightborder', 'bottomborder']
 #                           'options']
-    Finder.main(save_plots=True, plot_results=True, border_min_correlation=0.0,
+#    Finder.data_to_load.remove('scaledframes')
+    Finder.main(save_plots=True, plot_results=False, border_min_correlation=0.0,
                 optimize_searchrange=3, optimize_min_correlation=0.85, outlier_tolerance=0.6, relax_searchrange=3,
                 relax_min_correlation=0.7, choose_frame=4, discard_final_result=False, use_saved_parameters=True)

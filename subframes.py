@@ -25,16 +25,17 @@ except:
 #######################################################################################################################    
 #######################################################################################################################
 #######################################################################################################################
-dirpath = '/home/mittelberger/Documents/giacomo/astig_christian'
+dirpath = '/3tb/maps_data/map_2015_09_16_12_19'
 #dirpath = '/3tb/Dark_noise/'
 imsize = 20
 #graphene_threshold = 0.0033
-graphene_threshold = 0
+graphene_threshold = 0.01
 light_threshold = -1
 #light_threshold = 0
-heavy_threshold = -1
+heavy_threshold = 0.049
 dirt_border = 30
-minimum_graphene_area=0.3
+minimum_graphene_area = 0.5
+minimum_number_peaks = 10
 #######################################################################################################################
 #######################################################################################################################
 #######################################################################################################################
@@ -100,9 +101,10 @@ def rotation_radius(Peak, find_distortions=True):
 ##            while angle > np.pi/3.0:
 ##                angle -= np.pi/3.0
 #            sum_rotation += angle%(np.pi/3)
-        angles2 = np.array(angles)%np.pi/3
-        cos_angles = np.cos(angles2 * 6)
-        sin_angles = np.sin(angles2 * 6)
+        #angles2 = np.array(angles)%np.pi/3
+        angles2 = np.array(angles) * 6
+        cos_angles = np.cos(angles2)
+        sin_angles = np.sin(angles2)
         mean_angle = at.positive_angle(np.arctan2(np.mean(sin_angles), np.mean(cos_angles))) / 6
         #mean_angle = angles[0]
         
@@ -180,7 +182,8 @@ def create_mask(Peak, graphene_threshold, light_threshold, heavy_threshold, dirt
 
 def subframes_preprocessing(filename, dirname, imsize, counts_threshold=1e-9, graphene_threshold=0, light_threshold=0, 
                             heavy_threshold=0.02, median_blur_diameter=39, gaussian_blur_radius=3,
-                            minimum_graphene_area=0.5, dirt_border=100, save_fft=True, counts_divisor=None):
+                            minimum_graphene_area=0.5, dirt_border=100, save_fft=True, counts_divisor=None,
+                            minimum_number_peaks=-1):
     """
     Returns tuple of the form:
             (filename, success, dirt coverage, counts divisor, angle of lattice rotation, mean peak radius)
@@ -224,6 +227,9 @@ def subframes_preprocessing(filename, dirname, imsize, counts_threshold=1e-9, gr
         number_peaks = peak_intensities_sum = radius = 0
         #peaks = None
         success = False
+    else:
+        if minimum_number_peaks > 0 and number_peaks < minimum_number_peaks:
+            success = False
     
     #Get counts divisor for image
     if counts_divisor is None:        
@@ -256,14 +262,19 @@ def subframes_preprocessing(filename, dirname, imsize, counts_threshold=1e-9, gr
             fft = np.log(np.abs(Peak.fft)).astype(np.float32)
             center = np.array(np.shape(image))/2
             ell = np.ones(np.shape(fft), dtype='float32')
-            cv2.ellipse(ell, (tuple(center), (ellipse_a*2, ellipse_b*2), -angle*180/np.pi), 4)
-            cv2.ellipse(ell, (tuple(center), (ellipse_a*2*np.sqrt(3), ellipse_b*2*np.sqrt(3)), -angle*180/np.pi), 4)
+            if np.mean(fft) > 0:
+                ellipse_color = 2
+            else:
+                ellipse_color = 0.5
+            cv2.ellipse(ell, (tuple(center), (ellipse_a*2, ellipse_b*2), -angle*180/np.pi), ellipse_color)
+            cv2.ellipse(ell, (tuple(center), (ellipse_a*2*np.sqrt(3), ellipse_b*2*np.sqrt(3)), -angle*180/np.pi),
+                        ellipse_color)
             if np.isfinite(rotation):
                 endpoint = np.array((np.cos(rotation), -np.sin(rotation)))
                 endpoint *= radius
                 endpoint = np.rint(endpoint)
                 endpoint += center
-                cv2.line(ell, tuple(center.astype(np.int)), tuple(endpoint.astype(np.int)), 4)
+                cv2.line(ell, tuple(center.astype(np.int)), tuple(endpoint.astype(np.int)), ellipse_color)
             fft *= ell
             savesize = int(2.0*imsize/0.213)
             tifffile.imsave(dirname+'fft_'+dirname.split('/')[-2]+'/'+filename,
@@ -284,11 +295,15 @@ if __name__ == '__main__':
     matched_dirlist = []
     for filename in dirlist:
         try:
-            #int(filename[0:4])
-            if filename.startswith('image'):
-                matched_dirlist.append(filename)
+            #splitname = os.path.splitext(filename)
+            #int(splitname[0][-4:])
+            int(filename[:4])
+            #if filename.startswith('image'):
+            #    matched_dirlist.append(filename)
         except:
             pass
+        else:
+            matched_dirlist.append(filename)
     matched_dirlist.sort()
     #starttime = time.time()
     #matched_dirlist=matched_dirlist[400:600]
@@ -298,8 +313,8 @@ if __name__ == '__main__':
                             {'graphene_threshold': graphene_threshold, 'light_threshold': light_threshold,
                              'heavy_threshold': heavy_threshold, 'dirt_border':dirt_border, 'median_blur_diameter': 67,
                              'gaussian_blur_radius': 4, 'save_fft': True,
-                             'minimum_graphene_area': minimum_graphene_area,
-                             'counts_divisor': 1/5000}) for filename in matched_dirlist]
+                             'minimum_graphene_area': minimum_graphene_area, 'minimum_number_peaks': minimum_number_peaks,
+                             }) for filename in matched_dirlist]
     res_list = [p.get() for p in res]
     pool.close()
     pool.terminate()
