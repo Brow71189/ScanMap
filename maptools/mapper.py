@@ -53,6 +53,10 @@ class Mapping(object):
         self.gui_communication = {}
         self.missing_peaks = 0
         self.isotope_mapping_settings = kwargs.get('isotope_mapping_settings', {})
+        self.average_data_item_HAADF = None
+        self.average_data_item_MAADF = None
+        self.last_frames_HAADF = None
+        self.last_frames_MAADF = None
 
     @property
     def online(self):
@@ -621,6 +625,20 @@ class Mapping(object):
             #config_file.write('\nend')
 
         #config_file.close()
+
+    def show_average_of_last_frames(self, number_to_average):
+        assert self.document_controller is not None, 'Cannot create a data item without a document controller instance'
+        if self.detectors['HAADF']:
+            assert self.last_frames_HAADF is not None, 'No HAADF data to average.'
+        if self.detectors['MAADF']:
+            assert self.last_frames_MAADF is not None, 'No MAADF data to average.'
+        
+        if self.average_data_item_HAADF is None and self.detectors['HADDF']:
+            self.average_data_item_HAADF = self.document_controller.library.create_data_item(
+                                           'Average of last {:.0f} frames (HAADF)'.format(number_to_average))
+        if self.average_data_item_MAADF is None and self.detectors['MAADF']:
+            self.average_data_item_MAADF = self.document_controller.library.create_data_item(
+                                           'Average of last {:.0f} frames (MAADF)'.format(number_to_average))
 
     def sort_quadrangle(self, *args):
         """

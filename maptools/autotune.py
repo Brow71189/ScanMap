@@ -736,9 +736,11 @@ class Imaging(object):
             elif level.lower() == 'error':
                 self.document_controller.queue_task(lambda: logging.error(str(msg)))
             else:
-                self.document_controller.queue_task(lambda: logging.debug(str(msg)))
-
+                self.document_controller.queue_task(lambda: logging.debug(str(msg)))        
+        
     def show_live_image(self, image):
+        assert self.document_controller is not None, 'Cannot create a data item without a document controller instance'
+        
         if self.live_data_item_MAADF is None and self.detectors['MAADF']:
             self.live_data_item_MAADF = self.document_controller.library.create_data_item('Live (MAADF)')
         if self.live_data_item_HAADF is None and self.detectors['HAADF']:
