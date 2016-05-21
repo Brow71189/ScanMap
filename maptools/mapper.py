@@ -53,10 +53,11 @@ class Mapping(object):
         self.gui_communication = {}
         self.missing_peaks = 0
         self.isotope_mapping_settings = kwargs.get('isotope_mapping_settings', {})
+        self.average_number = kwargs.get('average_number', 1)
         self.average_data_item_HAADF = None
         self.average_data_item_MAADF = None
-        self.last_frames_HAADF = None
-        self.last_frames_MAADF = None
+        self.last_frames_HAADF = []
+        self.last_frames_MAADF = []
 
     @property
     def online(self):
@@ -79,6 +80,30 @@ class Mapping(object):
     @savepath.setter
     def savepath(self, savepath):
         self._savepath = os.path.normpath(savepath)
+        
+    def add_aligned(self, image):
+        if self.detectors['HAADF'] and self.detectors['MAADF']:
+            haadfimage = image[0]
+            maadfimage = image[1]
+        elif self.detectors['HAADF']:
+            haadfimage = image
+        elif self.detecors['MAADF']:
+            maadfimage = image
+            
+        if self.detectors['HAADF']:
+            if len(self.last_frames_HAADF) < self.average_number:
+                self.last_frames_HAADF.append(haadfimage)
+            else:
+                self.last_frames_HAADF.pop(0)
+                self.last_frames_HAADF.append(haadfimage)
+        
+        if self.detectors['MAADF']:
+            if len(self.last_frames_MAADF) < self.average_number:
+                self.last_frames_MAADF.append(maadfimage)
+            else:
+                self.last_frames_MAADF.pop(0)
+                self.last_frames_MAADF.append(maadfimage)
+                
 
     def create_map_coordinates(self, compensate_stage_error=False,
                                positionfile='C:/Users/ASUser/repos/ScanMap/positioncollection.npz'):
@@ -629,9 +654,9 @@ class Mapping(object):
     def show_average_of_last_frames(self, number_to_average):
         assert self.document_controller is not None, 'Cannot create a data item without a document controller instance'
         if self.detectors['HAADF']:
-            assert self.last_frames_HAADF is not None, 'No HAADF data to average.'
+            assert len(self.last_frames_HAADF) > 0, 'No HAADF data to average.'
         if self.detectors['MAADF']:
-            assert self.last_frames_MAADF is not None, 'No MAADF data to average.'
+            assert len(self.last_frames_MAADF) > 0 is not None, 'No MAADF data to average.'
         
         if self.average_data_item_HAADF is None and self.detectors['HADDF']:
             self.average_data_item_HAADF = self.document_controller.library.create_data_item(
@@ -639,6 +664,11 @@ class Mapping(object):
         if self.average_data_item_MAADF is None and self.detectors['MAADF']:
             self.average_data_item_MAADF = self.document_controller.library.create_data_item(
                                            'Average of last {:.0f} frames (MAADF)'.format(number_to_average))
+
+        if self.detectors['HAADF']:
+            self.average_data_item_HAADF.set_data(np.mean(self.last_frames_HAADF, axis=0))
+        elif self.detectors['MAADF']:
+            self.average_data_item_MAADF.set_data(np.mean(self.last_frames_MAADF, axis=0))
 
     def sort_quadrangle(self, *args):
         """
