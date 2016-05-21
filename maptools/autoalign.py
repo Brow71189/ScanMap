@@ -51,7 +51,8 @@ def shift_fft(im1, im2, return_cps=False):
     #translation = cv2.GaussianBlur(translation, (0,0), 3)
     if np.amax(translation) <= 0.03: #3.0*np.std(translation)+np.abs(np.amin(translation)):
         #return np.zeros(2)
-        raise RuntimeError('Could not determine any match between the input images.')
+        raise RuntimeError('Could not determine any match between the input images (Maximum correlation: {:.4f}).'
+                           .format(np.amax(translation)))
     transy, transx = np.unravel_index(np.argmax(translation), shape)
     if transy > shape[0]/2:
         transy -= shape[0]
@@ -76,7 +77,12 @@ def align_fft(im1, im2):
     Aligns im2 with respect to im1 using the result of shift_fft
     Return value is im2 which is cropped at one edge and paddded with zeros at the other
     """
-    shift = shift_fft(im1, im2)
+    try:
+        shift = shift_fft(im1, im2)
+    except RuntimeError as detail:
+        print(detail)
+        shift = np.array((0,0))
+        
     shape = np.shape(im2)
     result = np.zeros(shape)
     if (shift >= 0).all():
