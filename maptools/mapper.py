@@ -18,7 +18,7 @@ with warnings.catch_warnings():
 
 from .autotune import Imaging, Tuning, DirtError
 from scipy.interpolate import Rbf
-#from . import autoalign
+from .autoalign import align
 
 
 class Mapping(object):
@@ -46,18 +46,21 @@ class Mapping(object):
             self._savepath = None
         self.event = kwargs.get('event')
         self.tune_event = kwargs.get('tune_event')
+        self.abort_series_event = kwargs.get('abort_series_event')
         self.foldername = 'map_' + time.strftime('%Y_%m_%d_%H_%M')
         self.offset = kwargs.get('offset', 0)
         self._online = kwargs.get('online')
         self.retuning_mode = kwargs.get('retuning_mode', ['missing_peaks', 'manual'])
-        self.gui_communication = {}
+        self.gui_communication = {'series_running': False}
         self.missing_peaks = 0
         self.isotope_mapping_settings = kwargs.get('isotope_mapping_settings', {})
         self.average_number = kwargs.get('average_number', 1)
+        self.max_align_dist = kwargs.get('max_align_dist', 0.01)
         self.average_data_item_HAADF = None
         self.average_data_item_MAADF = None
         self.last_frames_HAADF = []
         self.last_frames_MAADF = []
+        self.sleeptime = kwargs.get('sleeptime', 2)
 
     @property
     def online(self):
@@ -81,7 +84,7 @@ class Mapping(object):
     def savepath(self, savepath):
         self._savepath = os.path.normpath(savepath)
         
-    def add_aligned(self, image):
+    def add_to_last_images(self, image):
         if self.detectors['HAADF'] and self.detectors['MAADF']:
             haadfimage = image[0]
             maadfimage = image[1]
@@ -91,18 +94,20 @@ class Mapping(object):
             maadfimage = image
             
         if self.detectors['HAADF']:
-            if len(self.last_frames_HAADF) < self.average_number:
-                self.last_frames_HAADF.append(haadfimage)
-            else:
+            if len(self.last_frames_HAADF) >= self.average_number:
                 self.last_frames_HAADF.pop(0)
-                self.last_frames_HAADF.append(haadfimage)
+            
+            if self.switches.get('aligned_average') and len(self.last_frames_HAADF) > 1:
+                haadfimage = align(self.last_frames_HAADF[0], haadfimage, ratio=self.max_align_dist)
+            self.last_frames_HAADF.append(haadfimage)
         
         if self.detectors['MAADF']:
-            if len(self.last_frames_MAADF) < self.average_number:
-                self.last_frames_MAADF.append(maadfimage)
-            else:
+            if len(self.last_frames_MAADF) >= self.average_number:
                 self.last_frames_MAADF.pop(0)
-                self.last_frames_MAADF.append(maadfimage)
+            
+            if self.switches.get('aligned_average') and len(self.last_frames_MAADF) > 1:
+                maadfimage = align(self.last_frames_MAADF[0], maadfimage, ratio=self.max_align_dist)
+            self.last_frames_MAADF.append(maadfimage)
                 
 
     def create_map_coordinates(self, compensate_stage_error=False,
@@ -456,8 +461,16 @@ class Mapping(object):
             clean_spot_nm = clean_spot * frame_parameters['fov'] / frame_parameters['size_pixels']
             Imager.frame_parameters['center'] = clean_spot_nm
             for i in range(self.isotope_mapping_settings.get('max_number_frames', 1)):
+                if self.abort_series_event is not None and self.abort_series_event.is_set():
+                    self.abort_series_event.clear()
+                    self.gui_communication['series_running'] = False
+                    self.document_controller.queue_task(lambda: self.update_abort_button('Abort map'))
+                    break
                 Imager.image = Imager.image_grabber(show_live_image=True, frame_parameters=frame_parameters)
                 tifffile.imsave(os.path.join(savepath, name + '{:02d}'.format(i) + '.tif'), Imager.image)
+                if self.switches.get('show_last_frames_average'):
+                    self.add_to_last_images(Imager.image.copy())
+                    self.show_average_of_last_frames()
                 if np.sum(Imager.dirt_detector()) > 0:
                     message += 'Detected dirt in current frame. Going to next one.'
                     Imager.logwrite('Detected dirt in current frame. Going to next one.')
@@ -470,6 +483,8 @@ class Mapping(object):
                     message += 'Found missing atom after {:d} frames '.format(i)
                     Imager.logwrite('Found missing atom after {:d} frames '.format(i))
                     break
+            self.last_frames_HAADF = []
+            self.last_frames_MAADF = []
 
 #                elif (np.sum(Imager.image) > 3 - 2*self.isotope_mapping_settings.get('intensity_threshold', 0.8) *
 #                      intensity_reference):
@@ -646,12 +661,16 @@ class Mapping(object):
             config_file.write('number_of_images: ' + str(self.number_of_images) + '\n')
             config_file.write('offset: ' + str(self.offset) + '\n')
             config_file.write('retuning_mode: ' + str(self.retuning_mode) + '\n')
-            config_file.write('dirt_area: ' + str(self.dirt_area))
+            config_file.write('dirt_area: ' + str(self.dirt_area) + '\n')
+            config_file.write('sleeptime: ' + str(self.sleeptime) + '\n')
+            config_file.write('average_number: ' + str(self.average_number) + '\n')
+            config_file.write('max_align_dist: ' + str(self.max_align_dist))
+            
             #config_file.write('\nend')
 
         #config_file.close()
 
-    def show_average_of_last_frames(self, number_to_average):
+    def show_average_of_last_frames(self):
         assert self.document_controller is not None, 'Cannot create a data item without a document controller instance'
         if self.detectors['HAADF']:
             assert len(self.last_frames_HAADF) > 0, 'No HAADF data to average.'
@@ -660,10 +679,10 @@ class Mapping(object):
         
         if self.average_data_item_HAADF is None and self.detectors['HADDF']:
             self.average_data_item_HAADF = self.document_controller.library.create_data_item(
-                                           'Average of last {:.0f} frames (HAADF)'.format(number_to_average))
+                                           'Average of last {:.0f} frames (HAADF)'.format(self.average_number))
         if self.average_data_item_MAADF is None and self.detectors['MAADF']:
             self.average_data_item_MAADF = self.document_controller.library.create_data_item(
-                                           'Average of last {:.0f} frames (MAADF)'.format(number_to_average))
+                                           'Average of last {:.0f} frames (MAADF)'.format(self.average_number))
 
         if self.detectors['HAADF']:
             self.average_data_item_HAADF.set_data(np.mean(self.last_frames_HAADF, axis=0))
@@ -804,6 +823,9 @@ class Mapping(object):
         self.write_map_info_file()
         # Now go to each position in "map_coords" and take a snapshot
         for i in range(len(map_coords)):
+            if self.switches.get('isotope_mapping') or self.number_of_images > 1:
+                self.gui_communication['series_running'] = True
+                self.document_controller.queue_task(lambda: self.update_abort_button('Abort series'))
             frame_coord = map_coords[i]
             frame_info = map_infos[i]
             if self.event is not None and self.event.is_set():
@@ -832,7 +854,7 @@ class Mapping(object):
                 if counter == 1:
                     time.sleep(10) # time in seconds
                 else:
-                    time.sleep(2)
+                    time.sleep(self.sleeptime)
 
                 name = str('%.4d_%.3f_%.3f.tif' % (frame_info['number'], stagex_corrected*1e6,
                                                    stagey_corrected*1e6))
@@ -848,6 +870,11 @@ class Mapping(object):
                         self.verified_unblank()
                     splitname = os.path.splitext(name)
                     for i in range(self.number_of_images):
+                        if self.abort_series_event is not None and self.abort_series_event.is_set():
+                            self.abort_series_event.clear()
+                            self.gui_communication['series_running'] = False
+                            self.document_controller.queue_task(lambda: self.update_abort_button('Abort map'))
+                            break
                         if pixeltimes is not None:
                             self.frame_parameters['pixeltime'] = pixeltimes[i]
                         self.Tuner.image = self.Tuner.image_grabber(frame_parameters=self.frame_parameters,
@@ -855,12 +882,19 @@ class Mapping(object):
                         new_name = splitname[0] + ('_{:0'+str(len(str(self.number_of_images)))+'d}'
                                                    ).format(i) + splitname[1]
                         tifffile.imsave(os.path.join(self.store, new_name), self.Tuner.image)
+
+                        if self.switches.get('show_last_frames_average') and not self.switches.get('isotope_mapping'):
+                            self.add_to_last_images(self.Tuner.image.copy())
+                            self.show_average_of_last_frames()
+                            
                         if self.switches.get('abort_series_on_dirt'):
                             dirt_mask = self.Tuner.dirt_detector()
                             if np.sum(dirt_mask)/np.prod(data.shape) > self.dirt_area:
                                 self.Tuner.logwrite('Series was aborted because more than ' +
                                              str(int(self.dirt_area*100)) + '% dirt coverage.')
                                 break
+                    self.last_frames_HAADF = []
+                    self.last_frames_MAADF = []
 
                 if self.switches.get('blank_beam'):
                     self.as2.set_property_as_float('C_Blank', 1)
@@ -933,6 +967,10 @@ class Mapping(object):
         logfile.write('\nDONE')
         logfile.close()
         self.Tuner.logwrite('\nDONE\n')
+    
+    def update_abort_button(self, text):
+        if self.gui_communication.get('abort_button') is not None:
+            self.gui_communication['abort_button'].text = text
 
     def wait_for_focused(self, message, timeout=300, accept_timeout=30):
         self.tune_event.set()
