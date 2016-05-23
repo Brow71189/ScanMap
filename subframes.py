@@ -22,20 +22,18 @@ try:
 except:
     from .maptools import autotune as at
 
-#######################################################################################################################    
+#######################################################################################################################
 #######################################################################################################################
 #######################################################################################################################
 dirpath = '/3tb/maps_data/map_2015_09_16_12_19'
-#dirpath = '/3tb/Dark_noise/'
 imsize = 20
-#graphene_threshold = 0.0033
 graphene_threshold = 0.01
 light_threshold = -1
-#light_threshold = 0
 heavy_threshold = 0.049
 dirt_border = 30
 minimum_graphene_area = 0.5
-minimum_number_peaks = 10
+minimum_number_peaks = 6
+maximum_number_peaks = 12
 #######################################################################################################################
 #######################################################################################################################
 #######################################################################################################################
@@ -228,7 +226,8 @@ def subframes_preprocessing(filename, dirname, imsize, counts_threshold=1e-9, gr
         #peaks = None
         success = False
     else:
-        if minimum_number_peaks > 0 and number_peaks < minimum_number_peaks:
+        if ((minimum_number_peaks > 0 and number_peaks < minimum_number_peaks) or (
+             maximum_number_peaks > 0 and number_peaks > maximum_number_peaks)):
             success = False
     
     #Get counts divisor for image
@@ -263,7 +262,7 @@ def subframes_preprocessing(filename, dirname, imsize, counts_threshold=1e-9, gr
             center = np.array(np.shape(image))/2
             ell = np.ones(np.shape(fft), dtype='float32')
             if np.mean(fft) > 0:
-                ellipse_color = 2
+                ellipse_color = 1.5
             else:
                 ellipse_color = 0.5
             cv2.ellipse(ell, (tuple(center), (ellipse_a*2, ellipse_b*2), -angle*180/np.pi), ellipse_color)
@@ -335,6 +334,7 @@ if __name__ == '__main__':
     frame_data_file.write('#Created: ' + time.strftime('%Y/%m/%d %H:%M') + '\n')
     frame_data_file.write('#Imagesize in nm: {:.1f}\tgraphene threshold: {:f}\t'.format(imsize,graphene_threshold))
     frame_data_file.write('light threshold: {:f}\theavy threshold: {:f}\t'.format(light_threshold, heavy_threshold))
+    frame_data_file.write('minimum number peaks: {:.0f}\t'.format(minimum_number_peaks))
     frame_data_file.write('Dirt border: {:n}\tminimum graphene area: {:f}\n'.format(dirt_border, minimum_graphene_area))
     frame_data_file.write('#label\tgraphene\tnumpeak\ttuning\ttilt\tella\tellb\tellphi\n\n')
     
