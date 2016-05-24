@@ -83,32 +83,32 @@ class Mapping(object):
     @savepath.setter
     def savepath(self, savepath):
         self._savepath = os.path.normpath(savepath)
-        
+
     def add_to_last_images(self, image):
         if self.detectors['HAADF'] and self.detectors['MAADF']:
             haadfimage = image[0]
             maadfimage = image[1]
         elif self.detectors['HAADF']:
             haadfimage = image
-        elif self.detecors['MAADF']:
+        elif self.detectors['MAADF']:
             maadfimage = image
-            
+
         if self.detectors['HAADF']:
             if len(self.last_frames_HAADF) >= self.average_number:
                 self.last_frames_HAADF.pop(0)
-            
+
             if self.switches.get('aligned_average') and len(self.last_frames_HAADF) > 1:
                 haadfimage = align(self.last_frames_HAADF[0], haadfimage, ratio=self.max_align_dist)
             self.last_frames_HAADF.append(haadfimage)
-        
+
         if self.detectors['MAADF']:
             if len(self.last_frames_MAADF) >= self.average_number:
                 self.last_frames_MAADF.pop(0)
-            
+
             if self.switches.get('aligned_average') and len(self.last_frames_MAADF) > 1:
                 maadfimage = align(self.last_frames_MAADF[0], maadfimage, ratio=self.max_align_dist)
             self.last_frames_MAADF.append(maadfimage)
-                
+
 
     def create_map_coordinates(self, compensate_stage_error=False,
                                positionfile='C:/Users/ASUser/repos/ScanMap/positioncollection.npz'):
@@ -465,6 +465,7 @@ class Mapping(object):
                     self.abort_series_event.clear()
                     self.gui_communication['series_running'] = False
                     self.document_controller.queue_task(lambda: self.update_abort_button('Abort map'))
+                    time.sleep(1)
                     break
                 Imager.image = Imager.image_grabber(show_live_image=True, frame_parameters=frame_parameters)
                 tifffile.imsave(os.path.join(savepath, name + '{:02d}'.format(i) + '.tif'), Imager.image)
@@ -555,26 +556,26 @@ class Mapping(object):
     #            sum_weights += weight
     #        result += (interpolated/sum_weights,)
         return result
-    
+
     def interpolation_rbf(self, target):
-        if not hasattr(self, interpolator):
+        if not hasattr(self, 'interpolator'):
             x = []
             y = []
             z = []
             focus = []
-            
+
             for value in self.coord_dict.values():
                 x.append(value[0])
                 y.append(value[1])
                 z.append(value[2])
                 focus.append(value[3])
-            
+
             self.interpolator = []
             self.interpolator.append(Rbf(x, y, z, function='inverse'))
             self.interpolator.append(Rbf(x, y, focus, function='inverse'))
-        
-        return (interpolator[0](*target), interpolator[1](*target))
-    
+
+        return (self.interpolator[0](*target), self.interpolator[1](*target))
+
     def load_mapping_config(self, path):
         #config_file = open(os.path.normpath(path))
         #counter = 0
@@ -665,7 +666,7 @@ class Mapping(object):
             config_file.write('sleeptime: ' + str(self.sleeptime) + '\n')
             config_file.write('average_number: ' + str(self.average_number) + '\n')
             config_file.write('max_align_dist: ' + str(self.max_align_dist))
-            
+
             #config_file.write('\nend')
 
         #config_file.close()
@@ -676,8 +677,8 @@ class Mapping(object):
             assert len(self.last_frames_HAADF) > 0, 'No HAADF data to average.'
         if self.detectors['MAADF']:
             assert len(self.last_frames_MAADF) > 0 is not None, 'No MAADF data to average.'
-        
-        if self.average_data_item_HAADF is None and self.detectors['HADDF']:
+
+        if self.average_data_item_HAADF is None and self.detectors['HAADF']:
             self.average_data_item_HAADF = self.document_controller.library.create_data_item(
                                            'Average of last {:.0f} frames (HAADF)'.format(self.average_number))
         if self.average_data_item_MAADF is None and self.detectors['MAADF']:
@@ -874,6 +875,7 @@ class Mapping(object):
                             self.abort_series_event.clear()
                             self.gui_communication['series_running'] = False
                             self.document_controller.queue_task(lambda: self.update_abort_button('Abort map'))
+                            time.sleep(1)
                             break
                         if pixeltimes is not None:
                             self.frame_parameters['pixeltime'] = pixeltimes[i]
@@ -886,7 +888,7 @@ class Mapping(object):
                         if self.switches.get('show_last_frames_average') and not self.switches.get('isotope_mapping'):
                             self.add_to_last_images(self.Tuner.image.copy())
                             self.show_average_of_last_frames()
-                            
+
                         if self.switches.get('abort_series_on_dirt'):
                             dirt_mask = self.Tuner.dirt_detector()
                             if np.sum(dirt_mask)/np.prod(data.shape) > self.dirt_area:
@@ -914,6 +916,7 @@ class Mapping(object):
 
         #acquire overview image if desired
         if self.online and self.switches['acquire_overview']:
+            self.Tuner.logwrite('Acquiring overview...')
             #Use longest edge as image size
             if abs(self.rightX-self.leftX) < abs(self.topY-self.botY):
                 over_size = abs(self.topY-self.botY)*1e9 + 6*self.frame_parameters['fov']
@@ -966,8 +969,9 @@ class Mapping(object):
 
         logfile.write('\nDONE')
         logfile.close()
+        self.document_controller.queue_task(lambda: self.update_abort_button('Abort map'))
         self.Tuner.logwrite('\nDONE\n')
-    
+
     def update_abort_button(self, text):
         if self.gui_communication.get('abort_button') is not None:
             self.gui_communication['abort_button'].text = text

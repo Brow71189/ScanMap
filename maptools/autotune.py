@@ -575,6 +575,22 @@ class Imaging(object):
                                                   self.frame_parameters.get('rotation',
                                                                             default_params[6]*180/np.pi)/180*np.pi,
                                                   0)
+
+                ss.SS_Functions_SS_SetFrameParams(
+                                                  self.frame_parameters.get('size_pixels', (default_params[0],
+                                                                                            default_params[0]))[1],
+                                                  self.frame_parameters.get('size_pixels', (default_params[1],
+                                                                                            default_params[1]))[0],
+                                                  self.frame_parameters.get('center', (default_params[2],
+                                                                                       default_params[2]))[1],
+                                                  self.frame_parameters.get('center', (default_params[3],
+                                                                                       default_params[3]))[0],
+                                                  self.frame_parameters.get('pixeltime', default_params[4]),
+                                                  self.frame_parameters.get('fov', default_params[5]),
+                                                  self.frame_parameters.get('rotation',
+                                                                            default_params[6]*180/np.pi)/180*np.pi,
+                                                  0)
+
                 acchannels = 0
                 if self.detectors['HAADF']:
                     acchannels += 1
@@ -583,6 +599,8 @@ class Imaging(object):
                 ss.SS_Functions_SS_SetAcquisitionChannels(acchannels)
                 self.document_controller.queue_task(lambda:
                     self.superscan._HardwareSource__hardware_source.set_selected_profile_index(1))
+                self.document_controller.queue_task(lambda:
+                    self.superscan.abort_playing())
                 frame_nr = ss.SS_Functions_SS_StartFrame2(False, 1)
                 ss.SS_Functions_SS_WaitForEndOfFrame(frame_nr)
                 while not ss.SS_Functions_SS_GetRemainingPixelsForFrame(frame_nr) == -1:
@@ -647,9 +665,9 @@ class Imaging(object):
             if not reset_aberrations:
                 for key in self.aberrations.keys():
                     global_aberrations[key] = self.aberrations[key]
-            
+
             print(self.aberrations)
-            
+
             if acquire_image:
                 # Create x and y coordinates such that resulting beam has the same scale as the image.
                 # The size of the kernel which is used for image convolution is chosen to be "1/kernelsize"
@@ -736,11 +754,11 @@ class Imaging(object):
             elif level.lower() == 'error':
                 self.document_controller.queue_task(lambda: logging.error(str(msg)))
             else:
-                self.document_controller.queue_task(lambda: logging.debug(str(msg)))        
-        
+                self.document_controller.queue_task(lambda: logging.debug(str(msg)))
+
     def show_live_image(self, image):
         assert self.document_controller is not None, 'Cannot create a data item without a document controller instance'
-        
+
         if self.live_data_item_MAADF is None and self.detectors['MAADF']:
             self.live_data_item_MAADF = self.document_controller.library.create_data_item('Live (MAADF)')
         if self.live_data_item_HAADF is None and self.detectors['HAADF']:
@@ -1033,7 +1051,7 @@ class Tuning(Peaking):
     @property
     def merits(self):
         return self._merits
-    
+
     def append_merit(self, merit_dict, location=None):
         if location is None:
             location = self.merit_history
@@ -1042,13 +1060,13 @@ class Tuning(Peaking):
         for element in location:
             for key, value in merit_dict.items():
                 element[key].append(value)
-                
+
     def calculate_merit(self):
         result = {}
         for key in self.keys:
             if result.get(self.merit_lookup[key]) is None:
                 result[self.merit_lookup[key]] = self.merits[self.merit_lookup[key]]()
-        
+
         return result
 
     def find_direction(self, key, dirt_detection=True, merit='astig_2f', merit_tolerance=0.1):
@@ -1100,7 +1118,7 @@ class Tuning(Peaking):
             if (minus[merit] < plus[merit] and minus[merit] < current[merit]*(1+merit_tolerance) and
                 minus['intensity'] < plus['intensity'] and
                 minus['intensity'] < current['intensity']*(1+merit_tolerance)):
-                    
+
                 direction = -1
                 current = minus
                 #setting the stepsize to new value
@@ -1117,7 +1135,7 @@ class Tuning(Peaking):
             elif (plus[merit] < minus[merit] and plus[merit] < current[merit]*(1+merit_tolerance) and
                   plus['intensity'] < minus['intensity'] and
                   plus['intensity'] < current['intensity']*(1+merit_tolerance)):
-                      
+
                 direction = 1
                 current = plus
                 #setting the stepsize to new value
@@ -1172,7 +1190,7 @@ class Tuning(Peaking):
         if self.keys is None:
             #self.keys = ['EHTFocus', 'C12_a', 'C21_a', 'C23_a', 'C12_b', 'C21_b', 'C23_b']
             self.keys = ['EHTFocus', 'C21_a','C21_b', 'C23_a', 'C23_b', 'C12_a', 'C12_b']
-        
+
         # Check if merit should be adapted automatically to current aberration
         auto_merit = False
         if merit == 'auto':
@@ -1215,7 +1233,7 @@ class Tuning(Peaking):
 
         #total_tunings.append(current)
         self.logwrite('Appending start value: ' + str(current))
-        
+
         while counter < 10:
             if self.event is not None and self.event.is_set():
                 break
