@@ -327,8 +327,8 @@ class Mapping(object):
             while counter < 10000:
                 if not self.coord_dict.get('new_point_{:04d}'.format(counter)):
                     self.coord_dict['new_point_{:04d}'.format(counter)] = new_point
-                    if hasattr(self, interpolator):
-                        delattr(self, interpolator)
+                    if hasattr(self, 'interpolator'):
+                        delattr(self, 'interpolator')
                     break
                 counter += 1
             else:
@@ -405,20 +405,23 @@ class Mapping(object):
                     self.Tuner.image_grabber(acquire_image=False, relative_aberrations=False,
                                         aberrations=self.Tuner.aberrations_tracklist[0])
                     self.tuning_successful(False, None)
-
                 else:
-                    if number_peaks_new > number_peaks:
-                        self.tuning_successful(False, frame_coord[:3] + (self.Tuner.aberrations['EHTFocus'] * 1e-9,))
-                    else:
-                        message += 'Dismissed result because it did not improve tuning: ' + \
-                                   str(self.Tuner.aberrations) + '. '
-                        self.Tuner.logwrite('No. ' + str(frame_info['number']) + \
-                                       ': Dismissed result because it did not improve tuning: ' + \
-                                       str(self.Tuner.aberrations))
-                        #reset aberrations to values before tuning
-                        self.Tuner.image_grabber(acquire_image=False, relative_aberrations=False,
-                                        aberrations=self.Tuner.aberrations_tracklist[0])
-                        self.tuning_successful(False, None)
+                    message += 'Number of peaks after tuning: {:.0f}. '.format(number_peaks_new)
+                    self.Tuner.logwrite('No. : Number of peaks after tuning: {:.0f}.'.format(frame_info['number'],
+                                                                                             number_peaks_new))
+#                else:
+#                    if number_peaks_new > number_peaks:
+#                        self.tuning_successful(False, frame_coord[:3] + (self.Tuner.aberrations['EHTFocus'] * 1e-9,))
+#                    else:
+#                        message += 'Dismissed result because it did not improve tuning: ' + \
+#                                   str(self.Tuner.aberrations) + '. '
+#                        self.Tuner.logwrite('No. ' + str(frame_info['number']) + \
+#                                       ': Dismissed result because it did not improve tuning: ' + \
+#                                       str(self.Tuner.aberrations))
+#                        #reset aberrations to values before tuning
+#                        self.Tuner.image_grabber(acquire_image=False, relative_aberrations=False,
+#                                        aberrations=self.Tuner.aberrations_tracklist[0])
+#                        self.tuning_successful(False, None)
             if self.switches.get('blank_beam'):
                 self.as2.set_property_as_float('C_Blank', 1)
         else:
@@ -463,9 +466,9 @@ class Mapping(object):
             for i in range(self.isotope_mapping_settings.get('max_number_frames', 1)):
                 if self.abort_series_event is not None and self.abort_series_event.is_set():
                     self.abort_series_event.clear()
-                    self.gui_communication['series_running'] = False
-                    self.document_controller.queue_task(lambda: self.update_abort_button('Abort map'))
-                    time.sleep(1)
+#                    self.gui_communication['series_running'] = False
+#                    self.document_controller.queue_task(lambda: self.update_abort_button('Abort map'))
+#                    time.sleep(1)
                     break
                 Imager.image = Imager.image_grabber(show_live_image=True, frame_parameters=frame_parameters)
                 tifffile.imsave(os.path.join(savepath, name + '{:02d}'.format(i) + '.tif'), Imager.image)
@@ -873,9 +876,9 @@ class Mapping(object):
                     for i in range(self.number_of_images):
                         if self.abort_series_event is not None and self.abort_series_event.is_set():
                             self.abort_series_event.clear()
-                            self.gui_communication['series_running'] = False
-                            self.document_controller.queue_task(lambda: self.update_abort_button('Abort map'))
-                            time.sleep(1)
+#                            self.gui_communication['series_running'] = False
+#                            self.document_controller.queue_task(lambda: self.update_abort_button('Abort map'))
+#                            time.sleep(1)
                             break
                         if pixeltimes is not None:
                             self.frame_parameters['pixeltime'] = pixeltimes[i]
@@ -891,7 +894,7 @@ class Mapping(object):
 
                         if self.switches.get('abort_series_on_dirt'):
                             dirt_mask = self.Tuner.dirt_detector()
-                            if np.sum(dirt_mask)/np.prod(data.shape) > self.dirt_area:
+                            if np.sum(dirt_mask)/np.prod(dirt_mask.shape) > self.dirt_area:
                                 self.Tuner.logwrite('Series was aborted because more than ' +
                                              str(int(self.dirt_area*100)) + '% dirt coverage.')
                                 break

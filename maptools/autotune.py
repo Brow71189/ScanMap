@@ -16,7 +16,6 @@ import scipy.optimize
 from scipy.ndimage import gaussian_filter, uniform_filter, distance_transform_cdt
 from scipy.signal import fftconvolve
 #import cv2
-
 #try:
 #    import cv2
 #except:
@@ -556,9 +555,16 @@ class Imaging(object):
 #                if self.detectors['MAADF']:
 #                    channels_enabled[1] = True
                 if self.frame_parameters.get('center') is not None:
-                    self.as2.set_property_as_float('CSH.y', self.frame_parameters.get('center')[0]*1e-9)
-                    self.as2.set_property_as_float('CSH.x', self.frame_parameters.get('center')[1]*1e-9)
+                    rot = self.frame_parameters.get('rotation', 0) * 180 / np.pi
+                    rotated_center = np.dot(np.array(((np.cos(rot), -np.sin(rot)), (np.sin(rot), np.cos(rot)))), 
+                                            np.array(self.frame_parameters.get('center')) * 1e-9)
+                    
+                    self.as2.set_property_as_float('CSH.y', rotated_center[0])
+                    self.as2.set_property_as_float('CSH.x', rotated_center[1])
                     time.sleep(0.5)
+                    
+                self.document_controller.queue_task(lambda:
+                                        self.superscan._HardwareSource__hardware_source.set_selected_profile_index(1))
 
                 default_params = ss.SS_Functions_SS_GetFrameParamsForProfile2(1)
                 ss.SS_Functions_SS_SetFrameParamsForProfile(1,
@@ -597,10 +603,8 @@ class Imaging(object):
                 if self.detectors['MAADF']:
                     acchannels +=2
                 ss.SS_Functions_SS_SetAcquisitionChannels(acchannels)
-                self.document_controller.queue_task(lambda:
-                    self.superscan._HardwareSource__hardware_source.set_selected_profile_index(1))
-                self.document_controller.queue_task(lambda:
-                    self.superscan.abort_playing())
+#                self.document_controller.queue_task(lambda:
+#                    self.superscan.abort_playing())
                 frame_nr = ss.SS_Functions_SS_StartFrame2(False, 1)
                 ss.SS_Functions_SS_WaitForEndOfFrame(frame_nr)
                 while not ss.SS_Functions_SS_GetRemainingPixelsForFrame(frame_nr) == -1:
@@ -636,7 +640,8 @@ class Imaging(object):
 #                    return_image = im[0].data
             # reset all corrector values to the original ones
             for key in originals.keys():
-                vt.as2_set_control(controls[key], originals[key] * 1e-9)
+                self.as2.set_property_as_float(controls[key], originals[key] * 1e-9)
+                #vt.as2_set_control(controls[key], originals[key] * 1e-9)
                 self.aberrations[key] = originals[key]
 
         # e.g. offline mode

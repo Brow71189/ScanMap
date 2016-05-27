@@ -435,6 +435,9 @@ class ScanMapPanelDelegate(object):
             #self.stop_tuning()
             if self.thread_communication.get('series_running'):
                 self.abort_series_event.set()
+                self.thread_communication['series_running'] = False
+                abort_button.text = 'Abort map'
+#                    self.document_controller.queue_task(lambda: self.update_abort_button('Abort map'))
             else:
                 logging.info('Aborting after current frame is finished. (May take a short while until actual abort)')
                 self.event.set()
