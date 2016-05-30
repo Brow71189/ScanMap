@@ -46,6 +46,7 @@ class Mapping(object):
             self._savepath = None
         self.event = kwargs.get('event')
         self.tune_event = kwargs.get('tune_event')
+        self.tune_now_event = kwargs.get('tune_now_event')
         self.abort_series_event = kwargs.get('abort_series_event')
         self.foldername = 'map_' + time.strftime('%Y_%m_%d_%H_%M')
         self.offset = kwargs.get('offset', 0)
@@ -356,7 +357,14 @@ class Mapping(object):
 #        Tuner = Tuning(event=self.event, document_controller=self.document_controller, as2=self.as2,
 #                       superscan=self.superscan)
         message = '\tTuner: '
-        tune, return_message = self.tuning_necessary(frame_info, message)
+        
+        if self.tune_now_event is not None and self.tune_now_event.is_set():
+            return_message = message + 'User initialized retuning. '
+            tune = True
+            self.tune_now_event.clear()
+        else:
+            tune, return_message = self.tuning_necessary(frame_info, message)
+            
         message = return_message
         if not tune:
             return message
@@ -801,6 +809,8 @@ class Mapping(object):
             self.frame_parameters['pixeltime'] = pixeltimes[0]
 
         self.save_mapping_config()
+        
+        self.document_controller.queue_task(lambda: self.update_button('analyze_button', 'Retune now'))
 
         self.Tuner = Tuning(frame_parameters=self.frame_parameters.copy(), detectors=self.detectors, event=self.event,
                      online=self.online, document_controller=self.document_controller, as2=self.as2,
@@ -829,7 +839,7 @@ class Mapping(object):
         for i in range(len(map_coords)):
             if self.switches.get('isotope_mapping') or self.number_of_images > 1:
                 self.gui_communication['series_running'] = True
-                self.document_controller.queue_task(lambda: self.update_abort_button('Abort series'))
+                self.document_controller.queue_task(lambda: self.update_button('abort_button', 'Abort series'))
             frame_coord = map_coords[i]
             frame_info = map_infos[i]
             if self.event is not None and self.event.is_set():
@@ -904,12 +914,15 @@ class Mapping(object):
                 if self.switches.get('blank_beam'):
                     self.as2.set_property_as_float('C_Blank', 1)
 
-                if self.switches.get('do_retuning'):
-                    message = self.handle_retuning(frame_coord, frame_info)
-                    logfile.write(message + '\n')
-
                 if self.switches.get('isotope_mapping'):
                     message = self.handle_isotope_mapping(frame_coord, frame_info, name)
+                    logfile.write(message + '\n')
+                
+                if self.tune_now_event is not None and self.tune_now_event.is_set():
+                    message = self.handle_retuning(frame_coord, frame_info)
+                    logfile.write(message + '\n')
+                elif self.switches.get('do_retuning'):
+                    message = self.handle_retuning(frame_coord, frame_info)
                     logfile.write(message + '\n')
 
             test_map.append(frame_coord + (stagez, fine_focus))
@@ -972,14 +985,17 @@ class Mapping(object):
 
         logfile.write('\nDONE')
         logfile.close()
-        self.document_controller.queue_task(lambda: self.update_abort_button('Abort map'))
+        self.document_controller.queue_task(lambda: self.update_button('abort_button', 'Abort map'))
+        self.document_controller.queue_task(lambda: self.update_button('analyze_button', 'Analyze image'))
         self.Tuner.logwrite('\nDONE\n')
 
-    def update_abort_button(self, text):
-        if self.gui_communication.get('abort_button') is not None:
-            self.gui_communication['abort_button'].text = text
+    def update_button(self, button, text):
+        if self.gui_communication.get(button) is not None:
+            self.gui_communication[button].text = text
 
-    def wait_for_focused(self, message, timeout=300, accept_timeout=30):
+    def wait_for_focused(self, message, timeout=360, accept_timeout=30):
+        
+        self.document_controller.queue_task(lambda: self.update_button('done_button', 'Done tuning'))        
         self.tune_event.set()
 
         accepted = False

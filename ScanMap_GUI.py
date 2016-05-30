@@ -44,6 +44,7 @@ class ScanMapPanelDelegate(object):
         self.event = None
         self.tune_event = None
         self.abort_series_event = None
+        self.tune_now_event = None
         self.thread = None
         self.thread_communication = None
         self.retuning_mode = ['edges','manual']
@@ -365,6 +366,7 @@ class ScanMapPanelDelegate(object):
                 if self.tune_event is not None and self.tune_event.is_set():
                     self.thread_communication['new_EHTFocus'] = self.as2.get_property_as_float('EHTFocus')
                     self.thread_communication['new_z'] = self.as2.get_property_as_float('StageOutZ')
+                    self.thread_communication['done_button'].text = 'Start map'
                     self.tune_event.clear()
                     return
                 else:
@@ -412,6 +414,10 @@ class ScanMapPanelDelegate(object):
             Mapper.sleeptime = self.sleeptime
             self.thread_communication = Mapper.gui_communication
             self.thread_communication['abort_button'] = abort_button
+            self.thread_communication['done_button'] = done_button
+            self.thread_communication['analyze_button'] = analyze_button
+            self.tune_now_event = threading.Event()
+            Mapper.tune_now_event = self.tune_now_event
             if self.switches['do_retuning']:
                 self.tune_event = threading.Event()
                 Mapper.tune_event = self.tune_event
@@ -436,25 +442,29 @@ class ScanMapPanelDelegate(object):
             if self.thread_communication.get('series_running'):
                 self.abort_series_event.set()
                 self.thread_communication['series_running'] = False
-                abort_button.text = 'Abort map'
+                self.thread_communication['abort_button'].text = 'Abort map'
 #                    self.document_controller.queue_task(lambda: self.update_abort_button('Abort map'))
             else:
                 logging.info('Aborting after current frame is finished. (May take a short while until actual abort)')
                 self.event.set()
             
         def analyze_button_clicked():
-            selected_data_item = document_controller.target_data_item
-            imsize = selected_data_item.dimensional_calibrations[0].scale * selected_data_item.data.shape[0]
-            Peak = autotune.Peaking(image=selected_data_item.data.copy(), imsize=imsize, integration_radius=1)
-            dirt_mask = Peak.dirt_detector()
-            graphene_mean = np.mean(Peak.image[dirt_mask==0])
-            Peak.image[dirt_mask==1] = graphene_mean
-            peaks = Peak.find_peaks(half_line_thickness=2, position_tolerance = 10, second_order=True)
-            intensities_sum = np.sum(peaks[0][:,-1])+np.sum(peaks[1][:,-1])
-            self.peak_intensity_reference = intensities_sum
-            logging.info('Measured peak intensities in {} from {} to: {:.0f}.'
-                         .format(selected_data_item._data_item.title,
-                         str(selected_data_item.data_and_metadata.timestamp).split('.')[0], intensities_sum))
+            if self.thread is not None and self.thread.is_alive():
+                self.tune_now_event.set()
+                logging.info('Tuning after the current frame is acquired.')
+            else:
+                selected_data_item = document_controller.target_data_item
+                imsize = selected_data_item.dimensional_calibrations[0].scale * selected_data_item.data.shape[0]
+                Peak = autotune.Peaking(image=selected_data_item.data.copy(), imsize=imsize, integration_radius=1)
+                dirt_mask = Peak.dirt_detector()
+                graphene_mean = np.mean(Peak.image[dirt_mask==0])
+                Peak.image[dirt_mask==1] = graphene_mean
+                peaks = Peak.find_peaks(half_line_thickness=2, position_tolerance = 10, second_order=True)
+                intensities_sum = np.sum(peaks[0][:,-1])+np.sum(peaks[1][:,-1])
+                self.peak_intensity_reference = intensities_sum
+                logging.info('Measured peak intensities in {} from {} to: {:.0f}.'
+                             .format(selected_data_item._data_item.title,
+                             str(selected_data_item.data_and_metadata.timestamp).split('.')[0], intensities_sum))
             
         def sync_gui():
             self.sync_gui_working = True
@@ -674,7 +684,7 @@ class ScanMapPanelDelegate(object):
         save_button = ui.create_push_button_widget(_("Save Configs"))
         load_button = ui.create_push_button_widget(_("Load Configs"))
         test_button = ui.create_push_button_widget(_("Test image"))
-        done_button = ui.create_push_button_widget(_("Done"))
+        done_button = ui.create_push_button_widget(_("Start map"))
         abort_button = ui.create_push_button_widget(_("Abort"))
         analyze_button = ui.create_push_button_widget(_("Analyze image"))
            
