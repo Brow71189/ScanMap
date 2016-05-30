@@ -357,10 +357,12 @@ class Mapping(object):
 #        Tuner = Tuning(event=self.event, document_controller=self.document_controller, as2=self.as2,
 #                       superscan=self.superscan)
         message = '\tTuner: '
+        mode = self.retuning_mode[1]
         
         if self.tune_now_event is not None and self.tune_now_event.is_set():
             return_message = message + 'User initialized retuning. '
             tune = True
+            mode = 'manual'
             self.tune_now_event.clear()
         else:
             tune, return_message = self.tuning_necessary(frame_info, message)
@@ -368,7 +370,7 @@ class Mapping(object):
         message = return_message
         if not tune:
             return message
-        elif self.retuning_mode[1] == 'manual':
+        elif mode == 'manual':
             return_message, focused = self.wait_for_focused(message)
             message += return_message
             if focused is not None:
@@ -376,7 +378,7 @@ class Mapping(object):
                 self.tuning_successful(True, frame_coord[:2] + (new_z, newEHTFocus))
             else:
                 self.tuning_successful(False, None)
-        elif self.retuning_mode[1] == 'auto':
+        elif mode == 'auto':
             # find place in the image with least dirt to do tuning there
             clean_spot, size = self.Tuner.find_biggest_clean_spot()
             clean_spot_nm = clean_spot * self.frame_parameters['fov'] / self.frame_parameters['size_pixels']
