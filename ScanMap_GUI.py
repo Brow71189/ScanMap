@@ -685,7 +685,7 @@ class ScanMapPanelDelegate(object):
         load_button = ui.create_push_button_widget(_("Load Configs"))
         test_button = ui.create_push_button_widget(_("Test image"))
         done_button = ui.create_push_button_widget(_("Start map"))
-        abort_button = ui.create_push_button_widget(_("Abort"))
+        abort_button = ui.create_push_button_widget(_("Abort map"))
         analyze_button = ui.create_push_button_widget(_("Analyze image"))
            
         retune_checkbox = ui.create_check_box_widget(_("Retune live, method: "))
