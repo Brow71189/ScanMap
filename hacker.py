@@ -63,7 +63,8 @@ class HackerPanelDelegate(object):
         column = ui.create_column_widget()
         description = ui.create_label_widget('Sends commands to python.')
         self.input_field = ui.create_line_edit_widget()
-        self.input_field.on_editing_finished = send_button_clicked
+        self.input_field._LineEditWidget__line_edit_widget.on_return_pressed = send_button_clicked
+        #self.input_field.on_editing_finished = send_button_clicked
         self.back_button = ui.create_push_button_widget('<')
         self.back_button.on_clicked = back_button_clicked
         self.forward_button = ui.create_push_button_widget('>')
