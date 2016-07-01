@@ -784,7 +784,7 @@ class Peaking(Imaging):
         self._fft = kwargs.get('fft')
         self.peaks = kwargs.get('peaks')
         self._center = kwargs.get('center')
-        self.integration_radius = kwargs.get('integration_radius', 0)
+        self.integration_radius = kwargs.get('integration_radius', 1)
 
     @Imaging.image.setter
     def image(self, image):
@@ -857,30 +857,31 @@ class Peaking(Imaging):
             half_line_thickness = int(np.rint(first_order/2.0))-1
 
         mean_fft = np.mean(fft[fft>-1])
-        # Fit horizontal and vertical lines with hyperbola
-        cross = np.zeros(self.shape)
-        for i in range(-half_line_thickness, half_line_thickness+1):
-            horizontal = fft[self.center[0]+i,:]
-            vertical = fft[:, self.center[1]+i]
-            xdata = np.mgrid[:self.shape[1]][horizontal>-1] - self.center[1]
-            ydata = np.mgrid[:self.shape[0]][vertical>-1] - self.center[0]
-            horizontal = horizontal[horizontal>-1]
-            vertical = vertical[vertical>-1]
-            horiz_a = 1.0 / ((np.mean(horizontal[int(len(horizontal) * 0.6) - 3 : int(len(horizontal) * 0.6) + 4]) -
-                              np.mean(horizontal[int(len(horizontal) * 0.7) - 3 : int(len(horizontal) * 0.7) + 4])) *
-                              2.0 * xdata[int(len(horizontal) * 0.6)])
-            vert_a = 1.0 / ((np.mean(vertical[int(len(vertical) * 0.6) - 3 : int(len(vertical) * 0.6) + 4]) -
-                             np.mean(vertical[int(len(vertical) * 0.7) - 3 : int(len(vertical) * 0.7) + 4])) *
-                             2.0 * ydata[int(len(vertical) * 0.6)])
-            horizontal_popt, horizontal_pcov = scipy.optimize.curve_fit(hyperbola1D, xdata[:len(xdata)/2],
-                                                                        horizontal[:len(xdata)/2], p0=(horiz_a, 0))
-            vertical_popt, vertical_pcov = scipy.optimize.curve_fit(hyperbola1D, ydata[:len(ydata)/2],
-                                                                    vertical[:len(ydata)/2], p0=(vert_a, 0))
-
-            cross[self.center[0] + i, xdata + self.center[1]] = hyperbola1D(xdata, *horizontal_popt) - 1.5 * mean_fft
-            cross[ydata + self.center[0], self.center[1] + i] = hyperbola1D(ydata, *vertical_popt) - 1.5 * mean_fft
-
-        fft-=cross
+        if half_line_thickness > 0:
+            # Fit horizontal and vertical lines with hyperbola
+            cross = np.zeros(self.shape)
+            for i in range(-half_line_thickness, half_line_thickness+1):
+                horizontal = fft[self.center[0]+i,:]
+                vertical = fft[:, self.center[1]+i]
+                xdata = np.mgrid[:self.shape[1]][horizontal>-1] - self.center[1]
+                ydata = np.mgrid[:self.shape[0]][vertical>-1] - self.center[0]
+                horizontal = horizontal[horizontal>-1]
+                vertical = vertical[vertical>-1]
+                horiz_a = 1.0 / ((np.mean(horizontal[int(len(horizontal) * 0.6) - 3 : int(len(horizontal) * 0.6) + 4]) -
+                                  np.mean(horizontal[int(len(horizontal) * 0.7) - 3 : int(len(horizontal) * 0.7) + 4])) *
+                                  2.0 * xdata[int(len(horizontal) * 0.6)])
+                vert_a = 1.0 / ((np.mean(vertical[int(len(vertical) * 0.6) - 3 : int(len(vertical) * 0.6) + 4]) -
+                                 np.mean(vertical[int(len(vertical) * 0.7) - 3 : int(len(vertical) * 0.7) + 4])) *
+                                 2.0 * ydata[int(len(vertical) * 0.6)])
+                horizontal_popt, horizontal_pcov = scipy.optimize.curve_fit(hyperbola1D, xdata[:len(xdata)/2],
+                                                                            horizontal[:len(xdata)/2], p0=(horiz_a, 0))
+                vertical_popt, vertical_pcov = scipy.optimize.curve_fit(hyperbola1D, ydata[:len(ydata)/2],
+                                                                        vertical[:len(ydata)/2], p0=(vert_a, 0))
+    
+                cross[self.center[0] + i, xdata + self.center[1]] = hyperbola1D(xdata, *horizontal_popt) - 1.5 * mean_fft
+                cross[ydata + self.center[0], self.center[1] + i] = hyperbola1D(ydata, *vertical_popt) - 1.5 * mean_fft
+    
+            fft-=cross
 
         if (4*int(first_order) < self.center).all():
             fft[self.center[0]-4*int(first_order):self.center[0]+4*int(first_order)+1,
@@ -1007,6 +1008,29 @@ class Peaking(Imaging):
             return (peaks, fft)
         else:
             return peaks
+            
+    def find_peaks_orientation(self, **kwargs):
+        if self.peaks is None:
+            self.peaks = self.find_peaks(**kwargs)
+        if len(self.peaks.shape) == 3:
+            peaks = self.peaks[0].copy()
+        else:
+            peaks = self.peaks.copy()
+        
+        peaks[:,:2] -= self.center
+        nu00 = np.sum(peaks[:,3])
+        nu11 = np.sum(peaks[:,0]*peaks[:,1]*peaks[:,3])/nu00
+        nu02 = np.sum(peaks[:,0]**2*peaks[:,3])/nu00
+        nu20 = np.sum(peaks[:,1]**2*peaks[:,3])/nu00
+        # Formula taken from https://en.wikipedia.org/wiki/Image_moment
+        # nu02 and nu20 are exchanged here in order to get correct angle. No clue why but it seems to be necessary.
+        covmat = np.array(((nu02,nu11), (nu11,nu20)))
+        eigval, eigvec = np.linalg.eig(covmat)
+        
+        angle = np.arctan2(*eigvec[np.argmax(eigval)])*180/np.pi
+        excent = np.sqrt(1-np.amin(eigval)/np.amax(eigval))
+        
+        return (angle, excent)
 
     def fourier_filter(self, filter_radius=10, **kwargs):
         # check if peaks are already saved and if second order is there (if a new image is provided also recalculate)

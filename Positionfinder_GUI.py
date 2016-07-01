@@ -7,6 +7,7 @@ Created on Fri Dec 18 10:01:33 2015
 
 from find_positions import Positionfinder
 import numpy as np
+
 import matplotlib.pyplot as plt
 import matplotlib.widgets as widgets
 from tkinter.filedialog import askopenfilename
