@@ -1067,6 +1067,7 @@ class Tuning(Peaking):
         self.average_frames = kwargs.get('average_frames')
         self.aberrations_tracklist = []
         self.merit_history = {}
+        self.analysis_results = []
         for key in self._merits.keys():
             self.merit_history[key] = []
         self.run_history = {}
@@ -1198,6 +1199,63 @@ class Tuning(Peaking):
 
         self.logwrite('Latest ' + merit + ' merit: ' + str(current))
         return direction
+    
+    def find_focus(self, stepsize=2, range=6):
+        self.analysis_results = []
+        for i in np.arange(-range, range+stepsize, stepsize):
+            aberrations = {'EHTFocus': i}
+            self.image = self.image_grabber(aberrations=aberrations, reset_aberrations=True, show_live_image=True)
+            try:
+                angle, excent = self.find_peaks_orientation()
+            except RuntimeError:
+                self.logwrite('No peaks could be found for defocus {:.0f} nm.'.format(i))
+                continue
+            else:
+                self.analysis_results.append((i, np.sum(self.peaks), angle, excent))
+        
+        analysis_results = np.array(self.analysis_results)
+        if len(self.analysis_results) < 1:
+            raise RuntimeError('Could not find focus.')
+        
+        best_focus = np.argmax(analysis_results[:, 1])
+        
+        while best_focus == 0 or best_focus == len(analysis_results)-1:
+            if best_focus == 0:
+                aberrations = {'EHTFocus': analysis_results[0, 0] - stepsize}
+            else:
+                aberrations = {'EHTFocus': analysis_results[-1, 0] + stepsize}
+                
+            self.image = self.image_grabber(aberrations=aberrations, reset_aberrations=True, show_live_image=True)
+            try:
+                angle, excent = self.find_peaks_orientation()
+            except RuntimeError:
+                self.logwrite('No peaks could be found for defocus {:.0f} nm.'.format(aberrations['EHTFocus']))
+                break
+            else:
+                if best_focus == 0:
+                    self.analysis_results.insert(0, (aberrations['EHTFocus'] , np.sum(self.peaks), angle, excent))
+                else:                    
+                    self.analysis_results.append((aberrations['EHTFocus'], np.sum(self.peaks), angle, excent))
+            
+            analysis_results = np.array(self.analysis_results)
+            best_focus = np.argmax(analysis_results[:, 1])
+                
+        
+        if len(analysis_results) < 3:
+            self.logwrite('Could only detect peaks in less than 3 images ({:.0f}). ' +
+                          'Assuming focus at maximum intensity.')
+            return (best_focus, analysis_results[best_focus, 0])
+        
+        # Only do fit in reasonable range around best focus
+        lower_limit = 0 if best_focus - 3 < 0 else best_focus - 3
+        upper_limit = None if best_focus + 3 > len(analysis_results) -1 else best_focus + 3
+        popt, pcov = scipy.optimize.curve_fit(parabola_1D,
+                                              analysis_results[lower_limit:upper_limit , 0],
+                                              analysis_results[lower_limit:upper_limit, 1],
+                                              p0 = (-1, analysis_results[best_focus, 0], 
+                                                    analysis_results[best_focus, 1]))
+        perr = np.sqrt(np.diag(pcov))
+        return (popt, perr)
 
     def kill_aberrations(self, dirt_detection=True, merit = 'astig_2f', **kwargs):
         # Backup original frame parameters
@@ -1218,7 +1276,7 @@ class Tuning(Peaking):
             self.steps = {'EHTFocus': 1, 'C12_a': 1, 'C12_b': 1, 'C21_a': 150, 'C21_b': 150, 'C23_a': 50, 'C23_b': 50}
         if self.keys is None:
             #self.keys = ['EHTFocus', 'C12_a', 'C21_a', 'C23_a', 'C12_b', 'C21_b', 'C23_b']
-            self.keys = ['EHTFocus', 'C21_a','C21_b', 'C23_a', 'C23_b', 'C12_a', 'C12_b']
+            self.keys = ['EHTFocus', 'C21_a', 'C21_b', 'C23_a', 'C23_b', 'C12_a', 'C12_b']
 
         # Check if merit should be adapted automatically to current aberration
         auto_merit = False
@@ -1518,6 +1576,12 @@ def draw_circle(image, center, radius, color=-1, thickness=-1):
 def gaussian2D(xdata, x0, y0, x_std, y_std, amplitude, offset):
     return (amplitude*np.exp( -0.5*( ((xdata[1]-x0)/x_std)**2 + ((xdata[0]-y0)/y_std)**2 ) ) + offset)
 
+def parabola_1D(xdata, a, b, c):
+    """
+    Calculates a parabola of the form: a*(x-b)**2 + c
+    """
+    return a*(xdata-b)**2 + c
+
 def hyperbola1D(xdata, a, offset):
     a, offset = float(a), float(offset)
     return np.abs(1.0/(a*xdata))+offset
@@ -1530,3 +1594,14 @@ def positive_angle(angle):
         return angle  + 2*np.pi
     else:
         return angle
+        
+def angle_difference(angle1, angle2):
+    """
+    Calculates the difference between angle1 and angle2 such that the result is always smaller than pi (all angles in
+    rad). The returned difference is always positive.
+    """
+    diff = np.abs(angle1 - angle2)
+    if diff > np.pi:
+        diff = 2*np.pi - diff
+    
+    return diff
