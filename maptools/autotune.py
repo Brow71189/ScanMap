@@ -605,7 +605,8 @@ class Imaging(object):
                 ss.SS_Functions_SS_SetAcquisitionChannels(acchannels)
 #                self.document_controller.queue_task(lambda:
 #                    self.superscan.abort_playing())
-                frame_nr = ss.SS_Functions_SS_StartFrame2(False, 1)
+#                frame_nr = ss.SS_Functions_SS_StartFrame2(False, 1)
+                frame_nr = ss.SS_Functions_SS_StartFrameFromProfile(False, 1)
                 ss.SS_Functions_SS_WaitForEndOfFrame(frame_nr)
                 while not ss.SS_Functions_SS_GetRemainingPixelsForFrame(frame_nr) == -1:
                     self.logwrite('Waiting for Frame to finish.')
