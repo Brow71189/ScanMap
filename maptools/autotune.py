@@ -1018,19 +1018,23 @@ class Peaking(Imaging):
             peaks = self.peaks.copy()
         
         peaks[:,:2] -= self.center
+        radii = np.sqrt(peaks[:,0]**2 + peaks[:,1]**2)
+        peaks[:,0] /= radii
+        peaks[:,1] /= radii
         nu00 = np.sum(peaks[:,3])
         nu11 = np.sum(peaks[:,0]*peaks[:,1]*peaks[:,3])/nu00
         nu02 = np.sum(peaks[:,0]**2*peaks[:,3])/nu00
         nu20 = np.sum(peaks[:,1]**2*peaks[:,3])/nu00
         # Formula taken from https://en.wikipedia.org/wiki/Image_moment
-        # nu02 and nu20 are exchanged here in order to get correct angle. No clue why but it seems to be necessary.
-        covmat = np.array(((nu02,nu11), (nu11,nu20)))
+        covmat = np.array(((nu20,nu11), (nu11,nu02)))
         eigval, eigvec = np.linalg.eig(covmat)
         
-        angle = np.arctan2(*eigvec[np.argmax(eigval)])*180/np.pi
-        excent = np.sqrt(1-np.amin(eigval)/np.amax(eigval))
-        
-        return (angle, excent)
+        angle = np.arctan2(*eigvec[:, np.argmax(eigval)])
+        #angle = np.arctan(np.divide(*eigvec[np.argmax(eigval)]))*180/np.pi
+        #angle = 0.5 * np.arctan(2*nu11/(nu20-nu02))
+        excent = np.sqrt(1-np.amin(eigval)**2/np.amax(eigval)**2)
+        # rotate result by 90 degrees to get angle from x-axis
+        return (positive_angle((angle+np.pi/2)), excent)
 
     def fourier_filter(self, filter_radius=10, **kwargs):
         # check if peaks are already saved and if second order is there (if a new image is provided also recalculate)
@@ -1057,8 +1061,8 @@ class Tuning(Peaking):
                         }
 #        self._merit_lookup = {'EHTFocus': 'intensity', 'C12_a': 'astig_2f', 'C21_a': 'intensity', 'C23_a': 'astig_3f',
 #                              'C12_b': 'astig_2f', 'C21_b': 'intensity', 'C23_b': 'astig_3f'}
-        self._merit_lookup = {'EHTFocus': 'intensity', 'C12_a': 'astig_2f', 'C21_a': 'astig_3f', 'C23_a': 'astig_3f',
-                              'C12_b': 'astig_2f', 'C21_b': 'astig_3f', 'C23_b': 'astig_3f'}
+        self._merit_lookup = {'EHTFocus': 'intensity', 'C12_a': 'astig_2f', 'C21_a': 'intensity', 'C23_a': 'astig_3f',
+                              'C12_b': 'astig_2f', 'C21_b': 'intensity', 'C23_b': 'astig_3f'}
         self.steps = kwargs.get('steps')
         self.keys = kwargs.get('keys')
         self.event = kwargs.get('event')
@@ -1073,6 +1077,7 @@ class Tuning(Peaking):
         self.run_history = {}
         for key in self._merits.keys():
             self.run_history[key] = []
+        self.focus = None
 
     @property
     def merit_lookup(self):
@@ -1243,7 +1248,7 @@ class Tuning(Peaking):
         
         if len(analysis_results) < 3:
             self.logwrite('Could only detect peaks in less than 3 images ({:.0f}). ' +
-                          'Assuming focus at maximum intensity.')
+                          'Assuming focus at maximum intensity.'.format(len(analysis_results)))
             return (best_focus, analysis_results[best_focus, 0])
         
         # Only do fit in reasonable range around best focus
@@ -1256,6 +1261,59 @@ class Tuning(Peaking):
                                                     analysis_results[best_focus, 1]))
         perr = np.sqrt(np.diag(pcov))
         return (popt, perr)
+    
+    def has_astig(self, defocus=4, tolerance=2):
+        if len(self.analysis_results) < 3:
+            self.logwrite('Could only analyze less than 3 images ({:.0f}). Checking for astigmatism not possible.'
+                          .format(len(self.analysis_results)))
+            return (False, None)
+        
+        assert self.focus is not None, 'Focus must be found before measuring astigmatism.'
+        
+        negative_defocus = positive_defocus = None
+        
+        for result in self.analysis_results:
+            absolute_focus = result[0] - self.focus
+            if absolute_focus < 0 and np.abs(absolute_focus + defocus) <= tolerance:
+                if (negative_defocus is None or
+                    np.abs(absolute_focus + defocus) < np.abs(negative_defocus[0] - self.focus + defocus)):
+                    negative_defocus = result
+            
+            if absolute_focus > 0 and np.abs(absolute_focus - defocus) <= tolerance:
+                if (positive_defocus is None or
+                    np.abs(absolute_focus - defocus) < np.abs(positive_defocus[0] - self.focus - defocus)):
+                    positive_defocus = result
+        
+        if negative_defocus is None:
+            aberrations = {'EHTFocus': self.focus - defocus}
+            self.image = self.image_grabber(aberrations=aberrations, reset_aberrations=True, show_live_image=True)
+            try:
+                angle, excent = self.find_peaks_orientation()
+            except RuntimeError:
+                self.logwrite('No peaks could be found for defocus {:.0f} nm.'.format(aberrations['EHTFocus']))
+            else:
+                negative_defocus = (aberrations['EHTFocus'], np.sum(self.peaks), angle, excent)
+        
+        if positive_defocus is None:
+            aberrations = {'EHTFocus': self.focus + defocus}
+            self.image = self.image_grabber(aberrations=aberrations, reset_aberrations=True, show_live_image=True)
+            try:
+                angle, excent = self.find_peaks_orientation()
+            except RuntimeError:
+                self.logwrite('No peaks could be found for defocus {:.0f} nm.'.format(aberrations['EHTFocus']))
+            else:
+                positive_defocus = (aberrations['EHTFocus'], np.sum(self.peaks), angle, excent)
+        
+        if None in (negative_defocus, positive_defocus):
+            self.logwrite('Could not measure astigmatism because one of the defocused images could not be analyzed.')
+            return (False, None)
+        
+        angle_change = angle_difference(negative_defocus[2], positive_defocus[2])
+        
+        if angle_change > np.pi/3:
+            return (True, angle_change)
+        else:
+            return (False, angle_change)
 
     def kill_aberrations(self, dirt_detection=True, merit = 'astig_2f', **kwargs):
         # Backup original frame parameters
@@ -1289,6 +1347,9 @@ class Tuning(Peaking):
         self.merit_history = {}
         for key in self._merits.keys():
             self.merit_history[key] = []
+        self.run_history = {}
+        for key in self._merits.keys():
+            self.run_history[key] = []
 
         counter = 0
         self.imsize = self.frame_parameters['fov']
@@ -1336,7 +1397,7 @@ class Tuning(Peaking):
 
             if len(self.run_history['intensity']) > 1:
                 if np.abs((self.run_history['intensity'][-2] - self.run_history['intensity'][-1]) /
-                          ((self.run_history['intensity'][-2] + self.run_history['intensity'][-1])*0.5)) < 0.02:
+                          ((self.run_history['intensity'][-2] + self.run_history['intensity'][-1])*0.5)) < 0.05:
                     self.logwrite('Finished tuning successfully after %d runs.' %(counter))
                     break
 
@@ -1486,22 +1547,23 @@ class Tuning(Peaking):
         self.frame_parameters = original_frame_parameters.copy()
 
     def astig_2f(self):
-        # Check if peaks are already stored and if second order is there
-        if len(np.shape(self.peaks)) < 2:
+        # Check if peaks are already stored and if only first order is there
+        if len(np.shape(self.peaks)) != 1:
             try:
-                self.peaks = self.find_peaks(second_order=True)
+                self.peaks = self.find_peaks(second_order=False)
             except RuntimeError as detail:
                 print(str(detail))
                 return 1000
-        peaks_first, peaks_second = self.peaks
+        #peaks_first, peaks_second = self.peaks
+        peaks_first = self.peaks
         intensities = []
         for peak in peaks_first:
             intensities.append(peak[3])
-        for peak in peaks_second:
-            intensities.append(peak[3])
+        #for peak in peaks_second:
+        #    intensities.append(peak[3])
         self.logwrite('intensity sum: ' + str(np.sum(intensities)) + '\tintensity first var/mean: ' +
-                      str(np.std(intensities[:6])/np.mean(intensities[:6])) + '\tintensity second var/mean: ' +
-                      str(np.std(intensities[6:])/np.mean(intensities[6:])))
+                      str(np.std(intensities[:6])/np.mean(intensities[:6])) )#+ '\tintensity second var/mean: ' +
+                      #str(np.std(intensities[6:])/np.mean(intensities[6:])))
 
         #return 1/np.sum(intensities) * 1e3 + np.std(intensities[:6])/np.mean(intensities[:6])
         return np.sqrt((intensities[0] - intensities[1])**2 + (intensities[0] - intensities[2])**2 +
@@ -1525,19 +1587,20 @@ class Tuning(Peaking):
         #            np.std(ffil[self.mask==0])/mean)
 
     def coma(self):
-        # Check if peaks are already stored and if second order is there
-        if len(np.shape(self.peaks)) < 2:
+        # Check if peaks are already stored and if only first order is there
+        if len(np.shape(self.peaks)) != 1:
             try:
-                self.peaks = self.find_peaks(second_order=True)
+                self.peaks = self.find_peaks(second_order=False)
             except RuntimeError as detail:
                 print(str(detail))
                 return 1000
-        peaks_first, peaks_second = self.peaks
+        #peaks_first, peaks_second = self.peaks
+        peaks_first = self.peaks
         intensities = []
         for peak in peaks_first:
             intensities.append(peak[3])
-        for peak in peaks_second:
-            intensities.append(peak[3])
+        #for peak in peaks_second:
+        #    intensities.append(peak[3])
 #        self.logwrite('intensity sum: ' + str(np.sum(intensities)) + '\tintensity first var/mean: ' +
 #                      str(np.std(intensities[:6])/np.mean(intensities[:6])) + '\tintensity second var/mean: ' +
 #                      str(np.std(intensities[6:])/np.mean(intensities[6:])))

@@ -21,8 +21,8 @@ _ = gettext.gettext
 
 focus_step = 1
 astig2f_step = 1
-astig3f_step = 50
-coma_step = 150
+astig3f_step = 75
+coma_step = 300
 average_frames = 3
 integration_radius = 1
 dirt_threshold = 0.5
@@ -220,7 +220,7 @@ class SuperScanTunerPanelDelegate(object):
 
         parameters_row1.add(ui.create_label_widget(_("Focus: ")))
         EHTFocus = ui.create_line_edit_widget()
-        EHTFocus.text = "1"
+        EHTFocus.text = str(focus_step)
         parameters_row1.add(EHTFocus)
         parameters_row1.add(ui.create_label_widget(_("nm")))
         EHTFocus.on_editing_finished = Focus_finished
@@ -229,7 +229,7 @@ class SuperScanTunerPanelDelegate(object):
 
         parameters_row1.add(ui.create_label_widget(_("C12 (Astig 2f): ")))
         C12 = ui.create_line_edit_widget()
-        C12.text = "1"
+        C12.text = str(astig2f_step)
         parameters_row1.add(C12)
         parameters_row1.add(ui.create_label_widget(_("nm")))
         C12.on_editing_finished = C12_finished
@@ -238,7 +238,7 @@ class SuperScanTunerPanelDelegate(object):
 
         parameters_row2.add(ui.create_label_widget(_("C21 (Coma): ")))
         C21 = ui.create_line_edit_widget()
-        C21.text = "150"
+        C21.text = str(coma_step)
         parameters_row2.add(C21)
         parameters_row2.add(ui.create_label_widget(_("nm")))
         C21.on_editing_finished = C21_finished
@@ -247,7 +247,7 @@ class SuperScanTunerPanelDelegate(object):
 
         parameters_row2.add(ui.create_label_widget(_("C23 (Astig 3f): ")))
         C23 = ui.create_line_edit_widget()
-        C23.text = "50"
+        C23.text = str(astig3f_step)
         parameters_row2.add(C23)
         parameters_row2.add(ui.create_label_widget(_("nm")))
         C23.on_editing_finished = C23_finished

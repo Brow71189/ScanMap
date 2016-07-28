@@ -25,14 +25,14 @@ except:
 #######################################################################################################################
 #######################################################################################################################
 #######################################################################################################################
-dirpath = '/3tb/maps_data/map_2015_09_16_12_19'
-imsize = 20
+dirpath = '/home/mittelberger/Documents/giacomo/christoph_tilt_series'
+imsize = 3
 graphene_threshold = 0.01
 light_threshold = -1
-heavy_threshold = 0.049
+heavy_threshold = 0.3
 dirt_border = 30
 minimum_graphene_area = 0.5
-minimum_number_peaks = 6
+minimum_number_peaks = 0
 maximum_number_peaks = 12
 #######################################################################################################################
 #######################################################################################################################
@@ -294,9 +294,9 @@ if __name__ == '__main__':
     matched_dirlist = []
     for filename in dirlist:
         try:
-            #splitname = os.path.splitext(filename)
-            #int(splitname[0][-4:])
-            int(filename[:4])
+            splitname = os.path.splitext(filename)
+            int(splitname[0][-4:])
+            #int(filename[:4])
             #if filename.startswith('image'):
             #    matched_dirlist.append(filename)
         except:
