@@ -1039,7 +1039,7 @@ class Peaking(Imaging):
 
     def fourier_filter(self, filter_radius=10, **kwargs):
         # check if peaks are already saved and if second order is there (if a new image is provided also recalculate)
-        if len(np.shape(self.peaks)) < 2 or kwargs.get('image') is not None:
+        if len(np.shape(self.peaks)) < 3 or kwargs.get('image') is not None:
             self.peaks = self.find_peaks(second_order=True, **kwargs)
         xdata = np.mgrid[-filter_radius:filter_radius+1, -filter_radius:filter_radius+1]
         mask = gaussian2D(xdata, 0, 0, filter_radius/2, filter_radius/2, 1, 0)
@@ -1079,6 +1079,7 @@ class Tuning(Peaking):
         for key in self._merits.keys():
             self.run_history[key] = []
         self.focus = None
+        self.number_corrections = {'EHTFocus': 0, 'astig_2f': 0, 'coma': 0, 'astig_3f': 0}
 
     @property
     def merit_lookup(self):
@@ -1206,7 +1207,7 @@ class Tuning(Peaking):
         self.logwrite('Latest ' + merit + ' merit: ' + str(current))
         return direction
     
-    def find_focus(self, stepsize=2, range=6):
+    def find_focus(self, stepsize=2, range=6, **kwargs):
         self.analysis_results = []
         for i in np.arange(-range, range+stepsize, stepsize):
             aberrations = {'EHTFocus': i}
@@ -1262,8 +1263,44 @@ class Tuning(Peaking):
                                                     analysis_results[best_focus, 1]))
         perr = np.sqrt(np.diag(pcov))
         return (popt, perr)
-    
-    def has_astig(self, defocus=4, tolerance=2):
+        
+    def get_keys(self, **kwargs):
+        """
+        kwargs are directly passed to find_focus and has_astig. Check them for possible arguments.
+        """
+        try:
+            res = self.find_focus(**kwargs)
+        except RuntimeError:
+            self.logwrite('Could not find focus.', level='warn')
+            return
+            
+        self.logwrite('Found focus at {:.2f} +- {:.2f} nm.'.format(res[0][1], res[1][1]))
+        self.focus = res[0][1]
+        astig = self.has_astig(**kwargs)
+        
+        if astig[0]:
+            self.logwrite('Detected astigmatism as dominant aberration (angle change: {:.1f} deg).'
+                          .format(astig[1]*180/np.pi))
+            self.number_corrections['astig_2f'] += 1
+            return ['C12_a', 'C12_b']
+        elif astig[1]:
+            self.logwrite('Detected no dominant astigmatism (angle change: {:.1f} deg).'.format(astig[1]*180/np.pi))
+            self.number_corrections['coma'] += 1
+            self.number_corrections['astig_3f'] += 1
+            return ['C21_a', 'C21_b', 'C23_a', 'C23_b']
+        else:
+            self.logwrite('Could not measure astigmatism.')
+            if self.number_corrections['coma'] > self.number_corrections['astig_2f'] + 1:
+                self.logwrite('Still correcting astigmatism because it was not corrected during the last runs.')
+                self.number_corrections['astig_2f'] += 1
+                return ['C12_a', 'C12_b']
+            else:
+                self.logwrite('Assuming that astigmatism is not the dominant aberration.')
+                self.number_corrections['coma'] += 1
+                self.number_corrections['astig_3f'] += 1
+                return ['C21_a', 'C21_b', 'C23_a', 'C23_b']
+
+    def has_astig(self, defocus=4, tolerance=2, **kwargs):
         if len(self.analysis_results) < 3:
             self.logwrite('Could only analyze less than 3 images ({:.0f}). Checking for astigmatism not possible.'
                           .format(len(self.analysis_results)))
@@ -1319,12 +1356,16 @@ class Tuning(Peaking):
     def kill_aberrations(self, dirt_detection=True, merit = 'astig_2f', **kwargs):
         # Backup original frame parameters
         original_frame_parameters = self.frame_parameters.copy()
-
+        auto_keys = False
         # Check input for arguments that override class variables
         if kwargs.get('steps') is not None:
             self.steps = kwargs['steps']
         if kwargs.get('keys') is not None:
-            self.keys = kwargs['keys']
+            if kwargs['keys'] is 'auto':
+                auto_keys = True
+                self.keys = []
+            else:
+                self.keys = kwargs['keys']
         if kwargs.get('frame_parameters') is not None:
             self.frame_parameters = kwargs['frame_parameters']
         else:
@@ -1340,7 +1381,7 @@ class Tuning(Peaking):
         # Check if merit should be adapted automatically to current aberration
         auto_merit = False
         if merit == 'auto':
-            merit = self.merit_lookup[self.keys[0]]
+            merit = 'intensity'
             auto_merit = True
 
         step_originals = self.steps.copy()
@@ -1383,7 +1424,7 @@ class Tuning(Peaking):
         #total_tunings.append(current)
         self.logwrite('Appending start value: ' + str(current))
 
-        while counter < 10:
+        while counter < 5:
             if self.event is not None and self.event.is_set():
                 break
             start_time = time.time()
@@ -1404,6 +1445,13 @@ class Tuning(Peaking):
 
             self.logwrite('Starting run number '+str(counter+1))
             #part_tunings = []
+            
+            if auto_keys:
+                self.keys = self.get_keys(**kwargs)
+                if self.keys is None:
+                    self.keys = ['EHTFocus', 'C12_a', 'C12_b', 'C21_a', 'C21_b', 'C23_a', 'C23_b']
+                else:
+                    self.image_grabber(acquire_image=False, aberrations={'EHTFocus': self.focus})
 
             for key in self.keys:
                 if self.event is not None and self.event.is_set():
