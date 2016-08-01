@@ -1363,7 +1363,7 @@ class Tuning(Peaking):
         if kwargs.get('keys') is not None:
             if kwargs['keys'] is 'auto':
                 auto_keys = True
-                self.keys = []
+                self.keys = None
             else:
                 self.keys = kwargs['keys']
         if kwargs.get('frame_parameters') is not None:
@@ -1377,13 +1377,14 @@ class Tuning(Peaking):
         if self.keys is None:
             #self.keys = ['EHTFocus', 'C12_a', 'C21_a', 'C23_a', 'C12_b', 'C21_b', 'C23_b']
             self.keys = ['EHTFocus', 'C21_a', 'C21_b', 'C23_a', 'C23_b', 'C12_a', 'C12_b']
-
+        if auto_keys:
+            all_keys = ['EHTFocus', 'C21_a', 'C21_b', 'C23_a', 'C23_b', 'C12_a', 'C12_b']
         # Check if merit should be adapted automatically to current aberration
         auto_merit = False
         if merit == 'auto':
             merit = 'intensity'
             auto_merit = True
-
+        
         step_originals = self.steps.copy()
         self.aberrations_tracklist = []
         self.merit_history = {}
@@ -1554,6 +1555,11 @@ class Tuning(Peaking):
                     self.logwrite('Found new best tuning with ' + merit  + ' merit: '  + str(current) +
                                   ' by changing ' + key + ' to ' + str(self.aberrations[key]) + '.')
                     #self.merit_history[merit].append(current)
+                    # make sure once per run the merit for all keys is calculated to prevent index_out_of_range errors
+                    if auto_keys:
+                        self.keys = all_keys
+                        current = self.calculate_merit()
+                        
                     self.append_merit(current)
                     self.aberrations_tracklist.append(self.aberrations.copy())
                 #reduce stepsize for next iteration
