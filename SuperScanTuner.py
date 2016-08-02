@@ -29,6 +29,7 @@ dirt_threshold = 0.5
 save_images = False
 savepath = None
 merit = 'auto'
+auto_keys = False
 
 class SuperScanTunerPanelDelegate(object):
     def __init__(self, api):
@@ -127,6 +128,20 @@ class SuperScanTunerPanelDelegate(object):
             merit = str(item)
             logging.info('Using ' + str(item) + ' merit for tuning.')
             
+        def toggle_auto_keys(check_state):
+            if check_state == 'checked':
+                auto_keys = True
+                EHTFocus._CheckBoxWidget__check_box_widget.enabled = False
+                Twofold._CheckBoxWidget__check_box_widget.enabled = False
+                Coma._CheckBoxWidget__check_box_widget.enabled = False
+                Threefold._CheckBoxWidget__check_box_widget.enabled = False
+            else:
+                auto_keys = False
+                EHTFocus._CheckBoxWidget__check_box_widget.enabled = True
+                Twofold._CheckBoxWidget__check_box_widget.enabled = True
+                Coma._CheckBoxWidget__check_box_widget.enabled = True
+                Threefold._CheckBoxWidget__check_box_widget.enabled = True
+        
         def start_button_clicked():
             global focus_step, astig2f_step, astig3f_step, coma_step, average_frames, integration_radius
             global dirt_threshold, save_images, savepath, merit
@@ -134,24 +149,25 @@ class SuperScanTunerPanelDelegate(object):
 
             superscan = self.__api.get_hardware_source_by_id('scan_controller', '1')
             as2 = self.__api.get_instrument_by_id('autostem_controller', '1')
-
-            keys = []
-
             reload(autotune)
-
-            if EHTFocus.check_state == 'checked':
-                keys.append('EHTFocus')
-            if Twofold.check_state == 'checked':
-                keys.append('C12_a')
-                keys.append('C12_b')
-            if Coma.check_state == 'checked':
-                keys.append('C21_a')
-            if Threefold.check_state == 'checked':
-                keys.append('C23_a')
-            if Coma.check_state == 'checked':
-                keys.append('C21_b')
-            if Threefold.check_state == 'checked':
-                keys.append('C23_b')
+            
+            if auto_keys:
+                keys = 'auto'
+            else:
+                keys = []
+                if EHTFocus.check_state == 'checked':
+                    keys.append('EHTFocus')
+                if Twofold.check_state == 'checked':
+                    keys.append('C12_a')
+                    keys.append('C12_b')
+                if Coma.check_state == 'checked':
+                    keys.append('C21_a')
+                if Threefold.check_state == 'checked':
+                    keys.append('C23_a')
+                if Coma.check_state == 'checked':
+                    keys.append('C21_b')
+                if Threefold.check_state == 'checked':
+                    keys.append('C23_b')
 
             if Dirt_detection.check_state == 'checked':
                 dirt_detection = True
@@ -283,6 +299,10 @@ class SuperScanTunerPanelDelegate(object):
         descriptor_row3.add(ui.create_label_widget(_("Check all aberrations to include in auto-tuning:")))
 
         checkbox_row1 = ui.create_row_widget()
+        auto_keys = ui.create_check_box_widget(_("Auto"))
+        auto_keys.on_check_state_changed = toggle_auto_keys
+        checkbox_row1.add(auto_keys)
+        checkbox_row1.add_spacing(4)
         EHTFocus = ui.create_check_box_widget(_("Focus"))
         checkbox_row1.add(EHTFocus)
         checkbox_row1.add_spacing(4)
@@ -296,6 +316,7 @@ class SuperScanTunerPanelDelegate(object):
         checkbox_row1.add(Threefold)
         EHTFocus.check_state = 'checked'
         Twofold.check_state = 'checked'
+        auto_keys.check_state = 'checked'
 
         checkbox_row2 = ui.create_row_widget()
         saving = ui.create_check_box_widget(_("Save tuning images"))
