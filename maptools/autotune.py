@@ -1103,6 +1103,9 @@ class Tuning(Peaking):
         for key in self.keys:
             if result.get(self.merit_lookup[key]) is None:
                 result[self.merit_lookup[key]] = self.merits[self.merit_lookup[key]]()
+        
+        if result.get('intensity') is None:
+            result['intensity'] = self.merits['intensity']()
 
         return result
 
