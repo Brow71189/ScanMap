@@ -190,19 +190,19 @@ class Mapping(object):
         for j in range(num_subframes[1]):
             for i in range(num_subframes[0]):
                 if j == 0:
-                    map_coords.append(tuple((leftX + i*(imsize+distance) + xfirstline[i],
-                                             topY - j*(imsize+distance) - yfirstline[j])) +
-                                      tuple((leftX + i*(imsize+distance),
-                                            topY - j*(imsize+distance))))
+                    map_coords.append(tuple((leftX + i*(imsize+distance),
+                                             topY - j*(imsize+distance))) +
+                                      tuple((leftX + i*(imsize+distance) + xfirstline[i],
+                                             topY - j*(imsize+distance) - yfirstline[j])))
                     if self.retuning_mode[0] == 'edges' and i == 0:
                         frame_info.append({'number': j*num_subframes[0]+i, 'retune': True, 'corner': 'top-left'})
                     else:
                         frame_info.append({'number': j*num_subframes[0]+i})
                 elif j % 2 == 0:  # Odd lines (have even indices because numbering starts with 0), e.g. map from left to right
-                    map_coords.append(tuple((leftX + i*(imsize+distance) + xoddline[i],
-                                             topY - j*(imsize+distance) - yoddline[j])) +
-                                      tuple((leftX + i*(imsize+distance),
-                                            topY - j*(imsize+distance))))
+                    map_coords.append(tuple((leftX + i*(imsize+distance),
+                                             topY - j*(imsize+distance))) +
+                                      tuple((leftX + i*(imsize+distance) + xoddline[i],
+                                             topY - j*(imsize+distance) - yoddline[j])))
 
                     if self.retuning_mode[0] == 'edges' and i == 0:
                         frame_info.append({'number': j*num_subframes[0]+i, 'retune': True, 'corner': 'top-left'})
@@ -224,10 +224,10 @@ class Mapping(object):
 #                        frame_info.append(None)
 
                 else: # Even lines, e.g. scan from right to left
-                    map_coords.append(tuple((leftX + (num_subframes[0] - (i+1))*(imsize + distance) + xevenline[i],
-                                             topY-j*(imsize + distance) - yevenline[j])) +
-                                      tuple((leftX + (num_subframes[0] - (i+1))*(imsize + distance),
-                                             topY-j*(imsize + distance))))
+                    map_coords.append(tuple((leftX + (num_subframes[0] - (i+1))*(imsize + distance),
+                                             topY-j*(imsize + distance))) +
+                                      tuple((leftX + (num_subframes[0] - (i+1))*(imsize + distance) + xevenline[i],
+                                             topY-j*(imsize + distance) - yevenline[j])))
 
                     if self.switches.get('focus_at_edges') and num_subframes[0]-(i+1) == 0:
                         frame_info.append({'number': j*num_subframes[0]+(num_subframes[0]-(i+1)), 'retune': True,
@@ -358,7 +358,7 @@ class Mapping(object):
 #                       superscan=self.superscan)
         message = '\tTuner: '
         mode = self.retuning_mode[1]
-        
+
         if self.tune_now_event is not None and self.tune_now_event.is_set():
             return_message = message + 'User initialized retuning. '
             tune = True
@@ -366,13 +366,13 @@ class Mapping(object):
             self.tune_now_event.clear()
         else:
             tune, return_message = self.tuning_necessary(frame_info, message)
-            
+
         message = return_message
         if not tune:
             return message
         elif mode == 'manual':
             return_message, focused = self.wait_for_focused(message)
-            message += return_message
+            message = return_message
             if focused is not None:
                 new_z, newEHTFocus = focused
                 self.tuning_successful(True, frame_coord[:2] + (new_z, newEHTFocus))
@@ -811,7 +811,7 @@ class Mapping(object):
             self.frame_parameters['pixeltime'] = pixeltimes[0]
 
         self.save_mapping_config()
-        
+
         self.document_controller.queue_task(lambda: self.update_button('analyze_button', 'Retune now'))
 
         self.Tuner = Tuning(frame_parameters=self.frame_parameters.copy(), detectors=self.detectors, event=self.event,
@@ -819,7 +819,7 @@ class Mapping(object):
                      superscan=self.superscan)
 
         # Sort coordinates in case they were not in the right order
-        self.coord_dict = self.sort_quadrangle()
+#        self.coord_dict = self.sort_quadrangle()
         # Find bounding rectangle of the four points given by the user
         self.leftX = np.amin((self.coord_dict['top-left'][0], self.coord_dict['bottom-left'][0]))
         self.rightX = np.amax((self.coord_dict['top-right'][0], self.coord_dict['bottom-right'][0]))
@@ -907,7 +907,7 @@ class Mapping(object):
                         if self.switches.get('abort_series_on_dirt'):
                             dirt_mask = self.Tuner.dirt_detector()
                             if np.sum(dirt_mask)/np.prod(dirt_mask.shape) > self.dirt_area:
-                                self.Tuner.logwrite('Series was aborted because more than ' +
+                                self.Tuner.logwrite('Series was aborted because of more than ' +
                                              str(int(self.dirt_area*100)) + '% dirt coverage.')
                                 break
                     self.last_frames_HAADF = []
@@ -919,7 +919,7 @@ class Mapping(object):
                 if self.switches.get('isotope_mapping'):
                     message = self.handle_isotope_mapping(frame_coord, frame_info, name)
                     logfile.write(message + '\n')
-                
+
                 if self.tune_now_event is not None and self.tune_now_event.is_set():
                     message = self.handle_retuning(frame_coord, frame_info)
                     logfile.write(message + '\n')
@@ -980,8 +980,8 @@ class Mapping(object):
 
             tifffile.imsave(os.path.join(self.store, 'x_map.tif'), np.asarray(x_map, dtype='float32'))
             tifffile.imsave(os.path.join(self.store, 'y_map.tif'), np.asarray(y_map, dtype='float32'))
-            tifffile.imsave(os.path.join(self.store, 'x_corrected_map.tif'), np.asarray(x_map, dtype='float32'))
-            tifffile.imsave(os.path.join(self.store, 'y_corrected_map.tif'), np.asarray(y_map, dtype='float32'))
+            tifffile.imsave(os.path.join(self.store, 'x_corrected_map.tif'), np.asarray(x_corrected_map, dtype='float32'))
+            tifffile.imsave(os.path.join(self.store, 'y_corrected_map.tif'), np.asarray(y_corrected_map, dtype='float32'))
             tifffile.imsave(os.path.join(self.store, 'z_map.tif'), np.asarray(z_map, dtype='float32'))
             tifffile.imsave(os.path.join(self.store, 'focus_map.tif'), np.asarray(focus_map, dtype='float32'))
 
@@ -996,8 +996,8 @@ class Mapping(object):
             self.gui_communication[button].text = text
 
     def wait_for_focused(self, message, timeout=360, accept_timeout=30):
-        
-        self.document_controller.queue_task(lambda: self.update_button('done_button', 'Done tuning'))        
+
+        self.document_controller.queue_task(lambda: self.update_button('done_button', 'Done tuning'))
         self.tune_event.set()
 
         accepted = False

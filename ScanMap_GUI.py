@@ -16,7 +16,7 @@ from .maptools import mapper, autotune
 _ = gettext.gettext
 
 class ScanMapPanelDelegate(object):
-    
+
     def __init__(self, api):
         self.__api = api
         self.panel_id = 'ScanMap-Panel'
@@ -53,15 +53,15 @@ class ScanMapPanelDelegate(object):
                             'compensate_stage_error': False, 'acquire_overview': True, 'blank_beam': False,
                             'isotope_mapping': False, 'show_last_frames_average': False, 'aligned_average': False}
         self.sync_gui_working = False
-    
+
     def create_panel_widget(self, ui, document_controller):
-        
+
         self.superscan = self.__api.get_hardware_source_by_id('scan_controller', '1')
         self.as2 = self.__api.get_instrument_by_id('autostem_controller', '1')
         self.ccd = self.__api.get_hardware_source_by_id('nionccd1010', '1')
-        
-        column = ui.create_column_widget()        
-        
+
+        column = ui.create_column_widget()
+
         def fov_finished(text):
             if len(text) > 0:
                 if self.switches.get('isotope_mapping'):
@@ -82,9 +82,9 @@ class ScanMapPanelDelegate(object):
                     else:
                         self.frame_parameters['fov'] = fov
                         logging.info('Setting FOV to: ' + str(fov) + ' nm.')
-                    
+
                 self.total_number_frames()
-            
+
         def size_finished(text):
             if len(text) > 0:
                 if self.switches.get('isotope_mapping'):
@@ -104,9 +104,9 @@ class ScanMapPanelDelegate(object):
                     except ValueError:
                         logging.warn(text + ' is not a valid size. Please input an integer number.')
                         size_line_edit.select_all()
-                    
+
                 self.total_number_frames()
-            
+
         def offset_finished(text):
             if len(text) > 0:
                 if self.switches.get('isotope_mapping'):
@@ -127,9 +127,9 @@ class ScanMapPanelDelegate(object):
                     else:
                         self.offset = offset
                         logging.info('Setting Offset to: ' + str(offset))
-                    
+
                 self.total_number_frames()
-        
+
         def time_finished(text):
             if len(text) > 0:
                 if self.switches.get('isotope_mapping'):
@@ -157,9 +157,9 @@ class ScanMapPanelDelegate(object):
                     else:
                         self.frame_parameters['pixeltime'] = pixeltime
                         logging.info('Setting pixeltime to: ' + str(pixeltime) + ' us.')
-                
-                self.total_number_frames()                
-            
+
+                self.total_number_frames()
+
         def rotation_finished(text):
             if len(text) > 0:
                 if self.switches.get('isotope_mapping'):
@@ -182,7 +182,7 @@ class ScanMapPanelDelegate(object):
                     else:
                         self.frame_parameters['rotation'] = rotation
                         logging.info('Setting frame rotation to: ' + str(rotation))
-                
+
         def number_of_images_finished(text):
             if len(text) > 0:
                 if self.switches.get('isotope_mapping'):
@@ -204,9 +204,9 @@ class ScanMapPanelDelegate(object):
                     except ValueError:
                         logging.warn(text + ' is not a valid number. Please input an integer number.')
                         number_line_edit.select_all()
-                    
+
                 self.total_number_frames()
-        
+
         def sleeptime_finished(text):
             if len(text) > 0:
                 try:
@@ -216,7 +216,7 @@ class ScanMapPanelDelegate(object):
                 else:
                     logging.info('Setting sleep time before acquiring an image at new stage position to {:.1f} s'
                                  .format(self.sleeptime))
-                
+
         def dirt_area_finished(text):
             if len(text) > 0:
                 try:
@@ -226,7 +226,7 @@ class ScanMapPanelDelegate(object):
                 except ValueError:
                     logging.warn(text + ' is not a valid number. Please input a floating point number.')
                     number_line_edit.select_all()
-                
+
         def saving_finished(text):
             if len(text)>0:
                 if os.path.isabs(text):
@@ -235,7 +235,7 @@ class ScanMapPanelDelegate(object):
                     logging.warn(text+' is not an absolute path. Please enter a complete pathname starting from root.')
             else:
                 self.savepath = None
-        
+
         def average_number_finished(text):
             if len(text) > 0:
                 try:
@@ -244,7 +244,7 @@ class ScanMapPanelDelegate(object):
                     logging.warn('{:s} is not a valid number. Please input an integer.'.format(text))
                 else:
                     logging.info('Showing average of last {:.0f} images.'.format(self.average_number))
-        
+
         def max_align_dist_finished(text):
             if len(text) > 0:
                 try:
@@ -254,15 +254,15 @@ class ScanMapPanelDelegate(object):
                 else:
                     logging.info('Maximum align distance set to {:.3f} fractions of an image.'
                                  .format(self.max_align_dist))
-                
+
         def checkbox_changed(check_state):
             if not self.sync_gui_working:
                 for key, value in self._checkboxes.items():
                     self.switches[key] = value.checked
-                
+
         def isotope_checkbox_changed(check_state):
             checkbox_changed(check_state)
-            
+
             if check_state == 'checked':
                 mode_label.text = 'Isotope mapping settings:'
                 rotation_label.text = 'Intensity threshold: '
@@ -273,9 +273,9 @@ class ScanMapPanelDelegate(object):
                 rotation_label.text = 'Rotation (deg): '
                 offset_label.text = 'Offset (images): '
                 series_label.text = 'Series length: '
-                
-            sync_gui()           
-        
+
+            sync_gui()
+
         def tl_button_clicked():
             self.save_coords('top-left')
             self.total_number_frames()
@@ -296,14 +296,14 @@ class ScanMapPanelDelegate(object):
             self.drive_coords('bottom-left')
         def drive_br_button_clicked():
             self.drive_coords('bottom-right')
-        
+
         def method_combo_box_changed(item):
             self.retuning_mode[0] = item.replace(' ', '_')
         def mode_combo_box_changed(item):
             self.retuning_mode[1] = item.replace(' ', '_')
-            
+
         def save_button_clicked():
-            Mapper = mapper.Mapping()            
+            Mapper = mapper.Mapping()
             Mapper.coord_dict=self.coord_dict.copy()
             Mapper.switches=self.switches.copy()
             Mapper.number_of_images = self.number_of_images
@@ -316,10 +316,10 @@ class ScanMapPanelDelegate(object):
             Mapper.average_number = self.average_number
             Mapper.max_align_dist = self.max_align_dist
             Mapper.sleeptime = self.sleeptime
-            
+
             Mapper.save_mapping_config()
             logging.info('Saved config file to: ' + os.path.join(Mapper.savepath, Mapper.foldername, 'configs_map.txt'))
-        
+
         def load_button_clicked():
             if not os.path.isfile(self.savepath):
                 logging.warn('Please type the path to the config file into the \'savepath\' field to load configs.')
@@ -344,13 +344,13 @@ class ScanMapPanelDelegate(object):
                 sync_gui()
                 logging.info('Loaded all mapping configs successfully.')
                 #sync_gui()
-        
+
         def test_button_clicked():
             if None in self.frame_parameters.values():
                 logging.warn('You must specify all scan parameters (e.g. FOV, framesize, rotation, pixeltime) ' +
                              'before acquiring a test image.')
                 return
-            reload(autotune)   
+            reload(autotune)
             Image = autotune.Imaging(frame_parameters=self.frame_parameters, as2=self.as2, superscan=self.superscan,
                                      document_controller=document_controller)
             testimage = Image.image_grabber()
@@ -361,7 +361,7 @@ class ScanMapPanelDelegate(object):
             di.set_dimensional_calibrations([calibration, calibration])
 
         def done_button_clicked():
-            
+
             if self.thread is not None and self.thread.is_alive():
                 if self.tune_event is not None and self.tune_event.is_set():
                     self.thread_communication['new_EHTFocus'] = self.as2.get_property_as_float('EHTFocus')
@@ -372,17 +372,17 @@ class ScanMapPanelDelegate(object):
                 else:
                     logging.warn('There is already a mapping going on. Please abort it or wait for it to terminate.')
                     return
-                    
+
             saving_finished(savepath_line_edit.text)
             checkbox_changed('obligatory string argument')
             self.total_number_frames()
-            
+
             try:
                 reload(mapper)
                 reload(autotune)
             except:
                 logging.warn('Couldn\'t reload mapper and autotune.')
-                
+
             if None in self.frame_parameters.values():
                 logging.warn('You must specify all scan parameters (e.g. FOV, framesize, rotation, pixeltime) ' +
                              'before starting the map.')
@@ -396,10 +396,10 @@ class ScanMapPanelDelegate(object):
             if self.retuning_mode[0] == 'reference' and self.peak_intensity_reference is None:
                 logging.warn('You must record a peak intensity reference when using "reference" mode.')
                 return
-            
+
             Mapper = mapper.Mapping(superscan=self.superscan, as2=self.as2, document_controller=document_controller,
                                     coord_dict=self.coord_dict.copy(), switches=self.switches.copy(), ccd=self.ccd)
-                                    
+
             Mapper.number_of_images = self.number_of_images
             Mapper.dirt_area = self.dirt_area
             Mapper.offset = self.offset
@@ -418,20 +418,19 @@ class ScanMapPanelDelegate(object):
             self.thread_communication['analyze_button'] = analyze_button
             self.tune_now_event = threading.Event()
             Mapper.tune_now_event = self.tune_now_event
-            if self.switches['do_retuning']:
-                self.tune_event = threading.Event()
-                Mapper.tune_event = self.tune_event
+            self.tune_event = threading.Event()
+            Mapper.tune_event = self.tune_event
             if self.switches.get('isotope_mapping') or self.number_of_images > 1:
                 self.abort_series_event = threading.Event()
                 Mapper.abort_series_event = self.abort_series_event
-            
+
             logging.info('FOV: ' + str(self.frame_parameters['fov'])+' nm')
             logging.info('Offset: ' + str(self.offset)+' x image size')
             logging.info('Frame Rotation: ' + str(self.frame_parameters['rotation'])+' deg')
             logging.info('Size: ' + str(self.frame_parameters['size_pixels'])+' px')
             logging.info('Time: ' + str(self.frame_parameters['pixeltime'])+' us')
             logging.info('Number of images per location: ' + str(self.number_of_images))
-            
+
             self.event = threading.Event()
             Mapper.event = self.event
             self.thread = threading.Thread(target=Mapper.SuperScan_mapping)
@@ -447,7 +446,7 @@ class ScanMapPanelDelegate(object):
             else:
                 logging.info('Aborting after current frame is finished. (May take a short while until actual abort)')
                 self.event.set()
-            
+
         def analyze_button_clicked():
             if self.thread is not None and self.thread.is_alive():
                 self.tune_now_event.set()
@@ -465,16 +464,16 @@ class ScanMapPanelDelegate(object):
                 logging.info('Measured peak intensities in {} from {} to: {:.0f}.'
                              .format(selected_data_item._data_item.title,
                              str(selected_data_item.data_and_metadata.timestamp).split('.')[0], intensities_sum))
-            
+
         def sync_gui():
             self.sync_gui_working = True
-            
+
             for key, value in self._checkboxes.items():
                 value.checked = self.switches.get(key, False)
-            
+
             method_combo_box._ComboBoxWidget__combo_box_widget.current_item = self.retuning_mode[0]
             mode_combo_box._ComboBoxWidget__combo_box_widget.current_item = self.retuning_mode[1]
-            
+
             if self.switches.get('isotope_mapping'):
                 fov_line_edit.text = str(self.isotope_frame_parameters.get('fov'))
                 size_line_edit.text = str(self.isotope_frame_parameters.get('size_pixels')[0])
@@ -499,12 +498,12 @@ class ScanMapPanelDelegate(object):
                 average_number_line_edit.text = '{:.0f}'.format(self.average_number)
                 max_align_dist_line_edit.text = '{:.3f}'.format(self.max_align_dist)
                 sleeptime_line_edit.text = '{:.1f}'.format(self.sleeptime)
-            
+
             self.sync_gui_working = False
-        
+
         mode_row = ui.create_row_widget()
         fields_row = ui.create_row_widget()
-        
+
         left_fields_column = ui.create_column_widget()
         right_fields_column = ui.create_column_widget()
         left_edit_row1 = ui.create_row_widget()
@@ -611,53 +610,53 @@ class ScanMapPanelDelegate(object):
         #                    savepath_row                   #
         #                   done_button_row                 #
         #####################################################
-        
-        
+
+
         left_edit_row1.add(ui.create_label_widget(_("FOV (nm): ")))
         fov_line_edit = ui.create_line_edit_widget()
         fov_line_edit.text = str(self.frame_parameters.get('fov'))
         fov_line_edit.on_editing_finished = fov_finished
         left_edit_row1.add(fov_line_edit)
-        
+
         right_edit_row1.add(ui.create_label_widget(_("Framesize (px): ")))
         size_line_edit = ui.create_line_edit_widget()
         size_line_edit.text = str(self.frame_parameters.get('size_pixels')[0])
         size_line_edit.on_editing_finished = size_finished
         right_edit_row1.add(size_line_edit)
-        
+
         rotation_label = ui.create_label_widget(_("Rotation (deg): "))
         left_edit_row2.add(rotation_label)
         rotation_line_edit = ui.create_line_edit_widget()
         rotation_line_edit.text = str(self.frame_parameters.get('rotation'))
         rotation_line_edit.on_editing_finished = rotation_finished
         left_edit_row2.add(rotation_line_edit)
-        
+
         offset_label = ui.create_label_widget(_("Offset (images): "))
         right_edit_row2.add(offset_label)
         offset_line_edit = ui.create_line_edit_widget()
         offset_line_edit.text = str(self.offset)
         offset_line_edit.on_editing_finished = offset_finished
         right_edit_row2.add(offset_line_edit)
-        
+
         left_edit_row3.add(ui.create_label_widget(_("Pixeltime (us): ")))
         time_line_edit = ui.create_line_edit_widget()
         time_line_edit.text = str(self.frame_parameters.get('pixeltime'))
         time_line_edit.on_editing_finished = time_finished
         left_edit_row3.add(time_line_edit)
-        
+
         left_edit_row4.add(ui.create_label_widget(_("Sleeptime (s): ")))
         sleeptime_line_edit = ui.create_line_edit_widget()
         sleeptime_line_edit.text = str(self.sleeptime)
         sleeptime_line_edit.on_editing_finished = sleeptime_finished
         left_edit_row4.add(sleeptime_line_edit)
-        
+
         series_label = ui.create_label_widget(_("Series length: "))
         right_edit_row3.add(series_label)
         number_line_edit = ui.create_line_edit_widget()
         number_line_edit.text = str(self.number_of_images)
         number_line_edit.on_editing_finished = number_of_images_finished
         right_edit_row3.add(number_line_edit)
-        
+
         savepath_row.add(ui.create_label_widget(_("Savepath: ")))
         savepath_line_edit = ui.create_line_edit_widget()
         savepath_line_edit.text = self.savepath
@@ -687,7 +686,7 @@ class ScanMapPanelDelegate(object):
         done_button = ui.create_push_button_widget(_("Start map"))
         abort_button = ui.create_push_button_widget(_("Abort map"))
         analyze_button = ui.create_push_button_widget(_("Analyze image"))
-           
+
         retune_checkbox = ui.create_check_box_widget(_("Retune live, method: "))
         retune_checkbox.on_check_state_changed = checkbox_changed
         method_combo_box = ui.create_combo_box_widget()
@@ -713,7 +712,7 @@ class ScanMapPanelDelegate(object):
         show_average_checkbox.on_check_state_changed = checkbox_changed
         align_average_checkbox = ui.create_check_box_widget(_("Align average. Maximum distance (images): "))
         align_average_checkbox.on_check_state_changed = checkbox_changed
-        
+
         tl_button.on_clicked = tl_button_clicked
         tr_button.on_clicked = tr_button_clicked
         bl_button.on_clicked = bl_button_clicked
@@ -728,29 +727,29 @@ class ScanMapPanelDelegate(object):
         done_button.on_clicked = done_button_clicked
         abort_button.on_clicked = abort_button_clicked
         analyze_button.on_clicked = analyze_button_clicked
-        
+
         left_buttons_row1.add(tl_button)
         left_buttons_row1.add_spacing(2)
         left_buttons_row1.add(tr_button)
-        
+
         left_buttons_row2.add(bl_button)
         left_buttons_row2.add_spacing(2)
         left_buttons_row2.add(br_button)
-        
+
         right_buttons_row1.add(drive_tl)
         right_buttons_row1.add_spacing(2)
         right_buttons_row1.add(drive_tr)
-        
+
         right_buttons_row2.add(drive_bl)
         right_buttons_row2.add_spacing(2)
         right_buttons_row2.add(drive_br)
-        
+
         checkbox_row1.add(retune_checkbox)
         checkbox_row1.add(method_combo_box)
         #checkbox_row1.add(ui.create_label_widget(_(' mode: ')))
         checkbox_row1.add(mode_combo_box)
         checkbox_row1.add_stretch()
-        
+
         checkbox_row2.add(overview_checkbox)
         checkbox_row2.add_spacing(3)
         checkbox_row2.add(blank_checkbox)
@@ -760,36 +759,36 @@ class ScanMapPanelDelegate(object):
         checkbox_row3.add_spacing(3)
         checkbox_row3.add(z_drive_checkbox)
         checkbox_row3.add_stretch()
-        
+
         checkbox_row4.add(abort_series_on_dirt_checkbox)
         checkbox_row4.add(dirt_area_line_edit)
         checkbox_row4.add(ui.create_label_widget(_('% dirt in image')))
         checkbox_row4.add_stretch()
-        
+
         checkbox_row5.add(isotope_mapping_checkbox)
         checkbox_row5.add_stretch()
-        
+
         checkbox_row6.add(show_average_checkbox)
         checkbox_row6.add(average_number_line_edit)
         checkbox_row6.add(ui.create_label_widget(_(' images')))
         checkbox_row6.add_stretch()
-        
+
         checkbox_row7.add(align_average_checkbox)
         checkbox_row7.add(max_align_dist_line_edit)
         checkbox_row7.add_stretch()
-        
+
         save_button_row.add(save_button)
         save_button_row.add_spacing(4)
         save_button_row.add(load_button)
         save_button_row.add_spacing(4)
-        save_button_row.add(test_button)        
-        
+        save_button_row.add(test_button)
+
         done_button_row.add(done_button)
         done_button_row.add_spacing(4)
         done_button_row.add(abort_button)
         done_button_row.add_spacing(4)
         done_button_row.add(analyze_button)
-        
+
         self._checkboxes['do_retuning'] = retune_checkbox
         self._checkboxes['use_z_drive'] = z_drive_checkbox
         self._checkboxes['acquire_overview'] = overview_checkbox
@@ -801,10 +800,10 @@ class ScanMapPanelDelegate(object):
         self._checkboxes['aligned_average'] = align_average_checkbox
 
         return column
-        
+
     def save_coords(self, position):
         self.coord_dict[position] = (self.as2.get_property_as_float('StageOutX'),
-                                     self.as2.get_property_as_float('StageOutY'), 
+                                     self.as2.get_property_as_float('StageOutY'),
                                      self.as2.get_property_as_float('StageOutZ'),
                                      self.as2.get_property_as_float('EHTFocus'))
         logging.info('Saved x: ' +
@@ -817,15 +816,15 @@ class ScanMapPanelDelegate(object):
         if self.coord_dict[position] is None:
             logging.warn('You haven\'t set the '+position+' corner yet.')
         else:
-            logging.info('Going to ' + str(position) + ' corner: x: ' + str(self.coord_dict[position][0]) + ', y: ' + 
+            logging.info('Going to ' + str(position) + ' corner: x: ' + str(self.coord_dict[position][0]) + ', y: ' +
                          str(self.coord_dict[position][1]) + ', z: '+str(self.coord_dict[position][2]) + ', focus: ' +
                          str(self.coord_dict[position][3]))
             self.as2.set_property_as_float('StageOutX', self.coord_dict[position][0])
             self.as2.set_property_as_float('StageOutY', self.coord_dict[position][1])
             self.as2.set_property_as_float('EHTFocus', self.coord_dict[position][3])
-            if self.switches['use_z_drive']:          
+            if self.switches['use_z_drive']:
                 self.as2.set_property_as_float('StageOutZ', self.coord_dict[position][2])
-            
+
     def total_number_frames(self):
         if not None in self.coord_dict.values() and not None in self.frame_parameters.values():
             corners = ('top-left', 'top-right', 'bottom-right', 'bottom-left')
@@ -838,29 +837,29 @@ class ScanMapPanelDelegate(object):
             for corner in corners:
                 coords.append(self.coord_dict_sorted[corner])
             imsize = self.frame_parameters['fov']*1e-9
-            distance = self.offset*imsize    
+            distance = self.offset*imsize
             leftX = np.min((coords[0][0],coords[3][0]))
             rightX = np.max((coords[1][0],coords[2][0]))
             topY = np.max((coords[0][1],coords[1][1]))
             botY = np.min((coords[2][1],coords[3][1]))
             num_subframes = (int(np.abs(rightX-leftX)/(imsize+distance))+1, int(np.abs(topY-botY)/(imsize+distance))+1)
-            
+
             logging.info('With the current settings, %dx%d frames (%d in total) will be taken.'
                          % (num_subframes[0], num_subframes[1], num_subframes[0]*num_subframes[1]))
             logging.info('A total area of %.4f um2 will be scanned.'
                          % (num_subframes[0]*num_subframes[1]*(self.frame_parameters['fov']*1e-3)**2))
-            logging.info('Approximate mapping time: %.0f s' 
+            logging.info('Approximate mapping time: %.0f s'
                          % (num_subframes[0]*num_subframes[1]*(self.frame_parameters['size_pixels'][0]**2
                             *np.mean(self.frame_parameters['pixeltime'])*1e-6*self.number_of_images + 4)))
-    
+
 
 class ScanMapExtension(object):
     extension_id = 'univie.scanmap'
-    
+
     def __init__(self, api_broker):
         api = api_broker.get_api(version='1', ui_version='1')
         self.__panel_ref = api.create_panel(ScanMapPanelDelegate(api))
-    
+
     def close(self):
         self.__panel_ref.close()
         self.__panel_ref = None

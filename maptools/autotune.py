@@ -556,13 +556,13 @@ class Imaging(object):
 #                    channels_enabled[1] = True
                 if self.frame_parameters.get('center') is not None:
                     rot = self.frame_parameters.get('rotation', 0) * 180 / np.pi
-                    rotated_center = np.dot(np.array(((np.cos(rot), -np.sin(rot)), (np.sin(rot), np.cos(rot)))), 
+                    rotated_center = np.dot(np.array(((np.cos(rot), -np.sin(rot)), (np.sin(rot), np.cos(rot)))),
                                             np.array(self.frame_parameters.get('center')) * 1e-9)
-                    
+
                     self.as2.set_property_as_float('CSH.y', rotated_center[0])
                     self.as2.set_property_as_float('CSH.x', rotated_center[1])
                     time.sleep(0.5)
-                    
+
                 self.document_controller.queue_task(lambda:
                                         self.superscan._HardwareSource__hardware_source.set_selected_profile_index(1))
 
@@ -610,7 +610,7 @@ class Imaging(object):
                 ss.SS_Functions_SS_WaitForEndOfFrame(frame_nr)
                 while not ss.SS_Functions_SS_GetRemainingPixelsForFrame(frame_nr) == -1:
                     self.logwrite('Waiting for Frame to finish.')
-                    time.sleep(0.02)
+                    time.sleep(0.01)
                 return_image = np.asarray(ss.SS_Functions_SS_GetImageForFrame(frame_nr, 0))
                 startwaittime = time.time()
                 while (return_image[-1] == 0).all():
@@ -619,7 +619,7 @@ class Imaging(object):
                         break
                     self.logwrite('Waiting for frame to be fully transfered.')
                     return_image = np.asarray(ss.SS_Functions_SS_GetImageForFrame(frame_nr, 0))
-                    time.sleep(0.02)
+                    time.sleep(0.01)
 
                 if self.frame_parameters.get('center') is not None:
                     self.as2.set_property_as_float('CSH.y', 0.0)
@@ -878,10 +878,10 @@ class Peaking(Imaging):
                                                                             horizontal[:len(xdata)/2], p0=(horiz_a, 0))
                 vertical_popt, vertical_pcov = scipy.optimize.curve_fit(hyperbola1D, ydata[:len(ydata)/2],
                                                                         vertical[:len(ydata)/2], p0=(vert_a, 0))
-    
+
                 cross[self.center[0] + i, xdata + self.center[1]] = hyperbola1D(xdata, *horizontal_popt) - 1.5 * mean_fft
                 cross[ydata + self.center[0], self.center[1] + i] = hyperbola1D(ydata, *vertical_popt) - 1.5 * mean_fft
-    
+
             fft-=cross
 
         if (4*int(first_order) < self.center).all():
@@ -1009,7 +1009,7 @@ class Peaking(Imaging):
             return (peaks, fft)
         else:
             return peaks
-            
+
     def find_peaks_orientation(self, **kwargs):
         if self.peaks is None:
             self.peaks = self.find_peaks(**kwargs)
@@ -1017,7 +1017,7 @@ class Peaking(Imaging):
             peaks = self.peaks[0].copy()
         else:
             peaks = self.peaks.copy()
-        
+
         peaks[:,:2] -= self.center
         radii = np.sqrt(peaks[:,0]**2 + peaks[:,1]**2)
         peaks[:,0] /= radii
@@ -1029,7 +1029,7 @@ class Peaking(Imaging):
         # Formula taken from https://en.wikipedia.org/wiki/Image_moment
         covmat = np.array(((nu20,nu11), (nu11,nu02)))
         eigval, eigvec = np.linalg.eig(covmat)
-        
+
         angle = np.arctan2(*eigvec[:, np.argmax(eigval)])
         #angle = np.arctan(np.divide(*eigvec[np.argmax(eigval)]))*180/np.pi
         #angle = 0.5 * np.arctan(2*nu11/(nu20-nu02))
@@ -1103,13 +1103,13 @@ class Tuning(Peaking):
         for key in self.keys:
             if result.get(self.merit_lookup[key]) is None:
                 result[self.merit_lookup[key]] = self.merits[self.merit_lookup[key]]()
-        
+
         if result.get('intensity') is None:
             result['intensity'] = self.merits['intensity']()
 
         return result
 
-    def find_direction(self, key, dirt_detection=True, merit='astig_2f', merit_tolerance=0.1):
+    def find_direction(self, key, dirt_detection=True, merit='astig_2f', merit_tolerance=0.01):
         step_multiplicators = [1, 0.5, 2]
         #step_multiplicators.sort(key=lambda a: np.random.rand())
         step_multiplicator = None
@@ -1209,7 +1209,7 @@ class Tuning(Peaking):
 
         self.logwrite('Latest ' + merit + ' merit: ' + str(current))
         return direction
-    
+
     def find_focus(self, stepsize=2, range=6, **kwargs):
         self.analysis_results = []
         for i in np.arange(-range, range+stepsize, stepsize):
@@ -1222,19 +1222,19 @@ class Tuning(Peaking):
                 continue
             else:
                 self.analysis_results.append((i, np.sum(self.peaks), angle, excent))
-        
+
         analysis_results = np.array(self.analysis_results)
         if len(self.analysis_results) < 1:
             raise RuntimeError('Could not find focus.')
-        
+
         best_focus = np.argmax(analysis_results[:, 1])
-        
+
         while best_focus == 0 or best_focus == len(analysis_results)-1:
             if best_focus == 0:
                 aberrations = {'EHTFocus': analysis_results[0, 0] - stepsize}
             else:
                 aberrations = {'EHTFocus': analysis_results[-1, 0] + stepsize}
-                
+
             self.image = self.image_grabber(aberrations=aberrations, reset_aberrations=True, show_live_image=True)
             try:
                 angle, excent = self.find_peaks_orientation()
@@ -1244,29 +1244,29 @@ class Tuning(Peaking):
             else:
                 if best_focus == 0:
                     self.analysis_results.insert(0, (aberrations['EHTFocus'] , np.sum(self.peaks), angle, excent))
-                else:                    
+                else:
                     self.analysis_results.append((aberrations['EHTFocus'], np.sum(self.peaks), angle, excent))
-            
+
             analysis_results = np.array(self.analysis_results)
             best_focus = np.argmax(analysis_results[:, 1])
-                
-        
+
+
         if len(analysis_results) < 3:
             self.logwrite('Could only detect peaks in less than 3 images ({:.0f}). ' +
                           'Assuming focus at maximum intensity.'.format(len(analysis_results)))
             return (best_focus, analysis_results[best_focus, 0])
-        
+
         # Only do fit in reasonable range around best focus
         lower_limit = 0 if best_focus - 3 < 0 else best_focus - 3
         upper_limit = None if best_focus + 3 > len(analysis_results) -1 else best_focus + 3
         popt, pcov = scipy.optimize.curve_fit(parabola_1D,
                                               analysis_results[lower_limit:upper_limit , 0],
                                               analysis_results[lower_limit:upper_limit, 1],
-                                              p0 = (-1, analysis_results[best_focus, 0], 
+                                              p0 = (-1, analysis_results[best_focus, 0],
                                                     analysis_results[best_focus, 1]))
         perr = np.sqrt(np.diag(pcov))
         return (popt, perr)
-        
+
     def get_keys(self, **kwargs):
         """
         kwargs are directly passed to find_focus and has_astig. Check them for possible arguments.
@@ -1276,11 +1276,11 @@ class Tuning(Peaking):
         except RuntimeError:
             self.logwrite('Could not find focus.', level='warn')
             return
-            
+
         self.logwrite('Found focus at {:.2f} +- {:.2f} nm.'.format(res[0][1], res[1][1]))
         self.focus = res[0][1]
         astig = self.has_astig(**kwargs)
-        
+
         if astig[0]:
             self.logwrite('Detected astigmatism as dominant aberration (angle change: {:.1f} deg).'
                           .format(astig[1]*180/np.pi))
@@ -1308,23 +1308,23 @@ class Tuning(Peaking):
             self.logwrite('Could only analyze less than 3 images ({:.0f}). Checking for astigmatism not possible.'
                           .format(len(self.analysis_results)))
             return (False, None)
-        
+
         assert self.focus is not None, 'Focus must be found before measuring astigmatism.'
-        
+
         negative_defocus = positive_defocus = None
-        
+
         for result in self.analysis_results:
             absolute_focus = result[0] - self.focus
             if absolute_focus < 0 and np.abs(absolute_focus + defocus) <= tolerance:
                 if (negative_defocus is None or
                     np.abs(absolute_focus + defocus) < np.abs(negative_defocus[0] - self.focus + defocus)):
                     negative_defocus = result
-            
+
             if absolute_focus > 0 and np.abs(absolute_focus - defocus) <= tolerance:
                 if (positive_defocus is None or
                     np.abs(absolute_focus - defocus) < np.abs(positive_defocus[0] - self.focus - defocus)):
                     positive_defocus = result
-        
+
         if negative_defocus is None:
             aberrations = {'EHTFocus': self.focus - defocus}
             self.image = self.image_grabber(aberrations=aberrations, reset_aberrations=True, show_live_image=True)
@@ -1334,7 +1334,7 @@ class Tuning(Peaking):
                 self.logwrite('No peaks could be found for defocus {:.0f} nm.'.format(aberrations['EHTFocus']))
             else:
                 negative_defocus = (aberrations['EHTFocus'], np.sum(self.peaks), angle, excent)
-        
+
         if positive_defocus is None:
             aberrations = {'EHTFocus': self.focus + defocus}
             self.image = self.image_grabber(aberrations=aberrations, reset_aberrations=True, show_live_image=True)
@@ -1344,13 +1344,13 @@ class Tuning(Peaking):
                 self.logwrite('No peaks could be found for defocus {:.0f} nm.'.format(aberrations['EHTFocus']))
             else:
                 positive_defocus = (aberrations['EHTFocus'], np.sum(self.peaks), angle, excent)
-        
+
         if None in (negative_defocus, positive_defocus):
             self.logwrite('Could not measure astigmatism because one of the defocused images could not be analyzed.')
             return (False, None)
-        
+
         angle_change = angle_difference(negative_defocus[2], positive_defocus[2])
-        
+
         if angle_change > np.pi/3:
             return (True, angle_change)
         else:
@@ -1364,11 +1364,10 @@ class Tuning(Peaking):
         if kwargs.get('steps') is not None:
             self.steps = kwargs['steps']
         if kwargs.get('keys') is not None:
-            if kwargs['keys'] is 'auto':
+            self.keys = kwargs['keys']
+        if self.keys is 'auto':
                 auto_keys = True
                 self.keys = None
-            else:
-                self.keys = kwargs['keys']
         if kwargs.get('frame_parameters') is not None:
             self.frame_parameters = kwargs['frame_parameters']
         else:
@@ -1387,7 +1386,7 @@ class Tuning(Peaking):
         if merit == 'auto':
             merit = 'intensity'
             auto_merit = True
-        
+
         step_originals = self.steps.copy()
         self.aberrations_tracklist = []
         self.merit_history = {}
@@ -1449,7 +1448,7 @@ class Tuning(Peaking):
 
             self.logwrite('Starting run number '+str(counter+1))
             #part_tunings = []
-            
+
             if auto_keys:
                 self.keys = self.get_keys(**kwargs)
                 if self.keys is None:
@@ -1481,6 +1480,8 @@ class Tuning(Peaking):
                     for key2 in self.keys:
                         if current.get(self.merit_lookup[key2]) is None:
                             current[self.merit_lookup[key2]] = self.merit_history[self.merit_lookup[key2]][-1]
+                    if current.get('intensity') is None:
+                        current['intensity'] = self.merit_history['intensity'][-1]
 
                 small_counter = 1
                 while True:
@@ -1562,7 +1563,7 @@ class Tuning(Peaking):
                     if auto_keys:
                         self.keys = all_keys
                         current = self.calculate_merit()
-                        
+
                     self.append_merit(current)
                     self.aberrations_tracklist.append(self.aberrations.copy())
                 #reduce stepsize for next iteration
@@ -1715,7 +1716,7 @@ def positive_angle(angle):
         return angle  + 2*np.pi
     else:
         return angle
-        
+
 def angle_difference(angle1, angle2):
     """
     Calculates the difference between angle1 and angle2 such that the result is always smaller than pi (all angles in
@@ -1724,5 +1725,5 @@ def angle_difference(angle1, angle2):
     diff = np.abs(angle1 - angle2)
     if diff > np.pi:
         diff = 2*np.pi - diff
-    
+
     return diff
