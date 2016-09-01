@@ -25,15 +25,16 @@ except:
 #######################################################################################################################
 #######################################################################################################################
 #######################################################################################################################
-dirpath = '/home/mittelberger/Documents/giacomo/christoph_tilt_series'
-imsize = 3
+dirpath = '/3tb/maps_data/map_2016_08_31_19_43'
+imsize = 16
 graphene_threshold = 0.01
 light_threshold = -1
-heavy_threshold = 0.3
+heavy_threshold = 0.015
 dirt_border = 30
-minimum_graphene_area = 0.5
+minimum_graphene_area = 0.3
 minimum_number_peaks = 0
 maximum_number_peaks = 12
+only_process_this_number_of_images = -1
 #######################################################################################################################
 #######################################################################################################################
 #######################################################################################################################
@@ -162,6 +163,8 @@ def create_mask(Peak, graphene_threshold, light_threshold, heavy_threshold, dirt
     
     if graphene_threshold > 0:
         mask = Peak.dirt_detector(dirt_threshold=graphene_threshold)
+        if dirt_border > 0:
+            mask = cv2.erode(mask, np.ones((dirt_border, dirt_border)))
     else:
         mask = np.ones(Peak.shape, dtype=np.uint8)
     
@@ -295,8 +298,8 @@ if __name__ == '__main__':
     for filename in dirlist:
         try:
             splitname = os.path.splitext(filename)
-            int(splitname[0][-4:])
-            #int(filename[:4])
+            #int(splitname[0][-4:])
+            int(filename[:4])
             #if filename.startswith('image'):
             #    matched_dirlist.append(filename)
         except:
@@ -313,7 +316,8 @@ if __name__ == '__main__':
                              'heavy_threshold': heavy_threshold, 'dirt_border':dirt_border, 'median_blur_diameter': 67,
                              'gaussian_blur_radius': 4, 'save_fft': True,
                              'minimum_graphene_area': minimum_graphene_area, 'minimum_number_peaks': minimum_number_peaks,
-                             }) for filename in matched_dirlist]
+                             }) for filename in matched_dirlist[0:only_process_this_number_of_images if
+                                                                only_process_this_number_of_images > 0 else None]]
     res_list = [p.get() for p in res]
     pool.close()
     pool.terminate()
@@ -346,7 +350,9 @@ if __name__ == '__main__':
     
     overall_time = time.time() - overall_starttime
     
-    print('Done analysing %d files in %.2f s.' %(len(matched_dirlist), overall_time))
+    print('Done analysing %d files in %.2f s.' %(only_process_this_number_of_images if
+                                                 only_process_this_number_of_images > 0 else
+                                                 len(matched_dirlist), overall_time))
         
 #    res_list = []
 #    for name in matched_dirlist:

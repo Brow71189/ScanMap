@@ -674,11 +674,16 @@ class Positionfinder(object):
         
     def get_framelist(self, extension='tif', separator='_', name_overview='Overview', choose_frame=0):
         frames = os.listdir(self.framepath)
-
+        frames.sort()
+        
         if self.overview_name is not None and self.overview is None:
             self.overview = np.array(cv2.imread(os.path.join(self.framepath, self.overview_name), -1))
             self.overview = cv2.GaussianBlur(self.overview, None, 2)
-            
+        
+        lastposition = None
+        position = None
+        lastname = None
+        
         for name in frames:
             splitname = os.path.splitext(name)
             if splitname[1].lower().endswith(extension.lower()):
@@ -690,7 +695,7 @@ class Positionfinder(object):
                 else:
                     splitbase = splitname[0].split(separator)
                     try:
-                        int(splitbase[0])
+                        position = int(splitbase[0])
                     except:
                         pass
                     else:
@@ -702,10 +707,19 @@ class Positionfinder(object):
                             except:
                                 pass
                             else:
-                                if number == choose_frame:
-                                    self.framelist.append(name)
+                                if choose_frame < 0:
+                                    if position is not None and lastposition is not None and position != lastposition:
+                                        self.framelist.append(lastname)
+                                    lastposition = position
+                                    lastname = name
+                                else:
+                                    if number == choose_frame:
+                                        self.framelist.append(name)
         
-        self.framelist.sort()
+        if choose_frame < 0:
+            self.framelist.append(lastname)
+        
+        #self.framelist.sort()
         
     def remove_frame_number(self, frame_number, *args, remove_from='optimized_positions'):
         number_frames = (self.number_frames[1], self.number_frames[0])
@@ -857,14 +871,14 @@ class Positionfinder(object):
             
 if __name__=='__main__':
     
-    dirpath = '/3tb/maps_data/map_26_03_2015_17_28'
+    dirpath = '/3tb/maps_data/map_2016_08_31_19_43'
     
 #    overview = '/3tb/maps_data/map_2015_08_18_17_07/Overview_1576.59891322_nm.tif'
     
-    size_overview = 524 #nm
-    size_frames = 12 #nm
+    size_overview = 678 #nm
+    size_frames = 16 #nm
     #number of frames in x- and y-direction
-    number_frames = (12,17)
+    number_frames = (10,9)
     
     Finder = Positionfinder(number_frames=number_frames, size_overview=size_overview, size_frames=size_frames,
                             framepath=dirpath)
@@ -877,6 +891,6 @@ if __name__=='__main__':
 #    Finder.data_to_load = ['scaledframes', 'leftborder', 'topborder', 'rightborder', 'bottomborder']
 #                           'options']
 #    Finder.data_to_load.remove('scaledframes')
-    Finder.main(save_plots=True, plot_results=False, border_min_correlation=0.0,
+    Finder.main(save_plots=True, plot_results=False, border_min_correlation=0.90,
                 optimize_searchrange=3, optimize_min_correlation=0.85, outlier_tolerance=0.6, relax_searchrange=3,
-                relax_min_correlation=0.7, choose_frame=4, discard_final_result=False, use_saved_parameters=True)
+                relax_min_correlation=0.75, choose_frame=-1, discard_final_result=False, use_saved_parameters=True)

@@ -59,7 +59,12 @@ class HackerPanelDelegate(object):
             else:
                 self.current_position = 0
                 self.input_field.text = ''
+                
         
+#        def key_pressed(key):
+#            print(key)
+#            
+#        self.ui._UserInterface__ui.on_key_pressed = key_pressed
         column = ui.create_column_widget()
         description = ui.create_label_widget('Sends commands to python.')
         self.input_field = ui.create_line_edit_widget()
