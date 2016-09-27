@@ -398,7 +398,7 @@ class Mapping(object):
                 self.Tuner.logwrite('No. '+ str(frame_info['number']) + ': New tuning: '+str(self.Tuner.aberrations))
                 message += 'New tuning: '+ str(self.Tuner.aberrations) + '. '
 
-                data_new = self.Tuner.image_grabber(frame_parameters = self.frame_parameters)
+                data_new = self.Tuner.image_grabber(frame_parameters = self.frame_parameters)[0]
                 try:
                     first_order_new, second_order_new = self.Tuner.find_peaks(image=data_new,
                                                                          imsize=self.frame_parameters['fov'],
@@ -480,7 +480,7 @@ class Mapping(object):
 #                    self.document_controller.queue_task(lambda: self.update_abort_button('Abort map'))
 #                    time.sleep(1)
                     break
-                Imager.image = Imager.image_grabber(show_live_image=True, frame_parameters=frame_parameters)
+                Imager.image = Imager.image_grabber(show_live_image=True, frame_parameters=frame_parameters)[0]
                 tifffile.imsave(os.path.join(savepath, name + '{:02d}'.format(i) + '.tif'), Imager.image)
                 if self.switches.get('show_last_frames_average'):
                     self.add_to_last_images(Imager.image.copy())
@@ -879,7 +879,7 @@ class Mapping(object):
                 if self.number_of_images < 2:
                     if self.switches.get('blank_beam'):
                         self.verified_unblank()
-                    self.Tuner.image = self.Tuner.image_grabber(show_live_image=True)
+                    self.Tuner.image = self.Tuner.image_grabber(show_live_image=True)[0]
                     tifffile.imsave(os.path.join(self.store, name), self.Tuner.image)
                 else:
                     if self.switches.get('blank_beam'):
@@ -895,7 +895,7 @@ class Mapping(object):
                         if pixeltimes is not None:
                             self.frame_parameters['pixeltime'] = pixeltimes[k]
                         self.Tuner.image = self.Tuner.image_grabber(frame_parameters=self.frame_parameters,
-                                                        show_live_image=True)
+                                                        show_live_image=True)[0]
                         new_name = splitname[0] + ('_{:0'+str(len(str(self.number_of_images)))+'d}'
                                                    ).format(k) + splitname[1]
                         tifffile.imsave(os.path.join(self.store, new_name), self.Tuner.image)
@@ -950,7 +950,7 @@ class Mapping(object):
             #acquire image and save it
             overview_parameters = {'size_pixels': (4096, 4096), 'center': (0,0), 'pixeltime': 4, \
                                 'fov': over_size, 'rotation': self.frame_parameters['rotation']}
-            self.Tuner.image = self.Tuner.image_grabber(frame_parameters=overview_parameters, show_live_image=True)
+            self.Tuner.image = self.Tuner.image_grabber(frame_parameters=overview_parameters, show_live_image=True)[0]
             tifffile.imsave(os.path.join(self.store, 'Overview_{:.0f}_nm.tif'.format(over_size)), self.Tuner.image)
 
         if self.event is None or not self.event.is_set():
