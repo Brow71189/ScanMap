@@ -885,7 +885,7 @@ class Mapping(object):
                     if self.switches.get('blank_beam'):
                         self.verified_unblank()
                     splitname = os.path.splitext(name)
-                    for i in range(self.number_of_images):
+                    for k in range(self.number_of_images):
                         if self.abort_series_event is not None and self.abort_series_event.is_set():
                             self.abort_series_event.clear()
 #                            self.gui_communication['series_running'] = False
@@ -893,11 +893,11 @@ class Mapping(object):
 #                            time.sleep(1)
                             break
                         if pixeltimes is not None:
-                            self.frame_parameters['pixeltime'] = pixeltimes[i]
+                            self.frame_parameters['pixeltime'] = pixeltimes[k]
                         self.Tuner.image = self.Tuner.image_grabber(frame_parameters=self.frame_parameters,
                                                         show_live_image=True)
                         new_name = splitname[0] + ('_{:0'+str(len(str(self.number_of_images)))+'d}'
-                                                   ).format(i) + splitname[1]
+                                                   ).format(k) + splitname[1]
                         tifffile.imsave(os.path.join(self.store, new_name), self.Tuner.image)
 
                         if self.switches.get('show_last_frames_average') and not self.switches.get('isotope_mapping'):

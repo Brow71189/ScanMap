@@ -816,6 +816,42 @@ class Peaking(Imaging):
     @fft.setter
     def fft(self, fft):
         self._fft = fft
+        
+    def analyze_fft(self, full_output=False, **kwargs):
+        coords = np.mgrid[0:self.shape[0], 0:self.shape[1]]
+        coords = coords.astype(np.float)
+        coords[0] -= self.center[0]
+        coords[1] -= self.center[1]
+#        radii = np.sqrt(np.sum(coords**2, axis=0))
+#        coords /= radii
+#        coords[:, tuple(self.center)] = 0
+        # preprocessing of fft
+        if 'fft' in kwargs:
+            fft = kwargs['fft']
+        else:
+            fft = np.abs(self.fft)
+            draw_circle(fft, self.center, 8)
+            fft = self.remove_edge_effects(fft, half_line_thickness=1)
+            #inner_filter = gaussian2D(np.mgrid[0:self.shape[0], 0:self.shape[1]], self.shape[0]/2, self.shape[1]/2, 4, 4, -1, 1)
+            fft = (np.real(np.fft.ifft2(scipy.ndimage.fourier_gaussian(np.fft.fft2(fft), 2))))
+            outer_filter = gaussian2D(np.mgrid[0:self.shape[0], 0:self.shape[1]], self.shape[0]/2, self.shape[1]/2, self.shape[0]/8, self.shape[1]/8, 1, 0)
+            fft = fft*outer_filter
+        #fft[:, self.center[1]] = 0
+        #fft[self.center[0], :] = 0
+        nu00 = np.sum(fft)
+        nu11 = np.sum(coords[0]*coords[1]*fft)/nu00
+        nu02 = np.sum(coords[0]**2*fft)/nu00
+        nu20 = np.sum(coords[1]**2*fft)/nu00
+        # Formula taken from https://en.wikipedia.org/wiki/Image_moment
+        covmat = np.array(((nu20,nu11), (nu11,nu02)))
+        eigval, eigvec = np.linalg.eig(covmat)
+        angle = np.arctan2(*eigvec[:, np.argmax(eigval)])
+        #angle = np.arctan(np.divide(*eigvec[np.argmax(eigval)]))*180/np.pi
+        #angle = 0.5 * np.arctan(2*nu11/(nu20-nu02))
+        excent = np.sqrt(1-np.amin(eigval)**2/np.amax(eigval)**2)
+        # rotate result by 90 degrees to get angle from x-axis
+        return ((positive_angle((angle+np.pi/2)), excent, fft) if full_output else
+                (positive_angle((angle+np.pi/2)), excent))
 
     def find_peaks(self, half_line_thickness=3, position_tolerance=5, second_order=False, debug_mode=False, **kwargs):
         """
@@ -857,32 +893,7 @@ class Peaking(Imaging):
         if half_line_thickness > int(np.rint(first_order/2.0))-1:
             half_line_thickness = int(np.rint(first_order/2.0))-1
 
-        mean_fft = np.mean(fft[fft>-1])
-        if half_line_thickness > 0:
-            # Fit horizontal and vertical lines with hyperbola
-            cross = np.zeros(self.shape)
-            for i in range(-half_line_thickness, half_line_thickness+1):
-                horizontal = fft[self.center[0]+i,:]
-                vertical = fft[:, self.center[1]+i]
-                xdata = np.mgrid[:self.shape[1]][horizontal>-1] - self.center[1]
-                ydata = np.mgrid[:self.shape[0]][vertical>-1] - self.center[0]
-                horizontal = horizontal[horizontal>-1]
-                vertical = vertical[vertical>-1]
-                horiz_a = 1.0 / ((np.mean(horizontal[int(len(horizontal) * 0.6) - 3 : int(len(horizontal) * 0.6) + 4]) -
-                                  np.mean(horizontal[int(len(horizontal) * 0.7) - 3 : int(len(horizontal) * 0.7) + 4])) *
-                                  2.0 * xdata[int(len(horizontal) * 0.6)])
-                vert_a = 1.0 / ((np.mean(vertical[int(len(vertical) * 0.6) - 3 : int(len(vertical) * 0.6) + 4]) -
-                                 np.mean(vertical[int(len(vertical) * 0.7) - 3 : int(len(vertical) * 0.7) + 4])) *
-                                 2.0 * ydata[int(len(vertical) * 0.6)])
-                horizontal_popt, horizontal_pcov = scipy.optimize.curve_fit(hyperbola1D, xdata[:len(xdata)/2],
-                                                                            horizontal[:len(xdata)/2], p0=(horiz_a, 0))
-                vertical_popt, vertical_pcov = scipy.optimize.curve_fit(hyperbola1D, ydata[:len(ydata)/2],
-                                                                        vertical[:len(ydata)/2], p0=(vert_a, 0))
-
-                cross[self.center[0] + i, xdata + self.center[1]] = hyperbola1D(xdata, *horizontal_popt) - 1.5 * mean_fft
-                cross[ydata + self.center[0], self.center[1] + i] = hyperbola1D(ydata, *vertical_popt) - 1.5 * mean_fft
-
-            fft-=cross
+        fft = self.remove_edge_effects(fft, half_line_thickness=half_line_thickness)
 
         if (4*int(first_order) < self.center).all():
             fft[self.center[0]-4*int(first_order):self.center[0]+4*int(first_order)+1,
@@ -1052,13 +1063,43 @@ class Peaking(Imaging):
                     self.fft[peak[0]-maskradius:peak[0]+maskradius+1, peak[1]-maskradius:peak[1]+maskradius+1]*mask
 
         return np.real(np.fft.ifft2(np.fft.fftshift(fft_masked)))
+        
+    def remove_edge_effects(self, fft, half_line_thickness=3):
+        mean_fft = np.mean(fft[fft>-1])
+        if half_line_thickness > 0:
+            # Fit horizontal and vertical lines with hyperbola
+            cross = np.zeros(self.shape)
+            for i in range(-half_line_thickness, half_line_thickness+1):
+                horizontal = fft[self.center[0]+i,:]
+                vertical = fft[:, self.center[1]+i]
+                xdata = np.mgrid[:self.shape[1]][horizontal>-1] - self.center[1]
+                ydata = np.mgrid[:self.shape[0]][vertical>-1] - self.center[0]
+                horizontal = horizontal[horizontal>-1]
+                vertical = vertical[vertical>-1]
+                horiz_a = 1.0 / ((np.mean(horizontal[int(len(horizontal) * 0.6) - 3 : int(len(horizontal) * 0.6) + 4]) -
+                                  np.mean(horizontal[int(len(horizontal) * 0.7) - 3 : int(len(horizontal) * 0.7) + 4])) *
+                                  2.0 * xdata[int(len(horizontal) * 0.6)])
+                vert_a = 1.0 / ((np.mean(vertical[int(len(vertical) * 0.6) - 3 : int(len(vertical) * 0.6) + 4]) -
+                                 np.mean(vertical[int(len(vertical) * 0.7) - 3 : int(len(vertical) * 0.7) + 4])) *
+                                 2.0 * ydata[int(len(vertical) * 0.6)])
+                horizontal_popt, horizontal_pcov = scipy.optimize.curve_fit(hyperbola1D, xdata[:len(xdata)/2],
+                                                                            horizontal[:len(xdata)/2], p0=(horiz_a, 0))
+                vertical_popt, vertical_pcov = scipy.optimize.curve_fit(hyperbola1D, ydata[:len(ydata)/2],
+                                                                        vertical[:len(ydata)/2], p0=(vert_a, 0))
+
+                cross[self.center[0] + i, xdata + self.center[1]] = hyperbola1D(xdata, *horizontal_popt) - 1.5 * mean_fft
+                cross[ydata + self.center[0], self.center[1] + i] = hyperbola1D(ydata, *vertical_popt) - 1.5 * mean_fft
+
+            fft-=cross
+        return fft
 
 
 class Tuning(Peaking):
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
         self._merits = {'peaks': self.astig_2f, 'symmetry': self.astig_3f, 'combined': self.combined,
-                        'astig_2f': self.astig_2f, 'astig_3f': self.astig_3f, 'coma': self.coma, 'intensity': self.coma,
+                        'astig_2f': self.judge_fft, 'astig_3f': self.astig_3f, 'coma': self.judge_fft,
+                        'intensity': self.judge_fft,
                         }
 #        self._merit_lookup = {'EHTFocus': 'intensity', 'C12_a': 'astig_2f', 'C21_a': 'intensity', 'C23_a': 'astig_3f',
 #                              'C12_b': 'astig_2f', 'C21_b': 'intensity', 'C23_b': 'astig_3f'}
@@ -1109,7 +1150,7 @@ class Tuning(Peaking):
 
         return result
 
-    def find_direction(self, key, dirt_detection=True, merit='astig_2f', merit_tolerance=0.01):
+    def find_direction(self, key, dirt_detection=True, merit='astig_2f', merit_tolerance=0.0):
         step_multiplicators = [1, 0.5, 2]
         #step_multiplicators.sort(key=lambda a: np.random.rand())
         step_multiplicator = None
@@ -1210,13 +1251,14 @@ class Tuning(Peaking):
         self.logwrite('Latest ' + merit + ' merit: ' + str(current))
         return direction
 
-    def find_focus(self, stepsize=2, range=6, **kwargs):
+    def find_focus(self, stepsize=2, range=6, method='graphene', **kwargs):
+        _analysis_method = {'graphene': self.find_peaks_orientation, 'general': self.analyze_fft}
         self.analysis_results = []
         for i in np.arange(-range, range+stepsize, stepsize):
             aberrations = {'EHTFocus': i}
             self.image = self.image_grabber(aberrations=aberrations, reset_aberrations=True, show_live_image=True)
             try:
-                angle, excent = self.find_peaks_orientation()
+                angle, excent = _analysis_method[method]()
             except RuntimeError:
                 self.logwrite('No peaks could be found for defocus {:.0f} nm.'.format(i))
                 continue
@@ -1237,7 +1279,7 @@ class Tuning(Peaking):
 
             self.image = self.image_grabber(aberrations=aberrations, reset_aberrations=True, show_live_image=True)
             try:
-                angle, excent = self.find_peaks_orientation()
+                angle, excent = _analysis_method[method]()
             except RuntimeError:
                 self.logwrite('No peaks could be found for defocus {:.0f} nm.'.format(aberrations['EHTFocus']))
                 break
@@ -1356,7 +1398,7 @@ class Tuning(Peaking):
         else:
             return (False, angle_change)
 
-    def kill_aberrations(self, dirt_detection=True, merit = 'astig_2f', **kwargs):
+    def kill_aberrations(self, dirt_detection=True, merit = 'intensity', **kwargs):
         # Backup original frame parameters
         original_frame_parameters = self.frame_parameters.copy()
         auto_keys = False
@@ -1442,7 +1484,7 @@ class Tuning(Peaking):
 
             if len(self.run_history['intensity']) > 1:
                 if np.abs((self.run_history['intensity'][-2] - self.run_history['intensity'][-1]) /
-                          ((self.run_history['intensity'][-2] + self.run_history['intensity'][-1])*0.5)) < 0.05:
+                          ((self.run_history['intensity'][-2] + self.run_history['intensity'][-1])*0.5)) < 0.005:
                     self.logwrite('Finished tuning successfully after %d runs.' %(counter))
                     break
 
@@ -1682,7 +1724,14 @@ class Tuning(Peaking):
 #              str(np.std(intensities)/np.sum(intensities)) + '\tsymmetry: ' + str(symmetry))
 
         return np.sum(intensities, symmetry)
-
+        
+    def judge_fft(self):
+#        inner_filter = gaussian2D(np.mgrid[0:self.shape[0], 0:self.shape[1]], self.shape[0]/2, self.shape[1]/2, 4, 4, -1, 1)
+#        outer_filter = gaussian2D(np.mgrid[0:self.shape[0], 0:self.shape[1]], self.shape[0]/2, self.shape[1]/2, self.shape[0]/4, self.shape[1]/4, 1, 0)
+#        filtered_fft = self.fft*inner_filter*outer_filter
+        res = self.analyze_fft(full_output=True)[2]
+        return 1/np.sum(res) * 1e6
+        
 
 def draw_circle(image, center, radius, color=-1, thickness=-1):
     subarray = image[center[0]-radius:center[0]+radius+1, center[1]-radius:center[1]+radius+1]
