@@ -168,7 +168,7 @@ class Imaging(object):
             frame_parameters = self.frame_parameters
 
         parameters = self.superscan.get_record_frame_parameters()
-        
+
         if frame_parameters is not None:
             if frame_parameters.get('size_pixels') is not None:
                 parameters['size'] = tuple(frame_parameters['size_pixels'])
@@ -180,14 +180,14 @@ class Imaging(object):
                 parameters['rotation_rad'] = frame_parameters['rotation']/180.0*np.pi
             if frame_parameters.get('center') is not None:
                 parameters['center_nm'] = frame_parameters['center']
-        
-        detector_list = np.array([False, False, False, False])
+
+        detector_list = [False, False, False, False]
         if 'HAADF' in detectors:
             detector_list[0] = detectors['HAADF']
         if 'MAADF' in detectors:
             detector_list[1] = detectors['MAADF']
-        
-        if not detector_list.any():
+
+        if not True in detector_list:
             detector_list = None
 
         return {'frame_parameters': parameters, 'channels_enabled': detector_list}
@@ -558,11 +558,11 @@ class Imaging(object):
                     self.as2.set_property_as_float('CSH.y', rotated_center[0])
                     self.as2.set_property_as_float('CSH.x', rotated_center[1])
                     time.sleep(0.1)
-                    
+
                 im = self.superscan.record(**self.record_parameters)
-                
+
                 return_image = [data_and_metadata.data for data_and_metadata in im]
-                
+
 
 #                self.document_controller.queue_task(lambda:
 #                                        self.superscan._HardwareSource__hardware_source.set_selected_profile_index(1))
@@ -817,7 +817,7 @@ class Peaking(Imaging):
     @fft.setter
     def fft(self, fft):
         self._fft = fft
-        
+
     def analyze_fft(self, full_output=False, **kwargs):
         coords = np.mgrid[0:self.shape[0], 0:self.shape[1]]
         coords = coords.astype(np.float)
@@ -1065,7 +1065,7 @@ class Peaking(Imaging):
                     self.fft[peak[0]-maskradius:peak[0]+maskradius+1, peak[1]-maskradius:peak[1]+maskradius+1]*mask
 
         return np.real(np.fft.ifft2(np.fft.fftshift(fft_masked)))
-        
+
     def remove_edge_effects(self, fft, half_line_thickness=3):
         mean_fft = np.mean(fft[fft>-1])
         if half_line_thickness > 0:
@@ -1726,14 +1726,14 @@ class Tuning(Peaking):
 #              str(np.std(intensities)/np.sum(intensities)) + '\tsymmetry: ' + str(symmetry))
 
         return np.sum(intensities, symmetry)
-        
+
     def judge_fft(self):
 #        inner_filter = gaussian2D(np.mgrid[0:self.shape[0], 0:self.shape[1]], self.shape[0]/2, self.shape[1]/2, 4, 4, -1, 1)
 #        outer_filter = gaussian2D(np.mgrid[0:self.shape[0], 0:self.shape[1]], self.shape[0]/2, self.shape[1]/2, self.shape[0]/4, self.shape[1]/4, 1, 0)
 #        filtered_fft = self.fft*inner_filter*outer_filter
         res = self.analyze_fft(full_output=True)[2]
         return 1/np.sum(res) * 1e6
-        
+
 
 def draw_circle(image, center, radius, color=-1, thickness=-1):
     subarray = image[center[0]-radius:center[0]+radius+1, center[1]-radius:center[1]+radius+1]
