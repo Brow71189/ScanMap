@@ -353,7 +353,7 @@ class ScanMapPanelDelegate(object):
             reload(autotune)
             Image = autotune.Imaging(frame_parameters=self.frame_parameters, as2=self.as2, superscan=self.superscan,
                                      document_controller=document_controller)
-            testimage = Image.image_grabber()
+            testimage = Image.image_grabber()[0]
             di=self.__api.library.create_data_item_from_data(testimage, 'testimage_'+ time.strftime('%Y_%m_%d_%H_%M'))
             calibration = self.__api.create_calibration(scale=self.frame_parameters['fov']/
                                                        self.frame_parameters['size_pixels'][0],
