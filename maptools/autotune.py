@@ -138,7 +138,7 @@ class Imaging(object):
     def frame_parameters(self):
         self._frame_parameters = {}
 
-    def create_record_parameters(self, frame_parameters=None, profile_index=None):
+    def create_record_parameters(self, frame_parameters=None, detectors=None):
         """
         Returns the frame parameters in a form that they can be used in the record and view functions.
         (e.g. superscan.record(**record_parameters), if record_parameters was created by this function.)
@@ -155,7 +155,8 @@ class Imaging(object):
             - center: Center of the scan (y, x, nm)
 
         detectors : optional, dictionary
-            By default, only MAADF is used. Dictionary has to be in the form:
+            If None (default), the detector settings saved in this object are used.
+            Dictionary has to be in the form:
             {'HAADF': False, 'MAADF': True}
 
         Returns
@@ -166,24 +167,30 @@ class Imaging(object):
         if frame_parameters is None:
             frame_parameters = self.frame_parameters
 
+        parameters = self.superscan.get_record_frame_parameters()
+        
         if frame_parameters is not None:
-            parameters = (self.superscan.get_frame_parameters() if profile_index is None else
-                          self.superscan.get_frame_parameters_for_profile(profile_index))
-
             if frame_parameters.get('size_pixels') is not None:
-                parameters['size'] = list(frame_parameters['size_pixels'])
+                parameters.size = list(frame_parameters['size_pixels'])
             if frame_parameters.get('pixeltime') is not None:
-                parameters['pixel_time_us'] = frame_parameters['pixeltime']
+                parameters.pixel_time_us = frame_parameters['pixeltime']
             if frame_parameters.get('fov') is not None:
-                parameters['fov_nm'] = frame_parameters['fov']
+                parameters.fov_nm = frame_parameters['fov']
             if frame_parameters.get('rotation') is not None:
-                parameters['rotation_rad'] = frame_parameters['rotation']/180.0*np.pi
+                parameters.rotation_rad = frame_parameters['rotation']/180.0*np.pi
             if frame_parameters.get('center') is not None:
-                parameters['center_nm'] = frame_parameters['center']
-        else:
-            parameters = None
+                parameters.center_nm = frame_parameters['center']
+        
+        detector_list = np.array([False, False, False, False])
+        if 'HAADF' in detectors:
+            detector_list[0] = detectors['HAADF']
+        if 'MAADF' in detectors:
+            detector_list[1] = detectors['MAADF']
+        
+        if not detector_list.any():
+            detector_list = None
 
-        return parameters
+        return {'frame_parameters': parameters, 'channels_enabled': detector_list}
 
     def dirt_detector(self, median_blur_diam=59, gaussian_blur_radius=3, **kwargs):
         """
@@ -534,11 +541,10 @@ class Imaging(object):
             if acquire_image:
                 assert self.superscan is not None, \
                     'You have to provide an instance of superscan in order to perform superscan-related operations.'
-                #self.record_parameters = self.create_record_parameters(self.frame_parameters, self.detectors)
+                self.record_parameters = self.create_record_parameters(self.frame_parameters, self.detectors)
                 #self.superscan.set_frame_parameters(**self.record_parameters)
                 #if self.superscan.is_playing:
                 #    self.superscan.stop_playing()
-                #im = self.superscan.record(**self.record_parameters)
 #                channels_enabled = [False, False]
 #                if self.detectors['HAADF']:
 #                    channels_enabled[0] = True
@@ -551,76 +557,81 @@ class Imaging(object):
 
                     self.as2.set_property_as_float('CSH.y', rotated_center[0])
                     self.as2.set_property_as_float('CSH.x', rotated_center[1])
-                    time.sleep(0.5)
+                    time.sleep(0.1)
+                    
+                im = self.superscan.record(**self.record_parameters)
+                
+                return_image = [data_and_metadata.data for data_and_metadata in im]
+                
 
-                self.document_controller.queue_task(lambda:
-                                        self.superscan._HardwareSource__hardware_source.set_selected_profile_index(1))
-
-                default_params = ss.SS_Functions_SS_GetFrameParamsForProfile2(1)
-                ss.SS_Functions_SS_SetFrameParamsForProfile(1,
-                                                  self.frame_parameters.get('size_pixels', (default_params[0],
-                                                                                            default_params[0]))[1],
-                                                  self.frame_parameters.get('size_pixels', (default_params[1],
-                                                                                            default_params[1]))[0],
-                                                  self.frame_parameters.get('center', (default_params[2],
-                                                                                       default_params[2]))[1],
-                                                  self.frame_parameters.get('center', (default_params[3],
-                                                                                       default_params[3]))[0],
-                                                  self.frame_parameters.get('pixeltime', default_params[4]),
-                                                  self.frame_parameters.get('fov', default_params[5]),
-                                                  self.frame_parameters.get('rotation',
-                                                                            default_params[6]*180/np.pi)/180*np.pi,
-                                                  0)
-
-                ss.SS_Functions_SS_SetFrameParams(
-                                                  self.frame_parameters.get('size_pixels', (default_params[0],
-                                                                                            default_params[0]))[1],
-                                                  self.frame_parameters.get('size_pixels', (default_params[1],
-                                                                                            default_params[1]))[0],
-                                                  self.frame_parameters.get('center', (default_params[2],
-                                                                                       default_params[2]))[1],
-                                                  self.frame_parameters.get('center', (default_params[3],
-                                                                                       default_params[3]))[0],
-                                                  self.frame_parameters.get('pixeltime', default_params[4]),
-                                                  self.frame_parameters.get('fov', default_params[5]),
-                                                  self.frame_parameters.get('rotation',
-                                                                            default_params[6]*180/np.pi)/180*np.pi,
-                                                  0)
-
-                acchannels = 0
-                if self.detectors['HAADF']:
-                    acchannels += 1
-                if self.detectors['MAADF']:
-                    acchannels +=2
-                ss.SS_Functions_SS_SetAcquisitionChannels(acchannels)
 #                self.document_controller.queue_task(lambda:
-#                    self.superscan.abort_playing())
-#                frame_nr = ss.SS_Functions_SS_StartFrame2(False, 1)
-                frame_nr = ss.SS_Functions_SS_StartFrameFromProfile(False, 1)
-                ss.SS_Functions_SS_WaitForEndOfFrame(frame_nr)
-                while not ss.SS_Functions_SS_GetRemainingPixelsForFrame(frame_nr) == -1:
-                    self.logwrite('Waiting for Frame to finish.')
-                    time.sleep(0.01)
-                return_image = np.asarray(ss.SS_Functions_SS_GetImageForFrame(frame_nr, 0))
-                startwaittime = time.time()
-                while (return_image[-1] == 0).all():
-                    if time.time() - startwaittime > 1:
-                        self.logwrite('Exceeded maximum waiting time for frame data.')
-                        break
-                    self.logwrite('Waiting for frame to be fully transfered.')
-                    return_image = np.asarray(ss.SS_Functions_SS_GetImageForFrame(frame_nr, 0))
-                    time.sleep(0.01)
+#                                        self.superscan._HardwareSource__hardware_source.set_selected_profile_index(1))
 
+#                default_params = ss.SS_Functions_SS_GetFrameParamsForProfile2(1)
+#                ss.SS_Functions_SS_SetFrameParamsForProfile(1,
+#                                                  self.frame_parameters.get('size_pixels', (default_params[0],
+#                                                                                            default_params[0]))[1],
+#                                                  self.frame_parameters.get('size_pixels', (default_params[1],
+#                                                                                            default_params[1]))[0],
+#                                                  self.frame_parameters.get('center', (default_params[2],
+#                                                                                       default_params[2]))[1],
+#                                                  self.frame_parameters.get('center', (default_params[3],
+#                                                                                       default_params[3]))[0],
+#                                                  self.frame_parameters.get('pixeltime', default_params[4]),
+#                                                  self.frame_parameters.get('fov', default_params[5]),
+#                                                  self.frame_parameters.get('rotation',
+#                                                                            default_params[6]*180/np.pi)/180*np.pi,
+#                                                  0)
+#
+#                ss.SS_Functions_SS_SetFrameParams(
+#                                                  self.frame_parameters.get('size_pixels', (default_params[0],
+#                                                                                            default_params[0]))[1],
+#                                                  self.frame_parameters.get('size_pixels', (default_params[1],
+#                                                                                            default_params[1]))[0],
+#                                                  self.frame_parameters.get('center', (default_params[2],
+#                                                                                       default_params[2]))[1],
+#                                                  self.frame_parameters.get('center', (default_params[3],
+#                                                                                       default_params[3]))[0],
+#                                                  self.frame_parameters.get('pixeltime', default_params[4]),
+#                                                  self.frame_parameters.get('fov', default_params[5]),
+#                                                  self.frame_parameters.get('rotation',
+#                                                                            default_params[6]*180/np.pi)/180*np.pi,
+#                                                  0)
+#
+#                acchannels = 0
+#                if self.detectors['HAADF']:
+#                    acchannels += 1
+#                if self.detectors['MAADF']:
+#                    acchannels +=2
+#                ss.SS_Functions_SS_SetAcquisitionChannels(acchannels)
+##                self.document_controller.queue_task(lambda:
+##                    self.superscan.abort_playing())
+##                frame_nr = ss.SS_Functions_SS_StartFrame2(False, 1)
+#                frame_nr = ss.SS_Functions_SS_StartFrameFromProfile(False, 1)
+#                ss.SS_Functions_SS_WaitForEndOfFrame(frame_nr)
+#                while not ss.SS_Functions_SS_GetRemainingPixelsForFrame(frame_nr) == -1:
+#                    self.logwrite('Waiting for Frame to finish.')
+#                    time.sleep(0.01)
+#                return_image = np.asarray(ss.SS_Functions_SS_GetImageForFrame(frame_nr, 0))
+#                startwaittime = time.time()
+#                while (return_image[-1] == 0).all():
+#                    if time.time() - startwaittime > 1:
+#                        self.logwrite('Exceeded maximum waiting time for frame data.')
+#                        break
+#                    self.logwrite('Waiting for frame to be fully transfered.')
+#                    return_image = np.asarray(ss.SS_Functions_SS_GetImageForFrame(frame_nr, 0))
+#                    time.sleep(0.01)
+#
                 if self.frame_parameters.get('center') is not None:
                     self.as2.set_property_as_float('CSH.y', 0.0)
                     self.as2.set_property_as_float('CSH.x', 0.0)
-
-                if self.detectors['HAADF'] and self.detectors['MAADF']:
-                    data = np.asarray(ss.SS_Functions_SS_GetImageForFrame(frame_nr, 1))
-                    return_image = [return_image, data]
-
-                if show_live_image:
-                    self.show_live_image(return_image)
+#
+#                if self.detectors['HAADF'] and self.detectors['MAADF']:
+#                    data = np.asarray(ss.SS_Functions_SS_GetImageForFrame(frame_nr, 1))
+#                    return_image = [return_image, data]
+#
+#                if show_live_image:
+#                    self.show_live_image(return_image)
 
                 #im = self.superscan.grab_next_to_start(channels_enabled=channels_enabled)
 #                if len(im) > 1:
