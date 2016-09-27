@@ -171,15 +171,15 @@ class Imaging(object):
         
         if frame_parameters is not None:
             if frame_parameters.get('size_pixels') is not None:
-                parameters.size = list(frame_parameters['size_pixels'])
+                parameters['size'] = tuple(frame_parameters['size_pixels'])
             if frame_parameters.get('pixeltime') is not None:
-                parameters.pixel_time_us = frame_parameters['pixeltime']
+                parameters['pixel_time_us'] = frame_parameters['pixeltime']
             if frame_parameters.get('fov') is not None:
-                parameters.fov_nm = frame_parameters['fov']
+                parameters['fov_nm'] = frame_parameters['fov']
             if frame_parameters.get('rotation') is not None:
-                parameters.rotation_rad = frame_parameters['rotation']/180.0*np.pi
+                parameters['rotation_rad'] = frame_parameters['rotation']/180.0*np.pi
             if frame_parameters.get('center') is not None:
-                parameters.center_nm = frame_parameters['center']
+                parameters['center_nm'] = frame_parameters['center']
         
         detector_list = np.array([False, False, False, False])
         if 'HAADF' in detectors:
