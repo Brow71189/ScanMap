@@ -138,14 +138,12 @@ class Imaging(object):
     def frame_parameters(self):
         self._frame_parameters = {}
 
-    def create_record_parameters(self, frame_parameters=None, detectors=None):
+    def create_record_parameters(self, frame_parameters=None, profile_index=None):
         """
         Returns the frame parameters in a form that they can be used in the record and view functions.
         (e.g. superscan.record(**record_parameters), if record_parameters was created by this function.)
         Parameters
         -----------
-        superscan : hardware source object
-            An instance of the superscan hardware source
 
         frame_parameters : dictionary
             Frame parameters to set in the microscope. Possible keys are:
@@ -167,11 +165,10 @@ class Imaging(object):
         """
         if frame_parameters is None:
             frame_parameters = self.frame_parameters
-        if detectors is None:
-            detectors = self.detectors
 
         if frame_parameters is not None:
-            parameters = self.superscan.get_frame_parameters()
+            parameters = (self.superscan.get_frame_parameters() if profile_index is None else
+                          self.superscan.get_frame_parameters_for_profile(profile_index))
 
             if frame_parameters.get('size_pixels') is not None:
                 parameters['size'] = list(frame_parameters['size_pixels'])
@@ -186,14 +183,7 @@ class Imaging(object):
         else:
             parameters = None
 
-        if detectors is not None:
-            channels_enabled = [detectors['HAADF'], detectors['MAADF'], False, False]
-        else:
-            channels_enabled = [False, True, False, False]
-
-        #self.record_parameters = {'frame_parameters': parameters, 'channels_enabled': channels_enabled}
-        #return self.record_parameters
-        return {'frame_parameters': parameters}#, 'channels_enabled': channels_enabled}
+        return parameters
 
     def dirt_detector(self, median_blur_diam=59, gaussian_blur_radius=3, **kwargs):
         """
@@ -850,6 +840,7 @@ class Peaking(Imaging):
         #angle = 0.5 * np.arctan(2*nu11/(nu20-nu02))
         excent = np.sqrt(1-np.amin(eigval)**2/np.amax(eigval)**2)
         # rotate result by 90 degrees to get angle from x-axis
+        self.peaks = fft
         return ((positive_angle((angle+np.pi/2)), excent, fft) if full_output else
                 (positive_angle((angle+np.pi/2)), excent))
 
