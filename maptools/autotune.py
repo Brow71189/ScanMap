@@ -182,6 +182,10 @@ class Imaging(object):
                 parameters['center_nm'] = frame_parameters['center']
 
         detector_list = [False, False, False, False]
+
+        if detectors is None:
+            detectors = self.detectors
+
         if 'HAADF' in detectors:
             detector_list[0] = detectors['HAADF']
         if 'MAADF' in detectors:
@@ -541,7 +545,7 @@ class Imaging(object):
             if acquire_image:
                 assert self.superscan is not None, \
                     'You have to provide an instance of superscan in order to perform superscan-related operations.'
-                self.record_parameters = self.create_record_parameters(self.frame_parameters, self.detectors)
+                self.record_parameters = self.create_record_parameters()
                 #self.superscan.set_frame_parameters(**self.record_parameters)
                 #if self.superscan.is_playing:
                 #    self.superscan.stop_playing()
