@@ -835,11 +835,12 @@ class Peaking(Imaging):
             fft = kwargs['fft']
         else:
             fft = np.abs(self.fft)
-            draw_circle(fft, self.center, 8)
+            draw_circle(fft, self.center, np.rint(self.imsize/8) or 1)
             fft = self.remove_edge_effects(fft, half_line_thickness=1)
             #inner_filter = gaussian2D(np.mgrid[0:self.shape[0], 0:self.shape[1]], self.shape[0]/2, self.shape[1]/2, 4, 4, -1, 1)
-            fft = (np.real(np.fft.ifft2(scipy.ndimage.fourier_gaussian(np.fft.fft2(fft), 2))))
-            outer_filter = gaussian2D(np.mgrid[0:self.shape[0], 0:self.shape[1]], self.shape[0]/2, self.shape[1]/2, self.shape[0]/8, self.shape[1]/8, 1, 0)
+            fft = (np.real(np.fft.ifft2(scipy.ndimage.fourier_gaussian(np.fft.fft2(fft), 2))))**2
+            outer_filter = gaussian2D(np.mgrid[0:self.shape[0], 0:self.shape[1]], self.shape[0]/2, self.shape[1]/2,
+                                      self.shape[0]*self.imsize/512, self.shape[1]*self.imsize/512, 1, 0)
             fft = fft*outer_filter
         #fft[:, self.center[1]] = 0
         #fft[self.center[0], :] = 0
@@ -854,8 +855,9 @@ class Peaking(Imaging):
         #angle = np.arctan(np.divide(*eigvec[np.argmax(eigval)]))*180/np.pi
         #angle = 0.5 * np.arctan(2*nu11/(nu20-nu02))
         excent = np.sqrt(1-np.amin(eigval)**2/np.amax(eigval)**2)
+        if self.peaks is None:
+            self.peaks = fft
         # rotate result by 90 degrees to get angle from x-axis
-        self.peaks = fft
         return ((positive_angle((angle+np.pi/2)), excent, fft) if full_output else
                 (positive_angle((angle+np.pi/2)), excent))
 
@@ -1350,6 +1352,44 @@ class Tuning(Peaking):
                 self.number_corrections['coma'] += 1
                 self.number_corrections['astig_3f'] += 1
                 return ['C21_a', 'C21_b', 'C23_a', 'C23_b']
+    
+    def get_analysis_result_for_defocus(self, defocus=-5, tolerance=2, method='graphene', **kwargs):
+        _analysis_method = {'graphene': self.find_peaks_orientation, 'general': self.analyze_fft}
+        assert self.focus is not None, 'Focus must be found before this!'
+        
+        if np.iterable(defocus):
+            if np.iterable(tolerance):
+                assert np.size(defocus) == np.size(tolerance), 'Defocus and tolerance must have the same length.'
+            else:
+                np.resize(tolerance, np.size(defocus))
+        else:
+            np.resize(defocus, 1)
+        
+        results_at_defoci = [None]*len(defocus)
+        
+        # find the closest value to the requested defoci
+        for result in self.analysis_results:
+            absolute_focus = result[0] - self.focus
+            
+            for i in range(len(results_at_defoci)):
+                if np.abs(absolute_focus - defocus[i]) <= tolerance[i]:
+                    if (results_at_defoci[i] is None or np.abs(absolute_focus - defocus[i]) <
+                                                        np.abs(results_at_defoci[i][0] - self.focus - defocus[i])):
+                        results_at_defoci[i] = result
+        
+        # acquire images and analyze them for defoci where no valid result was already stored
+        for i in range(len(results_at_defoci)):
+            if results_at_defoci[i] is None:
+                aberrations = {'EHTFocus': self.focus + defocus}
+                self.image = self.image_grabber(aberrations=aberrations, reset_aberrations=True)[0]
+                try:
+                    angle, excent = _analysis_method[method]()
+                except RuntimeError:
+                    self.logwrite('No peaks could be found for defocus {:.0f} nm.'.format(aberrations['EHTFocus']))
+                else:
+                    results_at_defoci[i] = (aberrations['EHTFocus'], np.sum(self.peaks), angle, excent)
+        
+        return results_at_defoci
 
     def has_astig(self, defocus=4, tolerance=2, **kwargs):
         if len(self.analysis_results) < 3:
@@ -1358,40 +1398,9 @@ class Tuning(Peaking):
             return (False, None)
 
         assert self.focus is not None, 'Focus must be found before measuring astigmatism.'
-
-        negative_defocus = positive_defocus = None
-
-        for result in self.analysis_results:
-            absolute_focus = result[0] - self.focus
-            if absolute_focus < 0 and np.abs(absolute_focus + defocus) <= tolerance:
-                if (negative_defocus is None or
-                    np.abs(absolute_focus + defocus) < np.abs(negative_defocus[0] - self.focus + defocus)):
-                    negative_defocus = result
-
-            if absolute_focus > 0 and np.abs(absolute_focus - defocus) <= tolerance:
-                if (positive_defocus is None or
-                    np.abs(absolute_focus - defocus) < np.abs(positive_defocus[0] - self.focus - defocus)):
-                    positive_defocus = result
-
-        if negative_defocus is None:
-            aberrations = {'EHTFocus': self.focus - defocus}
-            self.image = self.image_grabber(aberrations=aberrations, reset_aberrations=True, show_live_image=True)[0]
-            try:
-                angle, excent = self.find_peaks_orientation()
-            except RuntimeError:
-                self.logwrite('No peaks could be found for defocus {:.0f} nm.'.format(aberrations['EHTFocus']))
-            else:
-                negative_defocus = (aberrations['EHTFocus'], np.sum(self.peaks), angle, excent)
-
-        if positive_defocus is None:
-            aberrations = {'EHTFocus': self.focus + defocus}
-            self.image = self.image_grabber(aberrations=aberrations, reset_aberrations=True, show_live_image=True)[0]
-            try:
-                angle, excent = self.find_peaks_orientation()
-            except RuntimeError:
-                self.logwrite('No peaks could be found for defocus {:.0f} nm.'.format(aberrations['EHTFocus']))
-            else:
-                positive_defocus = (aberrations['EHTFocus'], np.sum(self.peaks), angle, excent)
+        
+        negative_defocus, positive_defocus = self.get_analysis_result_for_defocus(defocus=[-defocus, defocus],
+                                                                                  tolerance, **kwargs)
 
         if None in (negative_defocus, positive_defocus):
             self.logwrite('Could not measure astigmatism because one of the defocused images could not be analyzed.')
@@ -1652,6 +1661,25 @@ class Tuning(Peaking):
 #            image_grabber(acquire_image=False, **kwargs)
         self.steps = step_originals.copy()
         self.frame_parameters = original_frame_parameters.copy()
+        
+    def measure_astig(self, method='graphene', **kwargs):
+        assert self.focus is not None, 'Focus must be found before measuring astigmatism!'
+        
+        analysis_results = np.array(self.analysis_results)
+        astig_defocus = self.analysis_results[np.argmax(analysis_results[:, 3])][0]
+        astig_angle = self.analysis_results[np.argmax(analysis_results[:, 3])][2]
+        self.logwrite('Found maximum excentricity at {:.1f} nm defocus. Angle: {:.2f} deg.'.format(astig_defocus,
+                                                                                           astig_angle*180/np.pi))
+        shear_angle = np.tan(np.pi/4)
+        # This is calculated by a polar-to-carthesian conversian combined with a shear of the x-axis (45° ideally)
+        # this is in order C12.b, C12.a
+        C12 = np.array((np.tan(shear_angle)*np.cos(astig_angle) + np.sin(astig_angle), np.cos(astig_angle)))
+        # Normalize it
+        C12 /= np.sqrt(np.sum(C12**2))
+        # Multiply with defocus to get actual values
+        C12 *= astig_defocus
+        self.logwrite('Measured astigmatism: C12.a: {:.2f} nm, C12.b: {.2f}'.format(C12[1], C12[0]))
+        return C12
 
     def astig_2f(self):
         # Check if peaks are already stored and if only first order is there
@@ -1735,8 +1763,9 @@ class Tuning(Peaking):
 #        inner_filter = gaussian2D(np.mgrid[0:self.shape[0], 0:self.shape[1]], self.shape[0]/2, self.shape[1]/2, 4, 4, -1, 1)
 #        outer_filter = gaussian2D(np.mgrid[0:self.shape[0], 0:self.shape[1]], self.shape[0]/2, self.shape[1]/2, self.shape[0]/4, self.shape[1]/4, 1, 0)
 #        filtered_fft = self.fft*inner_filter*outer_filter
-        res = self.analyze_fft(full_output=True)[2]
-        return 1/np.sum(res) * 1e6
+        if np.size(self.peaks) != np.size(self.image):
+            self.peaks = self.analyze_fft(full_output=True)[2]
+        return 1/np.sum(self.peaks) * 1e6
 
 
 def draw_circle(image, center, radius, color=-1, thickness=-1):
