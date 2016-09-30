@@ -56,6 +56,10 @@ class AnalyzeFFTPanelDelegate(object):
                                     savedict[key] = value
                         savedict[time.strftime('%Y%m%d-%Hh%M')] = np.array(self.T.analysis_results)
                         np.savez(os.path.join(path, 'tuning_results.npz'), **savedict)
+                except:
+                    raise
+                else:
+                    measure_astig_button_clicked()
                 finally:
                     self.change_button_state(self.find_focus_button, True)
 
@@ -68,15 +72,23 @@ class AnalyzeFFTPanelDelegate(object):
                 self.change_button_state(self.correct_button, True)
                 astig_string = ' C12.a\t{:.2f} nm\n C12.b\t{:.2f} nm\n\n'.format(self.C12[1], self.C12[0])
                 self.__api.queue_task(lambda: self.result_widget.insert_text(astig_string))
-            threading.Thread(target=run_measure_astig).start()
+            run_measure_astig()
 
         def correct_button_clicked():
-            if self.C12 is not None:
-                aberrations = {'EHTFocus': self.T.focus, 'C12_a': -self.C12[1], 'C12_b': -self.C12[0]}
+            def run_correct():
+                aberrations1 = {'EHTFocus': self.T.focus, 'C12_a': -self.C12[1], 'C12_b': -self.C12[0]}
+                aberrations2 = {'EHTFocus': self.T.focus, 'C12_a': self.C12[1], 'C12_b': self.C12[0]}
+                self.T.image = self.T.image_grabber(aberrations=aberrations1, reset_aberrations=True)
+                self.T.analyze_fft()
+                tuning1 = np.sum(self.T.peaks)
+                self.T.image = self.T.image_grabber(aberrations=aberrations1, reset_aberrations=True)
+                tuning2 = np.sum(self.T.peaks)
+                aberrations = aberrations1 if tuning1 > tuning2 else aberrations2
                 self.T.image_grabber(aberrations=aberrations, acquire_image=False)
                 self.change_button_state(self.measure_astig_button, False)
                 self.change_button_state(self.correct_button, False)
-
+            if self.C12 is not None:
+                threading.Thread(target=run_correct).start()
 
 #        def key_pressed(key):
 #            print(key)
@@ -110,8 +122,8 @@ class AnalyzeFFTPanelDelegate(object):
         focus_row.add_stretch()
         column.add_spacing(10)
         column.add(focus_row)
-        column.add_spacing(10)
-        astig_row.add(self.measure_astig_button)
+#        column.add_spacing(10)
+#        astig_row.add(self.measure_astig_button)
         astig_row.add_stretch()
         column.add(astig_row)
         column.add_spacing(10)
