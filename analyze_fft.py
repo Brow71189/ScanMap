@@ -41,6 +41,7 @@ class AnalyzeFFTPanelDelegate(object):
                 save_tuning = True
             def run_find_focus():
                 try:
+                    self.change_label_text(self.state_label, 'Measuring...')
                     self.change_button_state(self.find_focus_button, False)
                     self.T.focus = self.T.find_focus(method='general')[0][1]
                     self.change_button_state(self.measure_astig_button, True)
@@ -57,9 +58,11 @@ class AnalyzeFFTPanelDelegate(object):
                         savedict[time.strftime('%Y%m%d-%Hh%M')] = np.array(self.T.analysis_results)
                         np.savez(os.path.join(path, 'tuning_results.npz'), **savedict)
                 except:
+                    self.change_label_text(self.state_label, 'Error')
                     raise
                 else:
                     measure_astig_button_clicked()
+                    self.change_label_text(self.state_label, 'Done')
                 finally:
                     self.change_button_state(self.find_focus_button, True)
 
@@ -76,17 +79,28 @@ class AnalyzeFFTPanelDelegate(object):
 
         def correct_button_clicked():
             def run_correct():
-                aberrations1 = {'EHTFocus': self.T.focus, 'C12_a': -self.C12[1], 'C12_b': -self.C12[0]}
-                aberrations2 = {'EHTFocus': self.T.focus, 'C12_a': self.C12[1], 'C12_b': self.C12[0]}
-                self.T.image = self.T.image_grabber(aberrations=aberrations1, reset_aberrations=True)
-                self.T.analyze_fft()
-                tuning1 = np.sum(self.T.peaks)
-                self.T.image = self.T.image_grabber(aberrations=aberrations1, reset_aberrations=True)
-                tuning2 = np.sum(self.T.peaks)
-                aberrations = aberrations1 if tuning1 > tuning2 else aberrations2
-                self.T.image_grabber(aberrations=aberrations, acquire_image=False)
-                self.change_button_state(self.measure_astig_button, False)
-                self.change_button_state(self.correct_button, False)
+                try:
+                    self.change_label_text(self.state_label, 'Correcting...')
+                    self.change_button_state(self.find_focus_button, False)
+                    self.change_button_state(self.correct_button, False)
+                    aberrations1 = {'EHTFocus': self.T.focus, 'C12_a': -self.C12[1], 'C12_b': -self.C12[0]}
+                    aberrations2 = {'EHTFocus': self.T.focus, 'C12_a': self.C12[1], 'C12_b': self.C12[0]}
+                    self.T.image = self.T.image_grabber(aberrations=aberrations1, reset_aberrations=True)[0]
+                    self.T.analyze_fft()
+                    tuning1 = np.sum(self.T.peaks)
+                    self.T.image = self.T.image_grabber(aberrations=aberrations2, reset_aberrations=True)[0]
+                    self.T.analyze_fft()
+                    tuning2 = np.sum(self.T.peaks)
+                    aberrations = aberrations1 if tuning1 > tuning2 else aberrations2
+                    self.T.image_grabber(aberrations=aberrations, acquire_image=False)
+                    self.change_button_state(self.measure_astig_button, False)
+                except:
+                    self.change_label_text(self.state_label, 'Error')
+                    raise
+                else:
+                    self.change_label_text(self.state_label, 'Done')
+                finally:
+                    self.change_button_state(self.find_focus_button, True)
             if self.C12 is not None:
                 threading.Thread(target=run_correct).start()
 
@@ -96,7 +110,7 @@ class AnalyzeFFTPanelDelegate(object):
 #        self.ui._UserInterface__ui.on_key_pressed = key_pressed
         column = ui.create_column_widget()
         #self.input_field.on_editing_finished = send_button_clicked
-        self.find_focus_button = ui.create_push_button_widget('Find Focus')
+        self.find_focus_button = ui.create_push_button_widget('Measure')
         self.find_focus_button.on_clicked = find_focus_button_clicked
         self.measure_astig_button = ui.create_push_button_widget('Measure Astig')
         self.measure_astig_button.on_clicked = measure_astig_button_clicked
@@ -109,6 +123,7 @@ class AnalyzeFFTPanelDelegate(object):
         self.correct_button = ui.create_push_button_widget('Correct')
         self.correct_button.on_clicked = correct_button_clicked
         self.correct_button._PushButtonWidget__push_button_widget.enabled = False
+        self.state_label = ui.create_label_widget('')
 
         focus_row = ui.create_row_widget()
         astig_row = ui.create_row_widget()
@@ -128,19 +143,26 @@ class AnalyzeFFTPanelDelegate(object):
         column.add(astig_row)
         column.add_spacing(10)
         correct_row.add(self.correct_button)
+        correct_row.add_spacing(15)
+        correct_row.add(self.state_label)
         correct_row.add_stretch()
         column.add(correct_row)
         column.add_spacing(15)
         column.add(result_row)
         result_row.add(self.result_widget)
         result_row.add_spacing(5)
-        column.add_stretch()
+        #column.add_stretch()
 
         return column
 
     def change_button_state(self, button, state):
         def do_change():
             button._PushButtonWidget__push_button_widget.enabled = state
+        self.__api.queue_task(do_change)
+
+    def change_label_text(self, label, text):
+        def do_change():
+            label.text = text
         self.__api.queue_task(do_change)
 
 class AnalyzeFFTExtension(object):

@@ -1319,8 +1319,8 @@ class Tuning(Peaking):
         upper_limit = None if best_focus + 3 > len(analysis_results) -1 else best_focus + 3
         b0 = analysis_results[best_focus, 0]
         y0 = analysis_results[best_focus, 1]
-        x1 = analysis_results[best_focus - 1]
-        y1 = np.mean(analysis_results[best_focus-1, 1], analysis_results[best_focus+1], 1)
+        x1 = analysis_results[best_focus - 1, 0]
+        y1 = np.mean((analysis_results[best_focus-1, 1], analysis_results[best_focus+1, 1]))
         a0 = (y1 - y0) / (x1-b0)
         popt, pcov = scipy.optimize.curve_fit(parabola_1D,
                                               analysis_results[lower_limit:upper_limit , 0],
