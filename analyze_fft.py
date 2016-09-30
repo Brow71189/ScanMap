@@ -36,23 +36,30 @@ class AnalyzeFFTPanelDelegate(object):
             self.T.superscan = self.superscan
             self.T.as2 = self.as2
             self.T.imsize = self.superscan.get_record_frame_parameters()['fov_nm']
+            save_tuning = False
+            if self.save_tuning_data_checkbox.checked:
+                save_tuning = True
             def run_find_focus():
-                self.T.focus = self.T.find_focus(method='general')[0][1]
-                self.change_button_state(self.measure_astig_button, True)
-                focus_string = 'Measurement {:s}:\n C10\t{:.2f} nm\n'.format(time.strftime('%m-%d %H:%M:%S'),
-                                                                             self.T.focus)
-                self.api.queue_task(lambda: self.result_widget.insert_text(focus_string))
-                if self.save_tuning_data_checkbox.checked:
-                    path = os.path.dirname(__file__)
-                    savedict = {}
-                    if os.path.isfile(os.path.join(path, 'tuning_results.npz')):
-                        with np.load(os.path.join(path, 'tuning_results.npz')) as npzfile:
-                            for key, value in npzfile.items():
-                                savedict[key] = value
-                    savedict[time.strftime('%Y%m%d-%Hh%M')] = np.array(self.T.analysis_results)
-                    np.savez(os.path.join(path, 'tuning_results.npz'), **savedict)
-                        
-                    
+                try:
+                    self.change_button_state(self.find_focus_button, False)
+                    self.T.focus = self.T.find_focus(method='general')[0][1]
+                    self.change_button_state(self.measure_astig_button, True)
+                    focus_string = 'Measurement {:s}:\n C10\t{:.2f} nm\n'.format(time.strftime('%m-%d %H:%M:%S'),
+                                                                                 self.T.focus)
+                    self.__api.queue_task(lambda: self.result_widget.insert_text(focus_string))
+                    if save_tuning:
+                        path = os.path.dirname(__file__)
+                        savedict = {}
+                        if os.path.isfile(os.path.join(path, 'tuning_results.npz')):
+                            with np.load(os.path.join(path, 'tuning_results.npz')) as npzfile:
+                                for key, value in npzfile.items():
+                                    savedict[key] = value
+                        savedict[time.strftime('%Y%m%d-%Hh%M')] = np.array(self.T.analysis_results)
+                        np.savez(os.path.join(path, 'tuning_results.npz'), **savedict)
+                finally:
+                    self.change_button_state(self.find_focus_button, True)
+
+
             threading.Thread(target=run_find_focus).start()
 
         def measure_astig_button_clicked():
@@ -60,15 +67,16 @@ class AnalyzeFFTPanelDelegate(object):
                 self.C12 = self.T.measure_astig(method='general')
                 self.change_button_state(self.correct_button, True)
                 astig_string = ' C12.a\t{:.2f} nm\n C12.b\t{:.2f} nm\n\n'.format(self.C12[1], self.C12[0])
-                self.api.queue_task(lambda: self.result_widget.insert_text(astig_string))
+                self.__api.queue_task(lambda: self.result_widget.insert_text(astig_string))
             threading.Thread(target=run_measure_astig).start()
-            
+
         def correct_button_clicked():
             if self.C12 is not None:
                 aberrations = {'EHTFocus': self.T.focus, 'C12_a': -self.C12[1], 'C12_b': -self.C12[0]}
                 self.T.image_grabber(aberrations=aberrations, acquire_image=False)
+                self.change_button_state(self.measure_astig_button, False)
                 self.change_button_state(self.correct_button, False)
-                
+
 
 #        def key_pressed(key):
 #            print(key)
@@ -87,8 +95,9 @@ class AnalyzeFFTPanelDelegate(object):
         self.save_tuning_data_label = ui.create_label_widget('Save tuning data')
         self.save_tuning_data_checkbox.checked = True
         self.correct_button = ui.create_push_button_widget('Correct')
+        self.correct_button.on_clicked = correct_button_clicked
         self.correct_button._PushButtonWidget__push_button_widget.enabled = False
-        
+
         focus_row = ui.create_row_widget()
         astig_row = ui.create_row_widget()
         correct_row = ui.create_row_widget()
@@ -109,14 +118,14 @@ class AnalyzeFFTPanelDelegate(object):
         correct_row.add(self.correct_button)
         correct_row.add_stretch()
         column.add(correct_row)
-        column.add_spacing(15)     
+        column.add_spacing(15)
         column.add(result_row)
         result_row.add(self.result_widget)
         result_row.add_spacing(5)
         column.add_stretch()
 
         return column
-    
+
     def change_button_state(self, button, state):
         def do_change():
             button._PushButtonWidget__push_button_widget.enabled = state
