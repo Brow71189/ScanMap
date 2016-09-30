@@ -68,7 +68,6 @@ class Imaging(object):
         self.dirt_threshold = kwargs.get('dirt_threshold')
         self._mask = kwargs.get('mask')
         self._frame_parameters = kwargs.get('frame_parameters', {})
-        self.record_parameters = kwargs.get('record_parameters')
         self.detectors = kwargs.get('detectors', {'HAADF': False, 'MAADF': True})
         self.aberrations = kwargs.get('aberrations', {})
         self.superscan = kwargs.get('superscan')
@@ -545,7 +544,7 @@ class Imaging(object):
             if acquire_image:
                 assert self.superscan is not None, \
                     'You have to provide an instance of superscan in order to perform superscan-related operations.'
-                self.record_parameters = self.create_record_parameters()
+                record_parameters = self.create_record_parameters()
                 #self.superscan.set_frame_parameters(**self.record_parameters)
                 #if self.superscan.is_playing:
                 #    self.superscan.stop_playing()
@@ -563,7 +562,16 @@ class Imaging(object):
                     self.as2.set_property_as_float('CSH.x', rotated_center[1])
                     time.sleep(0.1)
 
-                im = self.superscan.record(**self.record_parameters)
+                im = None
+                import threading
+                image_finished = threading.Event()
+                def get_image():
+                    nonlocal im
+                    im = self.superscan.record(**record_parameters)
+                    image_finished.set()
+                self.document_controller.queue_task(get_image)
+                image_finished.wait()
+                image_finished.clear()
 
                 return_image = [data_and_metadata.data for data_and_metadata in im]
 
@@ -1313,8 +1321,9 @@ class Tuning(Peaking):
                                               analysis_results[lower_limit:upper_limit , 0],
                                               analysis_results[lower_limit:upper_limit, 1],
                                               p0 = (-1, analysis_results[best_focus, 0],
-                                                    analysis_results[best_focus, 1]))
+                                                    analysis_results[best_focus, 1]), maxfev=10000)
         perr = np.sqrt(np.diag(pcov))
+        print(popt, perr)
         return (popt, perr)
 
     def get_keys(self, **kwargs):
@@ -1352,11 +1361,11 @@ class Tuning(Peaking):
                 self.number_corrections['coma'] += 1
                 self.number_corrections['astig_3f'] += 1
                 return ['C21_a', 'C21_b', 'C23_a', 'C23_b']
-    
+
     def get_analysis_result_for_defocus(self, defocus=-5, tolerance=2, method='graphene', **kwargs):
         _analysis_method = {'graphene': self.find_peaks_orientation, 'general': self.analyze_fft}
         assert self.focus is not None, 'Focus must be found before this!'
-        
+
         if np.iterable(defocus):
             if np.iterable(tolerance):
                 assert np.size(defocus) == np.size(tolerance), 'Defocus and tolerance must have the same length.'
@@ -1364,19 +1373,19 @@ class Tuning(Peaking):
                 np.resize(tolerance, np.size(defocus))
         else:
             np.resize(defocus, 1)
-        
+
         results_at_defoci = [None]*len(defocus)
-        
+
         # find the closest value to the requested defoci
         for result in self.analysis_results:
             absolute_focus = result[0] - self.focus
-            
+
             for i in range(len(results_at_defoci)):
                 if np.abs(absolute_focus - defocus[i]) <= tolerance[i]:
                     if (results_at_defoci[i] is None or np.abs(absolute_focus - defocus[i]) <
                                                         np.abs(results_at_defoci[i][0] - self.focus - defocus[i])):
                         results_at_defoci[i] = result
-        
+
         # acquire images and analyze them for defoci where no valid result was already stored
         for i in range(len(results_at_defoci)):
             if results_at_defoci[i] is None:
@@ -1388,7 +1397,7 @@ class Tuning(Peaking):
                     self.logwrite('No peaks could be found for defocus {:.0f} nm.'.format(aberrations['EHTFocus']))
                 else:
                     results_at_defoci[i] = (aberrations['EHTFocus'], np.sum(self.peaks), angle, excent)
-        
+
         return results_at_defoci
 
     def has_astig(self, defocus=4, tolerance=2, **kwargs):
@@ -1398,9 +1407,9 @@ class Tuning(Peaking):
             return (False, None)
 
         assert self.focus is not None, 'Focus must be found before measuring astigmatism.'
-        
+
         negative_defocus, positive_defocus = self.get_analysis_result_for_defocus(defocus=[-defocus, defocus],
-                                                                                  tolerance, **kwargs)
+                                                                                  tolerance=tolerance, **kwargs)
 
         if None in (negative_defocus, positive_defocus):
             self.logwrite('Could not measure astigmatism because one of the defocused images could not be analyzed.')
@@ -1661,12 +1670,12 @@ class Tuning(Peaking):
 #            image_grabber(acquire_image=False, **kwargs)
         self.steps = step_originals.copy()
         self.frame_parameters = original_frame_parameters.copy()
-        
+
     def measure_astig(self, method='graphene', **kwargs):
         assert self.focus is not None, 'Focus must be found before measuring astigmatism!'
-        
+
         analysis_results = np.array(self.analysis_results)
-        astig_defocus = self.analysis_results[np.argmax(analysis_results[:, 3])][0]
+        astig_defocus = self.analysis_results[np.argmax(analysis_results[:, 3])][0]-self.focus
         astig_angle = self.analysis_results[np.argmax(analysis_results[:, 3])][2]
         self.logwrite('Found maximum excentricity at {:.1f} nm defocus. Angle: {:.2f} deg.'.format(astig_defocus,
                                                                                            astig_angle*180/np.pi))
@@ -1678,7 +1687,7 @@ class Tuning(Peaking):
         C12 /= np.sqrt(np.sum(C12**2))
         # Multiply with defocus to get actual values
         C12 *= astig_defocus
-        self.logwrite('Measured astigmatism: C12.a: {:.2f} nm, C12.b: {.2f}'.format(C12[1], C12[0]))
+        self.logwrite('Measured astigmatism: C12.a: {:.2f} nm, C12.b: {:.2f}'.format(C12[1], C12[0]))
         return C12
 
     def astig_2f(self):
