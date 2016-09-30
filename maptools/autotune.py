@@ -1675,10 +1675,11 @@ class Tuning(Peaking):
         assert self.focus is not None, 'Focus must be found before measuring astigmatism!'
 
         analysis_results = np.array(self.analysis_results)
-        astig_defocus = self.analysis_results[np.argmax(analysis_results[:, 3])][0]-self.focus
+        astig_defocus = self.analysis_results[np.argmax(analysis_results[:, 3])][0] - self.focus
         astig_angle = self.analysis_results[np.argmax(analysis_results[:, 3])][2]
         self.logwrite('Found maximum excentricity at {:.1f} nm defocus. Angle: {:.2f} deg.'.format(astig_defocus,
                                                                                            astig_angle*180/np.pi))
+        astig_angle -= np.pi/2 if astig_defocus > 0 else 0
         shear_angle = np.tan(np.pi/4)
         # This is calculated by a polar-to-carthesian conversian combined with a shear of the x-axis (45° ideally)
         # this is in order C12.b, C12.a
