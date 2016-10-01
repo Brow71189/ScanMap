@@ -1681,13 +1681,13 @@ class Tuning(Peaking):
         analysis_results = np.array(self.analysis_results)
         astig_defocus = self.analysis_results[np.argmax(analysis_results[:, 3])][0] - self.focus
         astig_angle = self.analysis_results[np.argmax(analysis_results[:, 3])][2]
-        self.logwrite('Found maximum excentricity at {:.1f} nm defocus. Angle: {:.2f} deg.'.format(astig_defocus,
+        self.logwrite('Found maximum excentricity at {:.1f} nm defocus. Angle: {:.1f} deg.'.format(astig_defocus,
                                                                                            astig_angle*180/np.pi))
         astig_angle -= np.pi/2 if astig_defocus > 0 else 0
-        shear_angle = np.tan(np.pi/4)
-        # This is calculated by a polar-to-carthesian conversian combined with a shear of the x-axis (45° ideally)
+        shear_angle = np.pi/4
+        # This is calculated by a polar-to-carthesian conversian combined with a projection on the x-axis (45° ideally)
         # this is in order C12.b, C12.a
-        C12 = np.array((np.tan(shear_angle)*np.cos(astig_angle) + np.sin(astig_angle), np.cos(astig_angle)))
+        C12 = np.array((-np.sin(astig_angle) + np.cos(astig_angle) * np.tan(shear_angle),np.cos(astig_angle)/np.cos(shear_angle)))
         # Normalize it
         C12 /= np.sqrt(np.sum(C12**2))
         # Multiply with defocus to get actual values
