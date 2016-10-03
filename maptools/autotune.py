@@ -856,18 +856,33 @@ class Peaking(Imaging):
         nu11 = np.sum(coords[0]*coords[1]*fft)/nu00
         nu02 = np.sum(coords[0]**2*fft)/nu00
         nu20 = np.sum(coords[1]**2*fft)/nu00
+        nu04 = np.sum(coords[0]**4*fft)/nu00
+        nu40 = np.sum(coords[1]**4*fft)/nu00
+        # Find image orientation
         # Formula taken from https://en.wikipedia.org/wiki/Image_moment
         covmat = np.array(((nu20,nu11), (nu11,nu02)))
         eigval, eigvec = np.linalg.eig(covmat)
         angle = np.arctan2(*eigvec[:, np.argmax(eigval)])
-        #angle = np.arctan(np.divide(*eigvec[np.argmax(eigval)]))*180/np.pi
-        #angle = 0.5 * np.arctan(2*nu11/(nu20-nu02))
         excent = np.sqrt(1-np.amin(eigval)**2/np.amax(eigval)**2)
+        # Standard deviation in polar coordinates
+        # Formula taken from http://stackoverflow.com/questions/13894631/image-skewness-kurtosis-in-python
+        stddev_mag = np.sqrt(nu02 + nu20)
+        stddev_angle = np.arctan2(np.sqrt(nu02), np.sqrt(nu20))
+        # Kurtosis in polar koordinates
+        kurtosis_mag = np.sqrt(nu04**2/nu02**4 + nu40**2/nu20**4)
+        kurtosis_angle = np.arctan2(nu04/nu02**2, nu40/nu20**2)
         if self.peaks is None:
             self.peaks = fft
         # rotate result by 90 degrees to get angle from x-axis
-        return ((positive_angle((angle+np.pi/2)), excent, fft) if full_output else
-                (positive_angle((angle+np.pi/2)), excent))
+        if full_output:
+            return (positive_angle(angle+np.pi/2), excent,
+                    positive_angle(stddev_angle+np.pi/2), stddev_mag,
+                    positive_angle(kurtosis_angle+np.pi/2), kurtosis_mag,
+                    fft)
+        else:
+            return (positive_angle(angle+np.pi/2), excent,
+                    positive_angle(stddev_angle+np.pi/2), stddev_mag,
+                    positive_angle(kurtosis_angle+np.pi/2), kurtosis_mag)
 
     def find_peaks(self, half_line_thickness=3, position_tolerance=5, second_order=False, debug_mode=False, **kwargs):
         """
@@ -1267,19 +1282,19 @@ class Tuning(Peaking):
         self.logwrite('Latest ' + merit + ' merit: ' + str(current))
         return direction
 
-    def find_focus(self, stepsize=2, range=6, method='graphene', **kwargs):
+    def find_focus(self, stepsize=2, range=10, method='graphene', **kwargs):
         _analysis_method = {'graphene': self.find_peaks_orientation, 'general': self.analyze_fft}
         self.analysis_results = []
         for i in np.arange(-range, range+stepsize, stepsize):
             aberrations = {'EHTFocus': i}
             self.image = self.image_grabber(aberrations=aberrations, reset_aberrations=True, show_live_image=True)[0]
             try:
-                angle, excent = _analysis_method[method]()
+                res = _analysis_method[method]()
             except RuntimeError:
                 self.logwrite('No peaks could be found for defocus {:.0f} nm.'.format(i))
                 continue
             else:
-                self.analysis_results.append((i, np.sum(self.peaks), angle, excent))
+                self.analysis_results.append(((i, np.sum(self.peaks)) + res))
 
         analysis_results = np.array(self.analysis_results)
         if len(self.analysis_results) < 1:
@@ -1295,15 +1310,15 @@ class Tuning(Peaking):
 
             self.image = self.image_grabber(aberrations=aberrations, reset_aberrations=True, show_live_image=True)[0]
             try:
-                angle, excent = _analysis_method[method]()
+                res = _analysis_method[method]()
             except RuntimeError:
                 self.logwrite('No peaks could be found for defocus {:.0f} nm.'.format(aberrations['EHTFocus']))
                 break
             else:
                 if best_focus == 0:
-                    self.analysis_results.insert(0, (aberrations['EHTFocus'] , np.sum(self.peaks), angle, excent))
+                    self.analysis_results.insert(0, (aberrations['EHTFocus'] , np.sum(self.peaks)) + res)
                 else:
-                    self.analysis_results.append((aberrations['EHTFocus'], np.sum(self.peaks), angle, excent))
+                    self.analysis_results.append((aberrations['EHTFocus'], np.sum(self.peaks)) + res)
 
             analysis_results = np.array(self.analysis_results)
             best_focus = np.argmax(analysis_results[:, 1])
@@ -1396,11 +1411,11 @@ class Tuning(Peaking):
                 aberrations = {'EHTFocus': self.focus + defocus}
                 self.image = self.image_grabber(aberrations=aberrations, reset_aberrations=True)[0]
                 try:
-                    angle, excent = _analysis_method[method]()
+                    res = _analysis_method[method]()
                 except RuntimeError:
                     self.logwrite('No peaks could be found for defocus {:.0f} nm.'.format(aberrations['EHTFocus']))
                 else:
-                    results_at_defoci[i] = (aberrations['EHTFocus'], np.sum(self.peaks), angle, excent)
+                    results_at_defoci[i] = (aberrations['EHTFocus'], np.sum(self.peaks)) + res
 
         return results_at_defoci
 
