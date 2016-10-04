@@ -1282,7 +1282,7 @@ class Tuning(Peaking):
         self.logwrite('Latest ' + merit + ' merit: ' + str(current))
         return direction
 
-    def find_focus(self, stepsize=2, range=10, method='graphene', **kwargs):
+    def find_focus(self, stepsize=3, range=9, method='graphene', **kwargs):
         _analysis_method = {'graphene': self.find_peaks_orientation, 'general': self.analyze_fft}
         self.analysis_results = []
         for i in np.arange(-range, range+stepsize, stepsize):
@@ -1697,7 +1697,7 @@ class Tuning(Peaking):
         assert self.focus is not None, 'Focus must be found before measuring astigmatism!'
 
         has_astig = self.has_astig(method=method, **kwargs)
-        if False:#not has_astig[0]:
+        if not has_astig[0]:
             print(has_astig)
             self.logwrite('No dominant astigmatism found in this measurement.')
             return None
@@ -1724,8 +1724,8 @@ class Tuning(Peaking):
         astig_angle -= np.pi/2 if astig_defocus > 0 else 0
         #shear_angle = np.pi/4
         # Calculate astigmatism in weird coordinates of the corrector from polar coordinates
-        C12 = np.array((np.sqrt(2) * np.sin(np.abs(np.arcsin(np.sin(x))) - np.pi/4),
-                        np.sqrt(2) * np.sin(np.abs(np.arcsin(np.sin(x + np.pi/4))) - np.pi/4)))
+        C12 = np.array((np.sqrt(2) * np.sin(np.abs(np.arcsin(np.sin(astig_angle))) - np.pi/4),
+                        np.sqrt(2) * np.sin(np.abs(np.arcsin(np.sin(astig_angle + np.pi/4))) - np.pi/4)))
         # Normalize it
         C12 /= np.sqrt(np.sum(C12**2))
         # Multiply with defocus to get actual values
