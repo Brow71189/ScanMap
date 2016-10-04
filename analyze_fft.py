@@ -51,7 +51,7 @@ class AnalyzeFFTPanelDelegate(object):
                     if self.C12 is not None:
                         astig_string = ' C12.a\t{:.2f} nm\n C12.b\t{:.2f} nm\n\n'.format(self.C12[1], self.C12[0])
                     else:
-                        astig_string = ' No detectable astigmatism'
+                        astig_string = ' No detectable astigmatism\n\n'
                     def insert_text():
                         self.result_widget.text = focus_string + astig_string + self.result_widget.text
                     self.__api.queue_task(insert_text)
@@ -110,7 +110,7 @@ class AnalyzeFFTPanelDelegate(object):
                     self.change_label_text(self.state_label, 'Done')
                 finally:
                     self.change_button_state(self.find_focus_button, True)
-                    
+
             if self.T is not None and self.T.focus is not None:
                 threading.Thread(target=run_correct).start()
 
@@ -139,6 +139,7 @@ class AnalyzeFFTPanelDelegate(object):
         astig_row = ui.create_row_widget()
         correct_row = ui.create_row_widget()
         result_row = ui.create_row_widget()
+        focus_row.add_spacing(5)
         focus_row.add(self.find_focus_button)
         focus_row.add_spacing(10)
         focus_row.add(self.save_tuning_data_checkbox)
@@ -152,6 +153,7 @@ class AnalyzeFFTPanelDelegate(object):
         astig_row.add_stretch()
         column.add(astig_row)
         column.add_spacing(10)
+        correct_row.add_spacing(5)
         correct_row.add(self.correct_button)
         correct_row.add_spacing(15)
         correct_row.add(self.state_label)
@@ -159,8 +161,10 @@ class AnalyzeFFTPanelDelegate(object):
         column.add(correct_row)
         column.add_spacing(15)
         column.add(result_row)
+        result_row.add_spacing(5)
         result_row.add(self.result_widget)
         result_row.add_spacing(5)
+        column.add_spacing(5)
         #column.add_stretch()
 
         return column
