@@ -1386,12 +1386,14 @@ class Tuning(Peaking):
         assert self.focus is not None, 'Focus must be found before this!'
 
         if np.iterable(defocus):
-            if np.iterable(tolerance):
-                assert np.size(defocus) == np.size(tolerance), 'Defocus and tolerance must have the same length.'
-            else:
-                np.resize(tolerance, np.size(defocus))
+            pass
         else:
-            np.resize(defocus, 1)
+            defocus = np.resize(defocus, 1)
+
+        if np.iterable(tolerance):
+            assert np.size(defocus) == np.size(tolerance), 'Defocus and tolerance must have the same length.'
+        else:
+            tolerance = np.resize(tolerance, np.size(defocus))
 
         results_at_defoci = [None]*len(defocus)
 
@@ -1408,7 +1410,7 @@ class Tuning(Peaking):
         # acquire images and analyze them for defoci where no valid result was already stored
         for i in range(len(results_at_defoci)):
             if results_at_defoci[i] is None:
-                aberrations = {'EHTFocus': self.focus + defocus}
+                aberrations = {'EHTFocus': self.focus + defocus[i]}
                 self.image = self.image_grabber(aberrations=aberrations, reset_aberrations=True)[0]
                 try:
                     res = _analysis_method[method]()
@@ -1435,6 +1437,7 @@ class Tuning(Peaking):
             return (False, None)
 
         angle_change = angle_difference(negative_defocus[2], positive_defocus[2])
+        print(negative_defocus[2], positive_defocus[2])
 
         if 2*np.pi/3 > angle_change > np.pi/3:
             return (True, angle_change)
@@ -1693,29 +1696,36 @@ class Tuning(Peaking):
     def measure_astig(self, method='graphene', **kwargs):
         assert self.focus is not None, 'Focus must be found before measuring astigmatism!'
 
-        if not self.has_astig(method=method, **kwargs)[0]:
+        has_astig = self.has_astig(method=method, **kwargs)
+        if False:#not has_astig[0]:
+            print(has_astig)
             self.logwrite('No dominant astigmatism found in this measurement.')
             return None
         analysis_results = np.array(self.analysis_results)
         normalized_excent = analysis_results[:, 3]/analysis_results[:, 7]
         astig_defocus = np.argmax(normalized_excent)
+        print('Defocus: ' + str(astig_defocus))
         if astig_defocus == 0:
             astig_defocus += 1
+        print('Defocus: ' + str(astig_defocus))
         if astig_defocus == len(analysis_results) - 1:
             astig_defocus -= 1
-        astig_defocus = parabola_through_three_points(normalized_excent[astig_defocus-1, 3],
-                                                      normalized_excent[astig_defocus, 3],
-                                                      normalized_excent[astig_defocus+1, 3])[1]
+        print('Defocus: ' + str(astig_defocus))
+        astig_defocus = parabola_through_three_points((normalized_excent[astig_defocus-1], analysis_results[astig_defocus-1, 0]),
+                                                      (normalized_excent[astig_defocus], analysis_results[astig_defocus, 0]),
+                                                      (normalized_excent[astig_defocus+1], analysis_results[astig_defocus+1, 0]))[1]
+        print('Defocus: ' + str(astig_defocus))
         astig_defocus -= self.focus
-        astig_angle = self.get_analysis_result_for_defocus(defocus=astig_focus, method=method)
+        astig_angle = self.get_analysis_result_for_defocus(defocus=astig_defocus, method=method)[0][2]
+        print('Defocus: ' + str(astig_defocus))
+        print('self.focus:'  + str(self.focus))
         self.logwrite('Found maximum excentricity at {:.1f} nm defocus. Angle: {:.1f} deg.'.format(astig_defocus,
                                                                                            astig_angle*180/np.pi))
         astig_angle -= np.pi/2 if astig_defocus > 0 else 0
-        shear_angle = np.pi/4
-        # This is calculated by a polar-to-carthesian conversian combined with a projection on the x-axis (45° ideally)
-        # this is in order C12.b, C12.a
-        C12 = np.array((-np.sin(astig_angle) + np.cos(astig_angle) * np.tan(shear_angle),
-                        np.cos(astig_angle)/np.cos(shear_angle)))
+        #shear_angle = np.pi/4
+        # Calculate astigmatism in weird coordinates of the corrector from polar coordinates
+        C12 = np.array((np.sqrt(2) * np.sin(np.abs(np.arcsin(np.sin(x))) - np.pi/4),
+                        np.sqrt(2) * np.sin(np.abs(np.arcsin(np.sin(x + np.pi/4))) - np.pi/4)))
         # Normalize it
         C12 /= np.sqrt(np.sum(C12**2))
         # Multiply with defocus to get actual values
@@ -1853,7 +1863,7 @@ def angle_difference(angle1, angle2):
         diff = 2*np.pi - diff
 
     return diff
-    
+
 def parabola_through_three_points(p1, p2, p3):
     """
     Calculates the parabola a*(x-b)+c through three points. The points should be given as (y, x) tuples.
@@ -1865,7 +1875,7 @@ def parabola_through_three_points(p1, p2, p3):
         temp = p2
         p2 = p1
         p1 = temp
-        
+
     s = (p1[0]-p2[0])/(p2[0]-p3[0])
     b = (-p1[1]**2 + p2[1]**2 + s*(p2[1]**2 - p3[1]**2)) / (2*(-p1[1] + p2[1] + s*p2[1] - s*p3[1]))
     a = (p1[0] - p2[0]) / ((p1[1] - b)**2 - (p2[1] - b)**2)
