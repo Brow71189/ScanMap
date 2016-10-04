@@ -42,10 +42,10 @@ from . import autoalign
 #    except:
 #        pass
 
-try:
-    from superscan import SuperScanPy as ss
-except:
-    logging.warn('Could not import SuperScanPy. Maybe you are running in offline mode.')
+#try:
+#    from superscan import SuperScanPy as ss
+#except:
+#    logging.warn('Could not import SuperScanPy. Maybe you are running in offline mode.')
 #global variable to store aberrations when simulating them (see function image_grabber() for details)
 #global_aberrations = {'EHTFocus': 0, 'C12_a': 5, 'C12_b': 0, 'C21_a': 801.0, 'C21_b': 0, 'C23_a': -500, 'C23_b': 0}
 global_aberrations = {'EHTFocus': 0, 'C12_a': 0, 'C12_b': 0, 'C21_a': 0, 'C21_b': 0, 'C23_a': 0, 'C23_b': 0}
@@ -1436,7 +1436,7 @@ class Tuning(Peaking):
 
         angle_change = angle_difference(negative_defocus[2], positive_defocus[2])
 
-        if angle_change > np.pi/3:
+        if 2*np.pi/3 > angle_change > np.pi/3:
             return (True, angle_change)
         else:
             return (False, angle_change)
@@ -1693,16 +1693,29 @@ class Tuning(Peaking):
     def measure_astig(self, method='graphene', **kwargs):
         assert self.focus is not None, 'Focus must be found before measuring astigmatism!'
 
+        if not self.has_astig(method=method, **kwargs)[0]:
+            self.logwrite('No dominant astigmatism found in this measurement.')
+            return None
         analysis_results = np.array(self.analysis_results)
-        astig_defocus = self.analysis_results[np.argmax(analysis_results[:, 3])][0] - self.focus
-        astig_angle = self.analysis_results[np.argmax(analysis_results[:, 3])][2]
+        normalized_excent = analysis_results[:, 3]/analysis_results[:, 7]
+        astig_defocus = np.argmax(normalized_excent)
+        if astig_defocus == 0:
+            astig_defocus += 1
+        if astig_defocus == len(analysis_results) - 1:
+            astig_defocus -= 1
+        astig_defocus = parabola_through_three_points(normalized_excent[astig_defocus-1, 3],
+                                                      normalized_excent[astig_defocus, 3],
+                                                      normalized_excent[astig_defocus+1, 3])[1]
+        astig_defocus -= self.focus
+        astig_angle = self.get_analysis_result_for_defocus(defocus=astig_focus, method=method)
         self.logwrite('Found maximum excentricity at {:.1f} nm defocus. Angle: {:.1f} deg.'.format(astig_defocus,
                                                                                            astig_angle*180/np.pi))
         astig_angle -= np.pi/2 if astig_defocus > 0 else 0
         shear_angle = np.pi/4
         # This is calculated by a polar-to-carthesian conversian combined with a projection on the x-axis (45° ideally)
         # this is in order C12.b, C12.a
-        C12 = np.array((-np.sin(astig_angle) + np.cos(astig_angle) * np.tan(shear_angle),np.cos(astig_angle)/np.cos(shear_angle)))
+        C12 = np.array((-np.sin(astig_angle) + np.cos(astig_angle) * np.tan(shear_angle),
+                        np.cos(astig_angle)/np.cos(shear_angle)))
         # Normalize it
         C12 /= np.sqrt(np.sum(C12**2))
         # Multiply with defocus to get actual values
@@ -1840,3 +1853,21 @@ def angle_difference(angle1, angle2):
         diff = 2*np.pi - diff
 
     return diff
+    
+def parabola_through_three_points(p1, p2, p3):
+    """
+    Calculates the parabola a*(x-b)+c through three points. The points should be given as (y, x) tuples.
+    Returns a tuple (a, b, c)
+    """
+    # formula taken from http://stackoverflow.com/questions/4039039/fastest-way-to-fit-a-parabola-to-set-of-points
+    # Avoid division by zero in calculation of s
+    if p2[0] == p3[0]:
+        temp = p2
+        p2 = p1
+        p1 = temp
+        
+    s = (p1[0]-p2[0])/(p2[0]-p3[0])
+    b = (-p1[1]**2 + p2[1]**2 + s*(p2[1]**2 - p3[1]**2)) / (2*(-p1[1] + p2[1] + s*p2[1] - s*p3[1]))
+    a = (p1[0] - p2[0]) / ((p1[1] - b)**2 - (p2[1] - b)**2)
+    c = p1[0] - a*(p1[1] - b)**2
+    return (a, b, c)

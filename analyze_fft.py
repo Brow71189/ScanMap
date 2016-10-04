@@ -43,11 +43,18 @@ class AnalyzeFFTPanelDelegate(object):
                 try:
                     self.change_label_text(self.state_label, 'Measuring...')
                     self.change_button_state(self.find_focus_button, False)
+                    self.change_button_state(self.correct_button, False)
                     self.T.focus = self.T.find_focus(method='general')[0][1]
-                    self.change_button_state(self.measure_astig_button, True)
-                    focus_string = 'Measurement {:s}:\n C10\t{:.2f} nm\n'.format(time.strftime('%m-%d %H:%M:%S'),
+                    self.C12 = self.T.measure_astig(method='general')
+                    focus_string = 'Measurement {:s}:\n C10\t{:.2f} nm\n'.format(time.strftime('%d-%m-%Y %H:%M'),
                                                                                  self.T.focus)
-                    self.__api.queue_task(lambda: self.result_widget.insert_text(focus_string))
+                    if self.C12 is not None:
+                        astig_string = ' C12.a\t{:.2f} nm\n C12.b\t{:.2f} nm\n\n'.format(self.C12[1], self.C12[0])
+                    else:
+                        astig_string = ' No detectable astigmatism'
+                    def insert_text():
+                        self.result_widget.text = focus_string + astig_string + self.result_widget.text
+                    self.__api.queue_task(insert_text)
                     if save_tuning:
                         path = os.path.dirname(__file__)
                         savedict = {}
@@ -61,7 +68,7 @@ class AnalyzeFFTPanelDelegate(object):
                     self.change_label_text(self.state_label, 'Error')
                     raise
                 else:
-                    measure_astig_button_clicked()
+                    self.change_button_state(self.correct_button, True)
                     self.change_label_text(self.state_label, 'Done')
                 finally:
                     self.change_button_state(self.find_focus_button, True)
@@ -83,17 +90,19 @@ class AnalyzeFFTPanelDelegate(object):
                     self.change_label_text(self.state_label, 'Correcting...')
                     self.change_button_state(self.find_focus_button, False)
                     self.change_button_state(self.correct_button, False)
-                    aberrations1 = {'EHTFocus': self.T.focus, 'C12_a': -self.C12[1], 'C12_b': -self.C12[0]}
-                    aberrations2 = {'EHTFocus': self.T.focus, 'C12_a': self.C12[1], 'C12_b': self.C12[0]}
-                    self.T.image = self.T.image_grabber(aberrations=aberrations1, reset_aberrations=True)[0]
-                    self.T.analyze_fft()
-                    tuning1 = np.sum(self.T.peaks)
-                    self.T.image = self.T.image_grabber(aberrations=aberrations2, reset_aberrations=True)[0]
-                    self.T.analyze_fft()
-                    tuning2 = np.sum(self.T.peaks)
-                    aberrations = aberrations1 if tuning1 > tuning2 else aberrations2
+                    if self.C12 is not None:
+                        aberrations1 = {'EHTFocus': self.T.focus, 'C12_a': -self.C12[1], 'C12_b': -self.C12[0]}
+                        aberrations2 = {'EHTFocus': self.T.focus, 'C12_a': self.C12[1], 'C12_b': self.C12[0]}
+                        self.T.image = self.T.image_grabber(aberrations=aberrations1, reset_aberrations=True)[0]
+                        self.T.analyze_fft()
+                        tuning1 = np.sum(self.T.peaks)
+                        self.T.image = self.T.image_grabber(aberrations=aberrations2, reset_aberrations=True)[0]
+                        self.T.analyze_fft()
+                        tuning2 = np.sum(self.T.peaks)
+                        aberrations = aberrations1 if tuning1 > tuning2 else aberrations2
+                    else:
+                        aberrations = {'EHTFocus': self.T.focus}
                     self.T.image_grabber(aberrations=aberrations, acquire_image=False)
-                    self.change_button_state(self.measure_astig_button, False)
                 except:
                     self.change_label_text(self.state_label, 'Error')
                     raise
@@ -101,7 +110,8 @@ class AnalyzeFFTPanelDelegate(object):
                     self.change_label_text(self.state_label, 'Done')
                 finally:
                     self.change_button_state(self.find_focus_button, True)
-            if self.C12 is not None:
+                    
+            if self.T is not None and self.T.focus is not None:
                 threading.Thread(target=run_correct).start()
 
 #        def key_pressed(key):
