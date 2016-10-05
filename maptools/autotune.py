@@ -1723,7 +1723,7 @@ class Tuning(Peaking):
         print('self.focus:'  + str(self.focus))
         self.logwrite('Found maximum excentricity at {:.1f} nm defocus. Angle: {:.1f} deg.'.format(astig_defocus,
                                                                                            astig_angle*180/np.pi))
-        astig_angle -= np.pi/2 if astig_defocus > 0 else 0
+        #astig_angle -= np.pi/2 if astig_defocus > 0 else 0
         #shear_angle = np.pi/4
         # Calculate astigmatism in weird coordinates of the corrector from polar coordinates
         C12 = np.array((np.sqrt(2) * np.sin(np.abs(np.arcsin(np.sin(astig_angle))) - np.pi/4),

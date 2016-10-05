@@ -91,15 +91,16 @@ class AnalyzeFFTPanelDelegate(object):
                     self.change_button_state(self.find_focus_button, False)
                     self.change_button_state(self.correct_button, False)
                     if self.C12 is not None:
-                        aberrations1 = {'EHTFocus': self.T.focus, 'C12_a': -self.C12[1], 'C12_b': -self.C12[0]}
-                        aberrations2 = {'EHTFocus': self.T.focus, 'C12_a': self.C12[1], 'C12_b': self.C12[0]}
-                        self.T.image = self.T.image_grabber(aberrations=aberrations1, reset_aberrations=True)[0]
-                        self.T.analyze_fft()
-                        tuning1 = np.sum(self.T.peaks)
-                        self.T.image = self.T.image_grabber(aberrations=aberrations2, reset_aberrations=True)[0]
-                        self.T.analyze_fft()
-                        tuning2 = np.sum(self.T.peaks)
-                        aberrations = aberrations1 if tuning1 > tuning2 else aberrations2
+#                        aberrations1 = {'EHTFocus': self.T.focus, 'C12_a': -self.C12[1], 'C12_b': -self.C12[0]}
+#                        aberrations2 = {'EHTFocus': self.T.focus, 'C12_a': self.C12[1], 'C12_b': self.C12[0]}
+#                        self.T.image = self.T.image_grabber(aberrations=aberrations1, reset_aberrations=True)[0]
+#                        self.T.analyze_fft()
+#                        tuning1 = np.sum(self.T.peaks)
+#                        self.T.image = self.T.image_grabber(aberrations=aberrations2, reset_aberrations=True)[0]
+#                        self.T.analyze_fft()
+#                        tuning2 = np.sum(self.T.peaks)
+#                        aberrations = aberrations1 if tuning1 > tuning2 else aberrations2
+                        aberrations = {'EHTFocus': self.T.focus, 'C12_a': self.C12[1], 'C12_b': self.C12[0]}
                     else:
                         aberrations = {'EHTFocus': self.T.focus}
                     self.T.image_grabber(aberrations=aberrations, acquire_image=False)
