@@ -1297,10 +1297,11 @@ class Tuning(Peaking):
                 self.analysis_results.append(((i, np.sum(self.peaks)) + res))
 
         analysis_results = np.array(self.analysis_results)
+        _has_kurtosis = analysis_results.shape[1] > 7
         if len(self.analysis_results) < 1:
             raise RuntimeError('Could not find focus.')
 
-        best_focus = np.argmax(analysis_results[:, 1])
+        best_focus = np.argmin(analysis_results[:, 7]) if _has_kurtosis else np.argmax(analysis_results[:, 1])
 
         while best_focus == 0 or best_focus == len(analysis_results)-1:
             if best_focus == 0:
@@ -1321,7 +1322,7 @@ class Tuning(Peaking):
                     self.analysis_results.append((aberrations['EHTFocus'], np.sum(self.peaks)) + res)
 
             analysis_results = np.array(self.analysis_results)
-            best_focus = np.argmax(analysis_results[:, 1])
+            best_focus = np.argmin(analysis_results[:, 7]) if _has_kurtosis else np.argmax(analysis_results[:, 1])
 
 
         if len(analysis_results) < 3:
@@ -1332,14 +1333,15 @@ class Tuning(Peaking):
         # Only do fit in reasonable range around best focus
         lower_limit = 0 if best_focus - 3 < 0 else best_focus - 3
         upper_limit = None if best_focus + 3 > len(analysis_results) -1 else best_focus + 3
+        ind = 7 if _has_kurtosis else 1
         b0 = analysis_results[best_focus, 0]
-        y0 = analysis_results[best_focus, 1]
+        y0 = analysis_results[best_focus, ind]
         x1 = analysis_results[best_focus - 1, 0]
-        y1 = np.mean((analysis_results[best_focus-1, 1], analysis_results[best_focus+1, 1]))
-        a0 = (y1 - y0) / (x1-b0)
+        y1 = np.mean((analysis_results[best_focus-1, ind], analysis_results[best_focus+1, ind]))
+        a0 = (y1 - y0) / (x1 - b0)
         popt, pcov = scipy.optimize.curve_fit(parabola_1D,
                                               analysis_results[lower_limit:upper_limit , 0],
-                                              analysis_results[lower_limit:upper_limit, 1],
+                                              analysis_results[lower_limit:upper_limit, ind],
                                               p0 = (a0, b0, y0), maxfev=10000)
         perr = np.sqrt(np.diag(pcov))
         print(popt, perr)
@@ -1421,7 +1423,7 @@ class Tuning(Peaking):
 
         return results_at_defoci
 
-    def has_astig(self, defocus=4, tolerance=2, **kwargs):
+    def has_astig(self, defocus=5, tolerance=2, **kwargs):
         if len(self.analysis_results) < 3:
             self.logwrite('Could only analyze less than 3 images ({:.0f}). Checking for astigmatism not possible.'
                           .format(len(self.analysis_results)))
