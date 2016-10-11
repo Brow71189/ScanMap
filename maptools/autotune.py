@@ -125,12 +125,10 @@ class Imaging(object):
 
     @property
     def frame_parameters(self):
-        print('getter')
         return self._frame_parameters
 
     @frame_parameters.setter
     def frame_parameters(self, frame_parameters):
-        print('setter')
         for key in frame_parameters.keys():
             self._frame_parameters[key] = frame_parameters[key]
         self.delta_graphene = None
@@ -851,7 +849,7 @@ class Peaking(Imaging):
             # This has to be with the default color (-1) in order to make remove_edge_effects work correctly
             draw_circle(fft, self.center, np.rint(self.imsize/8) or 1)
             fft = self.remove_edge_effects(fft, half_line_thickness=1)
-            fft += center          
+            fft += center
             #draw_circle(fft, self.center, np.rint(self.imsize/8) or 1, color=2*np.mean(fft))
             #inner_filter = gaussian2D(np.mgrid[0:self.shape[0], 0:self.shape[1]], self.shape[0]/2, self.shape[1]/2, 4, 4, -1, 1)
             fft = (np.real(np.fft.ifft2(scipy.ndimage.fourier_gaussian(np.fft.fft2(fft), 2))))**2
@@ -1209,7 +1207,7 @@ class Tuning(Peaking):
         step_multiplicators = [1]
         #step_multiplicators.sort(key=lambda a: np.random.rand())
         #step_multiplicator = None
-
+        print(self.merit_history)
         current = {merit: self.merit_history[merit][-1], 'intensity': self.merit_history['intensity'][-1]}
 
         for step_multiplicator in step_multiplicators:
@@ -1310,7 +1308,7 @@ class Tuning(Peaking):
         _analysis_method = {'graphene': self.find_peaks_orientation, 'general': self.analyze_fft}
         if kwargs.get('method') is not None:
             self.method = kwargs.pop('method')
-            
+
         self.analysis_results = []
         for i in np.arange(-range, range+stepsize, stepsize):
             aberrations = {'EHTFocus': i}
@@ -1486,7 +1484,7 @@ class Tuning(Peaking):
             self.keys = kwargs['keys']
         if kwargs.get('method') is not None:
             self.method = kwargs.pop('method')
-            
+
         if self.keys is 'auto':
             auto_keys = True
             self.keys = None
@@ -1510,7 +1508,7 @@ class Tuning(Peaking):
             auto_merit = True
         else:
             for key in self.keys:
-                self._merit_lookup['key'] = merit
+                self._merit_lookup[key] = merit
 
         step_originals = self.steps.copy()
         self.aberrations_tracklist = []
@@ -1530,6 +1528,7 @@ class Tuning(Peaking):
         try:
             #current = self._merits[merit]()
             current = self.calculate_merit()
+            print(current)
         except RuntimeError as detail:
             #current = 1e5
             current = {}

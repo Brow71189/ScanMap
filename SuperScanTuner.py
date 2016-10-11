@@ -122,13 +122,14 @@ class SuperScanTunerPanelDelegate(object):
                     logging.warn(text+' is not an absolute path. Please enter a complete pathname starting from root.')
             else:
                 savepath = None
-                
+
         def merit_combo_box_changed(item):
             global merit
             merit = str(item)
             logging.info('Using ' + str(item) + ' merit for tuning.')
-            
+
         def toggle_auto_keys(check_state):
+            global auto_keys
             if check_state == 'checked':
                 auto_keys = True
                 EHTFocus._CheckBoxWidget__check_box_widget.enabled = False
@@ -141,7 +142,7 @@ class SuperScanTunerPanelDelegate(object):
                 Twofold._CheckBoxWidget__check_box_widget.enabled = True
                 Coma._CheckBoxWidget__check_box_widget.enabled = True
                 Threefold._CheckBoxWidget__check_box_widget.enabled = True
-        
+
         def start_button_clicked():
             global focus_step, astig2f_step, astig3f_step, coma_step, average_frames, integration_radius
             global dirt_threshold, save_images, savepath, merit
@@ -150,7 +151,7 @@ class SuperScanTunerPanelDelegate(object):
             superscan = self.__api.get_hardware_source_by_id('scan_controller', '1')
             as2 = self.__api.get_instrument_by_id('autostem_controller', '1')
             reload(autotune)
-            
+
             if auto_keys:
                 keys = 'auto'
             else:
@@ -342,10 +343,10 @@ class SuperScanTunerPanelDelegate(object):
         button_row.add(abort_button)
 
         abort_button.visible = False
-        
+
         combo_box_row = ui.create_row_widget()
         combo_box = ui.create_combo_box_widget()
-        combo_box.items = ['auto', 'astig_2f', 'coma', 'astig_3f', 'combined']
+        combo_box.items = ['auto', 'astig_2f', 'coma', 'astig_3f', 'combined', 'judge_fft']
         combo_box.on_current_item_changed = merit_combo_box_changed
         combo_box_row.add(ui.create_label_widget('Merit used for tuning: '))
         combo_box_row.add(combo_box)
