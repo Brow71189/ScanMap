@@ -749,9 +749,9 @@ class Imaging(object):
                     im = np.random.poisson(lam=im.flatten(), size=np.size(im)).astype(im.dtype)
 
                 if debug_mode:
-                    return_image = (im.reshape(self.shape).astype('float32'), kernel)
+                    return_image = [im.reshape(self.shape).astype('float32'), kernel]
                 else:
-                    return_image = im.reshape(self.shape).astype('float32')
+                    return_image = [im.reshape(self.shape).astype('float32')]
         #print(self.aberrations)
         return return_image
 
@@ -843,12 +843,19 @@ class Peaking(Imaging):
             fft = kwargs['fft']
         else:
             fft = np.abs(self.fft)
+            center = np.zeros(fft.shape)
+            draw_circle(center, self.center, np.rint(self.imsize/8) or 1, color=1)
+            center = fft * center
+            # This has to be with the default color (-1) in order to make remove_edge_effects work correctly
             draw_circle(fft, self.center, np.rint(self.imsize/8) or 1)
             fft = self.remove_edge_effects(fft, half_line_thickness=1)
+            fft += center          
+            #draw_circle(fft, self.center, np.rint(self.imsize/8) or 1, color=2*np.mean(fft))
             #inner_filter = gaussian2D(np.mgrid[0:self.shape[0], 0:self.shape[1]], self.shape[0]/2, self.shape[1]/2, 4, 4, -1, 1)
             fft = (np.real(np.fft.ifft2(scipy.ndimage.fourier_gaussian(np.fft.fft2(fft), 2))))**2
-            outer_filter = gaussian2D(np.mgrid[0:self.shape[0], 0:self.shape[1]], self.shape[0]/2, self.shape[1]/2,
-                                      self.shape[0]*self.imsize/512, self.shape[1]*self.imsize/512, 1, 0)
+            # cut the image off at 10 x pixel size
+            outer_filter = gaussian2D(np.mgrid[0:self.shape[0], 0:self.shape[1]], self.center[0], self.center[1],
+                                      self.shape[0]/10, self.shape[1]/10, 1, 0)
             fft = fft*outer_filter
         #fft[:, self.center[1]] = 0
         #fft[self.center[0], :] = 0
@@ -1061,23 +1068,32 @@ class Peaking(Imaging):
             peaks = self.peaks.copy()
 
         peaks[:,:2] -= self.center
-        radii = np.sqrt(peaks[:,0]**2 + peaks[:,1]**2)
-        peaks[:,0] /= radii
-        peaks[:,1] /= radii
-        nu00 = np.sum(peaks[:,3])
-        nu11 = np.sum(peaks[:,0]*peaks[:,1]*peaks[:,3])/nu00
-        nu02 = np.sum(peaks[:,0]**2*peaks[:,3])/nu00
-        nu20 = np.sum(peaks[:,1]**2*peaks[:,3])/nu00
+#        radii = np.sqrt(peaks[:, 0]**2 + peaks[:, 1]**2)
+#        peaks[:,0] /= radii
+#        peaks[:,1] /= radii
+        nu00 = np.sum(peaks[:, 3])
+        nu11 = np.sum(peaks[:, 0] * peaks[:, 1] * peaks[:, 3])/nu00
+        nu02 = np.sum(peaks[:, 0]**2 * peaks[:, 3])/nu00
+        nu20 = np.sum(peaks[:, 1]**2 * peaks[:, 3])/nu00
+        nu04 = np.sum(peaks[:, 0]**4 * peaks[:, 3])/nu00
+        nu40 = np.sum(peaks[:, 1]**4 * peaks[:, 3])/nu00
         # Formula taken from https://en.wikipedia.org/wiki/Image_moment
         covmat = np.array(((nu20,nu11), (nu11,nu02)))
         eigval, eigvec = np.linalg.eig(covmat)
 
         angle = np.arctan2(*eigvec[:, np.argmax(eigval)])
-        #angle = np.arctan(np.divide(*eigvec[np.argmax(eigval)]))*180/np.pi
-        #angle = 0.5 * np.arctan(2*nu11/(nu20-nu02))
         excent = np.sqrt(1-np.amin(eigval)**2/np.amax(eigval)**2)
+        # Standard deviation in polar coordinates
+        # Formula taken from http://stackoverflow.com/questions/13894631/image-skewness-kurtosis-in-python
+        stddev_mag = np.sqrt(nu02 + nu20)
+        stddev_angle = np.arctan2(np.sqrt(nu02), np.sqrt(nu20))
+        # Kurtosis in polar koordinates
+        kurtosis_mag = np.sqrt(nu04**2/nu02**4 + nu40**2/nu20**4)
+        kurtosis_angle = np.arctan2(nu04/nu02**2, nu40/nu20**2)
         # rotate result by 90 degrees to get angle from x-axis
-        return (positive_angle((angle+np.pi/2)), excent)
+        return (positive_angle(angle+np.pi/2), excent,
+                positive_angle(stddev_angle+np.pi/2), stddev_mag,
+                positive_angle(kurtosis_angle+np.pi/2), kurtosis_mag)
 
     def fourier_filter(self, filter_radius=10, **kwargs):
         # check if peaks are already saved and if second order is there (if a new image is provided also recalculate)
@@ -1107,19 +1123,23 @@ class Peaking(Imaging):
                 ydata = np.mgrid[:self.shape[0]][vertical>-1] - self.center[0]
                 horizontal = horizontal[horizontal>-1]
                 vertical = vertical[vertical>-1]
-                horiz_a = 1.0 / ((np.mean(horizontal[int(len(horizontal) * 0.6) - 3 : int(len(horizontal) * 0.6) + 4]) -
-                                  np.mean(horizontal[int(len(horizontal) * 0.7) - 3 : int(len(horizontal) * 0.7) + 4])) *
-                                  2.0 * xdata[int(len(horizontal) * 0.6)])
-                vert_a = 1.0 / ((np.mean(vertical[int(len(vertical) * 0.6) - 3 : int(len(vertical) * 0.6) + 4]) -
-                                 np.mean(vertical[int(len(vertical) * 0.7) - 3 : int(len(vertical) * 0.7) + 4])) *
-                                 2.0 * ydata[int(len(vertical) * 0.6)])
+                horiz_a = ((np.mean(horizontal[int(len(horizontal) * 0.6) - 3 : int(len(horizontal) * 0.6) + 4]) -
+                            np.mean(horizontal[int(len(horizontal) * 0.7) - 3 : int(len(horizontal) * 0.7) + 4])) *
+                            2.0 * xdata[int(len(horizontal) * 0.6)])
+                vert_a = ((np.mean(vertical[int(len(vertical) * 0.6) - 3 : int(len(vertical) * 0.6) + 4]) -
+                           np.mean(vertical[int(len(vertical) * 0.7) - 3 : int(len(vertical) * 0.7) + 4])) *
+                           2.0 * ydata[int(len(vertical) * 0.6)])
                 horizontal_popt, horizontal_pcov = scipy.optimize.curve_fit(hyperbola1D, xdata[:len(xdata)/2],
-                                                                            horizontal[:len(xdata)/2], p0=(horiz_a, 0))
+                                                                            horizontal[:len(xdata)/2], p0=(horiz_a, mean_fft))
                 vertical_popt, vertical_pcov = scipy.optimize.curve_fit(hyperbola1D, ydata[:len(ydata)/2],
-                                                                        vertical[:len(ydata)/2], p0=(vert_a, 0))
-
-                cross[self.center[0] + i, xdata + self.center[1]] = hyperbola1D(xdata, *horizontal_popt) - 1.5 * mean_fft
-                cross[ydata + self.center[0], self.center[1] + i] = hyperbola1D(ydata, *vertical_popt) - 1.5 * mean_fft
+                                                                        vertical[:len(ydata)/2], p0=(vert_a, mean_fft))
+                vertical_perr = np.sqrt(np.diag(vertical_pcov))
+                horizontal_perr = np.sqrt(np.diag(horizontal_pcov))
+                print(vertical_popt, vertical_perr, horizontal_popt, horizontal_perr)
+                if (np.abs(horizontal_popt) > 2*horizontal_perr).any():
+                    cross[self.center[0] + i, xdata + self.center[1]] = hyperbola1D(xdata, *horizontal_popt) - 1.5 * mean_fft
+                if (np.abs(vertical_popt) > 2*vertical_perr).any():
+                    cross[ydata + self.center[0], self.center[1] + i] = hyperbola1D(ydata, *vertical_popt) - 1.5 * mean_fft
 
             fft-=cross
         return fft
@@ -1297,7 +1317,7 @@ class Tuning(Peaking):
                 self.analysis_results.append(((i, np.sum(self.peaks)) + res))
 
         analysis_results = np.array(self.analysis_results)
-        _has_kurtosis = analysis_results.shape[1] > 7
+        _has_kurtosis = analysis_results.shape[1] > 7 and method == 'general'
         if len(self.analysis_results) < 1:
             raise RuntimeError('Could not find focus.')
 
@@ -1465,7 +1485,7 @@ class Tuning(Peaking):
 
         # Apply default values if one required parameter is not set
         if self.steps is None:
-            self.steps = {'EHTFocus': 1, 'C12_a': 1, 'C12_b': 1, 'C21_a': 150, 'C21_b': 150, 'C23_a': 50, 'C23_b': 50}
+            self.steps = {'EHTFocus': 1, 'C12_a': 1, 'C12_b': 1, 'C21_a': 150, 'C21_b': 150, 'C23_a': 75, 'C23_b': 75}
         if self.keys is None:
             #self.keys = ['EHTFocus', 'C12_a', 'C21_a', 'C23_a', 'C12_b', 'C21_b', 'C23_b']
             self.keys = ['EHTFocus', 'C21_a', 'C21_b', 'C23_a', 'C23_b', 'C12_a', 'C12_b']
@@ -1827,9 +1847,9 @@ def draw_circle(image, center, radius, color=-1, thickness=-1):
     y, x = np.mgrid[-radius:radius+1, -radius:radius+1]
     distances = np.sqrt(x**2+y**2)
     if thickness < 0:
-        subarray[distances <= radius] = color
+        subarray[distances < radius + np.sqrt(2)/2] = color
     elif thickness == 0:
-        subarray[(distances < radius+0.5) * (distances > radius-0.5)] = color
+        subarray[(distances < radius + np.sqrt(2)/2) * (distances > radius - np.sqrt(2)/2)] = color
     else:
         subarray[(distances < radius+thickness+1) * (distances > radius-thickness)] = color
 
@@ -1844,7 +1864,7 @@ def parabola_1D(xdata, a, b, c):
 
 def hyperbola1D(xdata, a, offset):
     a, offset = float(a), float(offset)
-    return np.abs(1.0/(a*xdata))+offset
+    return a*np.abs(1.0/xdata**2)+offset
 
 def positive_angle(angle):
     """
