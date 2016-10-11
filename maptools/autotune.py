@@ -125,10 +125,12 @@ class Imaging(object):
 
     @property
     def frame_parameters(self):
+        print('getter')
         return self._frame_parameters
 
     @frame_parameters.setter
     def frame_parameters(self, frame_parameters):
+        print('setter')
         for key in frame_parameters.keys():
             self._frame_parameters[key] = frame_parameters[key]
         self.delta_graphene = None
@@ -494,8 +496,8 @@ class Imaging(object):
         by changing the mean intensity in your image.
         """
         # Check input for additinal parameters that override instance variables
-        if kwargs.get('image') is not None:
-            self.image = kwargs.get('image')
+        if kwargs.get('delta_graphene') is not None:
+            self.delta_graphene = kwargs.get('delta_graphene')
         if kwargs.get('frame_parameters') is not None:
             self.frame_parameters = kwargs.get('frame_parameters')
         if kwargs.get('detectors') is not None:
@@ -1149,8 +1151,8 @@ class Tuning(Peaking):
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
         self._merits = {'peaks': self.astig_2f, 'symmetry': self.astig_3f, 'combined': self.combined,
-                        'astig_2f': self.judge_fft, 'astig_3f': self.astig_3f, 'coma': self.judge_fft,
-                        'intensity': self.judge_fft,
+                        'astig_2f': self.astig_2f, 'astig_3f': self.astig_3f, 'coma': self.coma,
+                        'intensity': self.coma, 'judge_fft': self.judge_fft,
                         }
 #        self._merit_lookup = {'EHTFocus': 'intensity', 'C12_a': 'astig_2f', 'C21_a': 'intensity', 'C23_a': 'astig_3f',
 #                              'C12_b': 'astig_2f', 'C21_b': 'intensity', 'C23_b': 'astig_3f'}
@@ -1172,6 +1174,7 @@ class Tuning(Peaking):
             self.run_history[key] = []
         self.focus = None
         self.number_corrections = {'EHTFocus': 0, 'astig_2f': 0, 'coma': 0, 'astig_3f': 0}
+        self.method = kwargs.get('method', 'graphene')
 
     @property
     def merit_lookup(self):
@@ -1202,9 +1205,10 @@ class Tuning(Peaking):
         return result
 
     def find_direction(self, key, dirt_detection=True, merit='astig_2f', merit_tolerance=0.0):
-        step_multiplicators = [1, 0.5, 2]
+        #step_multiplicators = [1, 0.5, 2]
+        step_multiplicators = [1]
         #step_multiplicators.sort(key=lambda a: np.random.rand())
-        step_multiplicator = None
+        #step_multiplicator = None
 
         current = {merit: self.merit_history[merit][-1], 'intensity': self.merit_history['intensity'][-1]}
 
@@ -1302,14 +1306,17 @@ class Tuning(Peaking):
         self.logwrite('Latest ' + merit + ' merit: ' + str(current))
         return direction
 
-    def find_focus(self, stepsize=3, range=9, method='graphene', **kwargs):
+    def find_focus(self, stepsize=3, range=9, **kwargs):
         _analysis_method = {'graphene': self.find_peaks_orientation, 'general': self.analyze_fft}
+        if kwargs.get('method') is not None:
+            self.method = kwargs.pop('method')
+            
         self.analysis_results = []
         for i in np.arange(-range, range+stepsize, stepsize):
             aberrations = {'EHTFocus': i}
             self.image = self.image_grabber(aberrations=aberrations, reset_aberrations=True, show_live_image=True)[0]
             try:
-                res = _analysis_method[method]()
+                res = _analysis_method[self.method]()
             except RuntimeError:
                 self.logwrite('No peaks could be found for defocus {:.0f} nm.'.format(i))
                 continue
@@ -1317,7 +1324,7 @@ class Tuning(Peaking):
                 self.analysis_results.append(((i, np.sum(self.peaks)) + res))
 
         analysis_results = np.array(self.analysis_results)
-        _has_kurtosis = analysis_results.shape[1] > 7 and method == 'general'
+        _has_kurtosis = analysis_results.shape[1] > 7 and self.method == 'general'
         if len(self.analysis_results) < 1:
             raise RuntimeError('Could not find focus.')
 
@@ -1331,7 +1338,7 @@ class Tuning(Peaking):
 
             self.image = self.image_grabber(aberrations=aberrations, reset_aberrations=True, show_live_image=True)[0]
             try:
-                res = _analysis_method[method]()
+                res = _analysis_method[self.method]()
             except RuntimeError:
                 self.logwrite('No peaks could be found for defocus {:.0f} nm.'.format(aberrations['EHTFocus']))
                 break
@@ -1403,9 +1410,11 @@ class Tuning(Peaking):
                 self.number_corrections['astig_3f'] += 1
                 return ['C21_a', 'C21_b', 'C23_a', 'C23_b']
 
-    def get_analysis_result_for_defocus(self, defocus=-5, tolerance=2, method='graphene', **kwargs):
+    def get_analysis_result_for_defocus(self, defocus=-5, tolerance=2, **kwargs):
         _analysis_method = {'graphene': self.find_peaks_orientation, 'general': self.analyze_fft}
         assert self.focus is not None, 'Focus must be found before this!'
+        if kwargs.get('method') is not None:
+            self.method = kwargs.pop('method')
 
         if np.iterable(defocus):
             pass
@@ -1435,7 +1444,7 @@ class Tuning(Peaking):
                 aberrations = {'EHTFocus': self.focus + defocus[i]}
                 self.image = self.image_grabber(aberrations=aberrations, reset_aberrations=True)[0]
                 try:
-                    res = _analysis_method[method]()
+                    res = _analysis_method[self.method]()
                 except RuntimeError:
                     self.logwrite('No peaks could be found for defocus {:.0f} nm.'.format(aberrations['EHTFocus']))
                 else:
@@ -1466,7 +1475,7 @@ class Tuning(Peaking):
         else:
             return (False, angle_change)
 
-    def kill_aberrations(self, dirt_detection=True, merit = 'intensity', **kwargs):
+    def kill_aberrations(self, dirt_detection=True, merit = 'intensity', max_run_number = 5, **kwargs):
         # Backup original frame parameters
         original_frame_parameters = self.frame_parameters.copy()
         auto_keys = False
@@ -1475,9 +1484,12 @@ class Tuning(Peaking):
             self.steps = kwargs['steps']
         if kwargs.get('keys') is not None:
             self.keys = kwargs['keys']
+        if kwargs.get('method') is not None:
+            self.method = kwargs.pop('method')
+            
         if self.keys is 'auto':
-                auto_keys = True
-                self.keys = None
+            auto_keys = True
+            self.keys = None
         if kwargs.get('frame_parameters') is not None:
             self.frame_parameters = kwargs['frame_parameters']
         else:
@@ -1496,6 +1508,9 @@ class Tuning(Peaking):
         if merit == 'auto':
             merit = 'intensity'
             auto_merit = True
+        else:
+            for key in self.keys:
+                self._merit_lookup['key'] = merit
 
         step_originals = self.steps.copy()
         self.aberrations_tracklist = []
@@ -1537,7 +1552,7 @@ class Tuning(Peaking):
         #total_tunings.append(current)
         self.logwrite('Appending start value: ' + str(current))
 
-        while counter < 5:
+        while counter < max_run_number:
             if self.event is not None and self.event.is_set():
                 break
             start_time = time.time()
@@ -1564,7 +1579,13 @@ class Tuning(Peaking):
                 if self.keys is None:
                     self.keys = ['EHTFocus', 'C12_a', 'C12_b', 'C21_a', 'C21_b', 'C23_a', 'C23_b']
                 else:
-                    self.image_grabber(acquire_image=False, aberrations={'EHTFocus': self.focus})
+                    aberrations={'EHTFocus': self.focus}
+                    C12 = self.measure_astig()
+                    if C12 is not None:
+                        self.keys = ['C21_a', 'C21_b', 'C23_a', 'C23_b']
+                        aberrations['C12_b'] = C12[0]
+                        aberration['C12_a'] = C12[1]
+                    self.image_grabber(acquire_image=False, aberrations=aberrations)
 
             for key in self.keys:
                 if self.event is not None and self.event.is_set():
@@ -1715,10 +1736,12 @@ class Tuning(Peaking):
         self.steps = step_originals.copy()
         self.frame_parameters = original_frame_parameters.copy()
 
-    def measure_astig(self, method='graphene', **kwargs):
+    def measure_astig(self, **kwargs):
         assert self.focus is not None, 'Focus must be found before measuring astigmatism!'
+        if kwargs.get('method') is not None:
+            self.method = kwargs.pop('method')
 
-        has_astig = self.has_astig(method=method, **kwargs)
+        has_astig = self.has_astig(**kwargs)
         if not has_astig[0]:
             print(has_astig)
             self.logwrite('No dominant astigmatism found in this measurement.')
@@ -1738,7 +1761,7 @@ class Tuning(Peaking):
                                                       (normalized_excent[astig_defocus+1], analysis_results[astig_defocus+1, 0]))[1]
         print('Defocus: ' + str(astig_defocus))
         astig_defocus -= self.focus
-        astig_angle = self.get_analysis_result_for_defocus(defocus=astig_defocus, method=method)[0][2]
+        astig_angle = self.get_analysis_result_for_defocus(defocus=astig_defocus, **kwargs)[0][2]
         print('Defocus: ' + str(astig_defocus))
         print('self.focus:'  + str(self.focus))
         self.logwrite('Found maximum excentricity at {:.1f} nm defocus. Angle: {:.1f} deg.'.format(astig_defocus,
@@ -1837,10 +1860,12 @@ class Tuning(Peaking):
 #        inner_filter = gaussian2D(np.mgrid[0:self.shape[0], 0:self.shape[1]], self.shape[0]/2, self.shape[1]/2, 4, 4, -1, 1)
 #        outer_filter = gaussian2D(np.mgrid[0:self.shape[0], 0:self.shape[1]], self.shape[0]/2, self.shape[1]/2, self.shape[0]/4, self.shape[1]/4, 1, 0)
 #        filtered_fft = self.fft*inner_filter*outer_filter
-        if np.size(self.peaks) != np.size(self.image):
-            self.peaks = self.analyze_fft(full_output=True)[2]
-        return 1/np.sum(self.peaks) * 1e6
-
+        result = self.analyze_fft(full_output=True)
+        self.peaks = result[-1]
+        if len(result) > 6 and self.method == 'general':
+            return result[5]
+        else:
+            return 1/np.sum(self.peaks) * 1e6
 
 def draw_circle(image, center, radius, color=-1, thickness=-1):
     subarray = image[center[0]-radius:center[0]+radius+1, center[1]-radius:center[1]+radius+1]
