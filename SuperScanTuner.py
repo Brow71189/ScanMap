@@ -29,6 +29,7 @@ dirt_threshold = 0.5
 save_images = False
 savepath = None
 merit = 'auto'
+method = 'graphene'
 auto_keys = False
 
 class SuperScanTunerPanelDelegate(object):
@@ -127,6 +128,11 @@ class SuperScanTunerPanelDelegate(object):
             global merit
             merit = str(item)
             logging.info('Using ' + str(item) + ' merit for tuning.')
+        
+        def method_combo_box_changed(item):
+            global method
+            method = str(item)
+            logging.info('Using ' + str(item) + ' method.')
 
         def toggle_auto_keys(check_state):
             global auto_keys
@@ -145,8 +151,7 @@ class SuperScanTunerPanelDelegate(object):
 
         def start_button_clicked():
             global focus_step, astig2f_step, astig3f_step, coma_step, average_frames, integration_radius
-            global dirt_threshold, save_images, savepath, merit
-
+            global dirt_threshold, save_images, savepath, merit, method
 
             superscan = self.__api.get_hardware_source_by_id('scan_controller', '1')
             as2 = self.__api.get_instrument_by_id('autostem_controller', '1')
@@ -174,6 +179,10 @@ class SuperScanTunerPanelDelegate(object):
                 dirt_detection = True
             else:
                 dirt_detection = False
+            
+            if method == 'general' and merit == 'auto':
+                logging.info('Disabled auto merit selection because it is not supported for method "general".')
+                merit = 'judge_fft'
 
             if len(keys) < 1:
                 logging.warn('Tuning not started because no aberrations are selected for the tuning.')
@@ -202,7 +211,7 @@ class SuperScanTunerPanelDelegate(object):
                                     document_controller=document_controller)
 
             self.thread = threading.Thread(target=Tuner.kill_aberrations, kwargs={'dirt_detection': dirt_detection,
-                                                                                  'merit': merit})
+                                                                                  'merit': merit, 'method': method})
             #self.thread = threading.Thread(target=do_something, args=(self.event, document_controller))
 #            self.thread = threading.Thread(target=autotune.kill_aberrations,
 #                                           kwargs={'steps': steps,
@@ -350,6 +359,13 @@ class SuperScanTunerPanelDelegate(object):
         combo_box.on_current_item_changed = merit_combo_box_changed
         combo_box_row.add(ui.create_label_widget('Merit used for tuning: '))
         combo_box_row.add(combo_box)
+        
+        combo_box_row2 = ui.create_row_widget()
+        method_combo_box = ui.create_combo_box_widget()
+        method_combo_box.items = ['graphene', 'general']
+        method_combo_box.on_current_item_changed = method_combo_box_changed
+        combo_box_row2.add(ui.create_label_widget('Method used for tuning: '))
+        combo_box_row2.add(method_combo_box)
 
         column.add_spacing(15)
         column.add(descriptor_row1)
@@ -370,6 +386,8 @@ class SuperScanTunerPanelDelegate(object):
         column.add(parameters_row5)
         column.add_spacing(15)
         column.add(combo_box_row)
+        column.add_spacing(15)
+        column.add(combo_box_row2)
         column.add_spacing(25)
         column.add(button_row)
         column.add_stretch()

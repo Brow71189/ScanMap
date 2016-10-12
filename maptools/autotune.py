@@ -1156,6 +1156,7 @@ class Tuning(Peaking):
 #                              'C12_b': 'astig_2f', 'C21_b': 'intensity', 'C23_b': 'astig_3f'}
         self._merit_lookup = {'EHTFocus': 'intensity', 'C12_a': 'astig_2f', 'C21_a': 'intensity', 'C23_a': 'astig_3f',
                               'C12_b': 'astig_2f', 'C21_b': 'intensity', 'C23_b': 'astig_3f'}
+        self._analysis_methods = {'graphene': self.find_peaks_orientation, 'general': self.analyze_fft}
         self.steps = kwargs.get('steps')
         self.keys = kwargs.get('keys')
         self.event = kwargs.get('event')
@@ -1181,6 +1182,10 @@ class Tuning(Peaking):
     @property
     def merits(self):
         return self._merits
+    
+    @property
+    def analysis_methods(self):
+        return self._analysis_methods
 
     def append_merit(self, merit_dict, location=None):
         if location is None:
@@ -1305,7 +1310,6 @@ class Tuning(Peaking):
         return direction
 
     def find_focus(self, stepsize=3, range=9, **kwargs):
-        _analysis_method = {'graphene': self.find_peaks_orientation, 'general': self.analyze_fft}
         if kwargs.get('method') is not None:
             self.method = kwargs.pop('method')
 
@@ -1314,7 +1318,7 @@ class Tuning(Peaking):
             aberrations = {'EHTFocus': i}
             self.image = self.image_grabber(aberrations=aberrations, reset_aberrations=True, show_live_image=True)[0]
             try:
-                res = _analysis_method[self.method]()
+                res = self.analysis_methods[self.method]()
             except RuntimeError:
                 self.logwrite('No peaks could be found for defocus {:.0f} nm.'.format(i))
                 continue
@@ -1336,7 +1340,7 @@ class Tuning(Peaking):
 
             self.image = self.image_grabber(aberrations=aberrations, reset_aberrations=True, show_live_image=True)[0]
             try:
-                res = _analysis_method[self.method]()
+                res = self.analysis_methods[self.method]()
             except RuntimeError:
                 self.logwrite('No peaks could be found for defocus {:.0f} nm.'.format(aberrations['EHTFocus']))
                 break
@@ -1409,7 +1413,6 @@ class Tuning(Peaking):
                 return ['C21_a', 'C21_b', 'C23_a', 'C23_b']
 
     def get_analysis_result_for_defocus(self, defocus=-5, tolerance=2, **kwargs):
-        _analysis_method = {'graphene': self.find_peaks_orientation, 'general': self.analyze_fft}
         assert self.focus is not None, 'Focus must be found before this!'
         if kwargs.get('method') is not None:
             self.method = kwargs.pop('method')
@@ -1442,7 +1445,7 @@ class Tuning(Peaking):
                 aberrations = {'EHTFocus': self.focus + defocus[i]}
                 self.image = self.image_grabber(aberrations=aberrations, reset_aberrations=True)[0]
                 try:
-                    res = _analysis_method[self.method]()
+                    res = self.analysis_methods[self.method]()
                 except RuntimeError:
                     self.logwrite('No peaks could be found for defocus {:.0f} nm.'.format(aberrations['EHTFocus']))
                 else:
@@ -1818,24 +1821,28 @@ class Tuning(Peaking):
         #            np.std(ffil[self.mask==0])/mean)
 
     def coma(self):
-        # Check if peaks are already stored and if only first order is there
-        if len(np.shape(self.peaks)) != 1:
+        # Check if peaks are already stored
+        if self.peaks is None:
             try:
-                self.peaks = self.find_peaks(second_order=False)
+                self.peaks = (self.analyze_fft(full_output=True)[-1] if self.method == 'general' else
+                              self.find_peaks(second_order=False))
             except RuntimeError as detail:
                 print(str(detail))
                 return 1000
         #peaks_first, peaks_second = self.peaks
-        peaks_first = self.peaks
-        intensities = []
-        for peak in peaks_first:
-            intensities.append(peak[3])
+        if self.method == 'general':
+            intensities = self.peaks
+        else:
+            peaks_first = self.peaks
+            intensities = []
+            for peak in peaks_first:
+                intensities.append(peak[3])
         #for peak in peaks_second:
         #    intensities.append(peak[3])
 #        self.logwrite('intensity sum: ' + str(np.sum(intensities)) + '\tintensity first var/mean: ' +
 #                      str(np.std(intensities[:6])/np.mean(intensities[:6])) + '\tintensity second var/mean: ' +
 #                      str(np.std(intensities[6:])/np.mean(intensities[6:])))
-        return 1/(np.sum(np.array(intensities))) * 1e4
+        return 1/(np.sum(np.array(intensities))) * 1e5
 
     def measure_symmetry(self, filtered_image):
         point_mirrored = np.flipud(np.fliplr(filtered_image))
