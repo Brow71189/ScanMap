@@ -1770,14 +1770,19 @@ class Tuning(Peaking):
                                                                                            astig_angle*180/np.pi))
         #astig_angle -= np.pi/2 if astig_defocus > 0 else 0
         #shear_angle = np.pi/4
-        # Calculate astigmatism in weird coordinates of the corrector from polar coordinates
-        C12 = np.array((np.sqrt(2) * np.sin(np.abs(np.arcsin(np.sin(astig_angle))) - np.pi/4),
-                        np.sqrt(2) * np.sin(np.abs(np.arcsin(np.sin(astig_angle + np.pi/4))) - np.pi/4)))
+        # Calculate astigmatism in carthesian coordinates
+        C12 = np.array((-np.sin(astig_angle), np.cos(astig_angle)))
+#        # Calculate astigmatism in weird coordinates of the corrector from polar coordinates
+#        C12 = np.array((np.sqrt(2) * np.sin(np.abs(np.arcsin(np.sin(astig_angle))) - np.pi/4),
+#                        np.sqrt(2) * np.sin(np.abs(np.arcsin(np.sin(astig_angle + np.pi/4))) - np.pi/4)))
         # Normalize it
         C12 /= np.sqrt(np.sum(C12**2))
         # Multiply with defocus to get actual values
         C12 *= astig_defocus
-        self.logwrite('Measured astigmatism: C12.a: {:.2f} nm, C12.b: {:.2f}'.format(C12[1], C12[0]))
+        self.logwrite('Measured astigmatism: C12.u: {:.2f} nm, C12.v: {:.2f}'.format(C12[1], C12[0]))
+        if self.as2 is not None:
+            self.as2.set_control_output('C12.u', C12[1], options={'inform': True})
+            self.as2.set_control_output('C12.v', C12[0], options={'inform': True})
         return C12
 
     def astig_2f(self):
