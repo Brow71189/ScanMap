@@ -14,7 +14,10 @@ import time
 import warnings
 with warnings.catch_warnings():
     warnings.simplefilter("ignore")
-    import tifffile
+    try:
+        from .maptools import tifffile
+    except:
+        from maptools import tifffile
 import scipy.optimize
 
 try:
@@ -25,14 +28,14 @@ except:
 #######################################################################################################################
 #######################################################################################################################
 #######################################################################################################################
-dirpath = '/3tb/maps_data/map_2016_08_31_19_43'
-imsize = 16
-graphene_threshold = 0.01
+dirpath = '/3tb/maps_data/map_2016_09_05_11_53'
+imsize = 12
+graphene_threshold = 0.021
 light_threshold = -1
-heavy_threshold = 0.015
-dirt_border = 30
+heavy_threshold = 0.033
+dirt_border = 50
 minimum_graphene_area = 0.3
-minimum_number_peaks = 0
+minimum_number_peaks = 8
 maximum_number_peaks = 12
 only_process_this_number_of_images = -1
 #######################################################################################################################
@@ -160,19 +163,19 @@ def counts(path):
     return calculate_counts(im)
     
 def create_mask(Peak, graphene_threshold, light_threshold, heavy_threshold, dirt_border=0):
-    
+    pixelsize = imsize/Peak.shape[0]
     if graphene_threshold > 0:
-        mask = Peak.dirt_detector(dirt_threshold=graphene_threshold)
+        mask = Peak.dirt_detector(dirt_threshold=graphene_threshold, median_blur_diam=0.6/pixelsize, gaussian_blur_radius=0.03/pixelsize)
         if dirt_border > 0:
             mask = cv2.erode(mask, np.ones((dirt_border, dirt_border)))
     else:
         mask = np.ones(Peak.shape, dtype=np.uint8)
     
     if light_threshold > 0 and light_threshold != heavy_threshold:
-        mask[Peak.dirt_detector(dirt_threshold=light_threshold)==1] = 4
+        mask[Peak.dirt_detector(dirt_threshold=light_threshold, median_blur_diam=0.6/pixelsize, gaussian_blur_radius=0.03/pixelsize)==1] = 4
         
     if heavy_threshold > 0:
-        heavy_dirt_mask = Peak.dirt_detector(dirt_threshold=heavy_threshold)
+        heavy_dirt_mask = Peak.dirt_detector(dirt_threshold=heavy_threshold, median_blur_diam=0.6/pixelsize, gaussian_blur_radius=0.03/pixelsize)
         if dirt_border > 0:
             heavy_dirt_mask = cv2.dilate(heavy_dirt_mask, np.ones((dirt_border, dirt_border)))
         
@@ -284,7 +287,7 @@ def subframes_preprocessing(filename, dirname, imsize, counts_threshold=1e-9, gr
         
     
     #return image parameters
-    return (os.path.splitext(filename)[0], graphene_area, number_peaks, peak_intensities_sum, rotation,
+    return (os.path.splitext(filename)[0], graphene_area, number_peaks, peak_intensities_sum*(2-graphene_area), rotation,
             ellipse_a, ellipse_b, angle, success)
 
 if __name__ == '__main__':

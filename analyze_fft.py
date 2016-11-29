@@ -45,10 +45,19 @@ class AnalyzeFFTPanelDelegate(object):
                     self.change_button_state(self.find_focus_button, False)
                     self.change_button_state(self.correct_button, False)
                     self.T.focus = self.T.find_focus(method='general')[0][1]
+                    self.as2.set_control_output('EHTFocus', -self.T.focus, options={'inform': True, 'confirm': True})
+                    
                     self.C12 = self.T.measure_astig(method='general')
+                    if self.C12 is not None:
+                        self.as2.set_control_output('C12.u', -self.C12[1], options={'inform': True, 'confirm': True})
+                        self.as2.set_control_output('C12.v', -self.C12[0], options={'inform': True, 'confirm': True})
+                        
                     focus_string = 'Measurement {:s}:\n C10\t{:.2f} nm\n'.format(time.strftime('%d-%m-%Y %H:%M'),
                                                                                  self.T.focus)
                     if self.C12 is not None:
+                        C12a = self.as2.get_control_output('C12.a')
+                        C12b = self.as2.get_control_output('C12.b')
+                        self.C12 = (C12b, C12a)
                         astig_string = ' C12.a\t{:.2f} nm\n C12.b\t{:.2f} nm\n\n'.format(self.C12[1], self.C12[0])
                     else:
                         astig_string = ' No detectable astigmatism\n\n'
@@ -100,10 +109,16 @@ class AnalyzeFFTPanelDelegate(object):
 #                        self.T.analyze_fft()
 #                        tuning2 = np.sum(self.T.peaks)
 #                        aberrations = aberrations1 if tuning1 > tuning2 else aberrations2
-                        aberrations = {'EHTFocus': self.T.focus, 'C12_a': self.C12[1], 'C12_b': self.C12[0]}
-                    else:
-                        aberrations = {'EHTFocus': self.T.focus}
-                    self.T.image_grabber(aberrations=aberrations, acquire_image=False)
+                        #aberrations = {'EHTFocus': self.T.focus, 'C12_a': self.C12[1], 'C12_b': self.C12[0]}
+                        C12a_target = self.as2.get_control_output('^C12.a')
+                        C12b_target = self.as2.get_control_output('^C12.b')
+                        self.as2.set_control_output('C12.a', C12a_target)
+                        self.as2.set_control_output('C12.b', C12b_target)
+                        self.as2.set_control_output('EHTFocus', 0)
+                    #else:
+                        #aberrations = {'EHTFocus': self.T.focus}
+                    #self.T.image_grabber(aberrations=aberrations, acquire_image=False)
+                    
                 except:
                     self.change_label_text(self.state_label, 'Error')
                     raise

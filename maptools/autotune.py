@@ -35,7 +35,10 @@ from scipy.signal import fftconvolve
 #        logging.warn('Could not import Vienna tools!')
 
 #try:
-from . import autoalign
+try:
+    from . import autoalign
+except ImportError:
+    pass
 #except:
 #    try:
 #        import autoalign
@@ -209,12 +212,17 @@ class Imaging(object):
         """
         # check for optional input arguments that can update instance variables
         if kwargs.get('image') is not None:
-            self.image = kwargs.get('image')
+            self.image = kwargs.pop('image')
         if kwargs.get('dirt_threshold') is not None:
-            self.dirt_threshold = kwargs.get('dirt_threshold')
+            self.dirt_threshold = kwargs.pop('dirt_threshold')
         # if no dirt_threshold is available, find it automatically
         if self.dirt_threshold is None:
-            self.dirt_threshold = self.find_dirt_threshold()
+            if kwargs.get('debug_mode'):
+                res = self.find_dirt_threshold(**kwargs)
+                print(res)
+                self.dirt_threshold = res[0]
+            else:
+                self.dirt_threshold = self.find_dirt_threshold(**kwargs)
 
         #apply Gaussian Blur to improve dirt detection
         if gaussian_blur_radius > 0:
@@ -346,7 +354,8 @@ class Imaging(object):
             search_range *= 2
         # go through list of thresholds and determine the amount of dirt with this threshold
             for threshold in search_range:
-                mask_size = np.sum(self.dirt_detector(dirt_threshold = threshold, **kwargs)) / np.prod(self.shape)
+                mask_size = np.sum(self.dirt_detector(dirt_threshold=threshold, **kwargs)) / np.prod(self.shape)
+                mask_sizes.append(mask_size)
                 # remember value where the mask started to shrink
                 if mask_size < 0.99 and dirt_start is None:
                     dirt_start = threshold
@@ -354,8 +363,6 @@ class Imaging(object):
                 if mask_size < 0.01:
                     dirt_end = threshold
                     break
-
-                mask_sizes.append(mask_size)
 
         # determine if there was really dirt present and return an appropriate threshold
         if dirt_end-dirt_start < 3*search_range[1]:
@@ -365,7 +372,9 @@ class Imaging(object):
         else:
         # if distance between dirt_start and dirt_end is longer, set threshold to a value
         # 16% smaller than mean to prevent missing dirt that is actually there in the image
-            threshold = (dirt_end + dirt_start) * 0.42
+            #threshold = (dirt_end + dirt_start) * 0.42
+        # set threshold to a value 25 % above dirt_start to make detection more sensitive
+            threshold = dirt_start * 1.25
 
         #self.dirt_threshold = threshold
 
@@ -1780,9 +1789,7 @@ class Tuning(Peaking):
         # Multiply with defocus to get actual values
         C12 *= astig_defocus
         self.logwrite('Measured astigmatism: C12.u: {:.2f} nm, C12.v: {:.2f}'.format(C12[1], C12[0]))
-        if self.as2 is not None:
-            self.as2.set_control_output('C12.u', C12[1], options={'inform': True})
-            self.as2.set_control_output('C12.v', C12[0], options={'inform': True})
+
         return C12
 
     def astig_2f(self):
