@@ -10,7 +10,7 @@ import warnings
 import os
 
 import numpy as np
-from scipy import optimize, ndimage
+from scipy import optimize, ndimage, signal
 #try:
 #    import cv2
 #except:
@@ -39,27 +39,48 @@ with warnings.catch_warnings():
 #    pass
 #    #logging.warn('Could not import SuperScanPy. Maybe you are running in offline mode.')
     
-def shift_fft(im1, im2, return_cps=False):
+def shift_fft(im1, im2, return_cps=False, hamming_window=False):
     shape = np.shape(im1)
     if shape != np.shape(im2):
         raise ValueError('Input images must have the same shape')
-    fft1 = np.fft.fft2(im1)
-    fft2 = np.fft.fft2(im2)
-    translation = np.abs(np.fft.ifft2(((fft1*np.conjugate(fft2))/np.abs(fft1*fft2))))
+    if hamming_window:
+        ham = signal.hamming(im1.shape[0])
+        ham = ham * np.array([ham]).T
+        im1 = im1.copy()*ham
+        im2 = im2.copy()*ham
+    im1_std = im1.std(dtype=np.float64)
+    if im1_std != 0.0:
+        norm1 = (im1 - im1.mean(dtype=np.float64)) / im1_std
+    else:
+        norm1 = im1
+    im2_std = im2.std(dtype=np.float64)
+    if im2_std != 0.0:
+        norm2 = (im2 - im2.mean(dtype=np.float64)) / im2_std
+    else:
+        norm2 = im2
+    scaling = 1.0 / (norm1.shape[0] * norm1.shape[1])
+    translation =  np.fft.fftshift(np.fft.irfft2(np.fft.rfft2(norm1) * np.conj(np.fft.rfft2(norm2)))) * scaling
+#    fft1 = np.fft.fftshift(np.fft.fft2(im1))
+#    fft2 = np.conjugate(np.fft.fftshift(np.fft.fft2(im2)))
+#    translation = fft1*fft2
+#    translation /= np.abs(translation)
+#    translation = np.real(np.fft.fftshift(np.fft.ifft2(np.fft.fftshift(translation))))
     if return_cps:
-        return np.fft.fftshift(translation)
+        return translation
     #translation = cv2.GaussianBlur(translation, (0,0), 3)
-    if np.amax(translation) <= 0.03: #3.0*np.std(translation)+np.abs(np.amin(translation)):
+    if np.amax(translation) <= np.mean(translation)+3*np.std(translation):#0.03: #3.0*np.std(translation)+np.abs(np.amin(translation)):
         #return np.zeros(2)
         raise RuntimeError('Could not determine any match between the input images (Maximum correlation: {:.4f}).'
                            .format(np.amax(translation)))
     transy, transx = np.unravel_index(np.argmax(translation), shape)
-    if transy > shape[0]/2:
-        transy -= shape[0]
-    if transx > shape[1]/2:
-        transx -= shape[1]
+#    if transy > shape[0]/2:
+#        transy -= shape[0]
+#    if transx > shape[1]/2:
+#        transx -= shape[1]
+    transy -= translation.shape[0]/2
+    transx -= translation.shape[1]/2
     
-    return np.array((transy,transx))
+    return np.array((transy,transx), dtype=np.int)
 
 def rot_dist_fft(im1, im2):
     try:
@@ -104,27 +125,27 @@ def align(im1, im2, method='correlation', ratio=0.1):
 def align_fft(im1, im2):
     return align(im1, im2, method='fft')
 
-def align_series(dirname, method='correlation', ratio=0.1):
+def align_series(dirname, method='correlation', ratio=0.1, align_to=0):
     """
     Aligns all images in dirname to the first image there and saves the results in a subfolder.
     """
     dirlist = os.listdir(dirname)
     dirlist.sort()
-    im1 = ndimage.imread(dirname+dirlist[0])
-    savepath = dirname+'aligned/'
+    im1 = ndimage.imread(os.path.join(dirname, dirlist[align_to]))
+    savepath = os.path.join(dirname,'aligned')
     if not os.path.exists(savepath):
         os.makedirs(savepath)
         
-    tifffile.imsave(savepath+dirlist[0], np.asarray(im1, dtype=im1.dtype))
+    #tifffile.imsave(os.path.join(savepath, dirlist[0]), np.asarray(im1, dtype=im1.dtype))
     
-    for i in range(1, len(dirlist)):
-        if os.path.isfile(dirname+dirlist[i]):
-            im2 = ndimage.imread(dirname+dirlist[i])
-            tifffile.imsave(savepath+dirlist[i],
+    for i in range(0, len(dirlist)):
+        if os.path.isfile(os.path.join(dirname, dirlist[i])):
+            im2 = ndimage.imread(os.path.join(dirname, dirlist[i]))
+            tifffile.imsave(os.path.join(savepath, dirlist[i]),
                             np.asarray(align(im1, im2, method=method, ratio=ratio), dtype=im1.dtype))
             
-def align_series_fft(dirname):
-    align_series(dirname, method='fft')
+def align_series_fft(dirname, align_to=0):
+    align_series(dirname, method='fft', align_to=align_to)
     
 
 def correlation(im1, im2):
@@ -180,7 +201,7 @@ def find_shift(im1, im2, ratio=0.1, num_steps=6):
     res = optimize.brute(translated_correlation,
                          ((-max_distance[0], max_distance[0]), (-max_distance[1], max_distance[1])),
                          args=(im1, im2), Ns=num_steps, full_output=True)
-    return (res[0], -res[1])
+    return np.array((res[0], -res[1]), dtype=np.int)
     #return (res.x, -res.fun)
 
 def rot_dist(im1, im2, ratio=None):

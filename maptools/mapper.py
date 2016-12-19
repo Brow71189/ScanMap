@@ -19,8 +19,9 @@ with warnings.catch_warnings():
 from .autotune import Imaging, Tuning, DirtError
 from scipy.interpolate import Rbf
 from .autoalign import align
-
-
+import threading
+import queue
+    
 class Mapping(object):
 
     _corners = ['top-left', 'top-right', 'bottom-right', 'bottom-left']
@@ -62,6 +63,7 @@ class Mapping(object):
         self.last_frames_HAADF = []
         self.last_frames_MAADF = []
         self.sleeptime = kwargs.get('sleeptime', 2)
+        self.nion_frame_parameters = {}
 
     @property
     def online(self):
@@ -1082,6 +1084,102 @@ class Mapping(object):
                 config_file.write('{0:25}{1:}\n'.format(key+':', value))
 
             config_file.close()
+
+class AcquisitionLoop(Mapping):
+    """
+    This class grabs images from SuperScan and pushes them into a buffer
+    """
+    def __init__(self, **kwargs):
+        self.buffer = kwargs.get('buffer', Buffer(maxsize=200))
+        self._n = -1
+        self.buffer_timeout = None
+        self._pause_timeout = None
+        self._pause_event = threading.Event()
+        self._abort_event = threading.Event()
+        self._t = None
+        
+    def start(self, n=-1):
+        if self._t is not None and self._t.is_alive():
+            return
+        self._pause_event.set()
+        self._abort_event.clear()
+        if n > 0:
+            self._n += n
+        else:
+            self._n = -1
+        self._t = threading.Thread(target=self._acquisition_thread, daemon=True)
+        self._t.start()        
+    
+    def pause(self, time=None):
+        self._pause_event.clear()
+    
+    def unpause(self):
+        self._pause_event.set()
+    
+    def abort(self):
+        self._abort_event.set()
+    
+    def _acquisition_thread(self):
+        counter = 0
+        with self.superscan.create_view_task(**self.nion_frame_parameters):
+            while self._n < 0 or counter < self._n:
+                if self._abort_event.is_set():
+                    break
+                self._pause_event.wait(timeout=self._pause_timeout)
+                image = self.superscan.grab_next_to_finish()
+                self.buffer.put(image, timeout=self.buffer_timeout)
+                counter += 1
+        self.superscan.stop_playing()
+        self._n = -1
+    
+class Buffer(queue.Queue):
+    """
+    A buffer for acquired images
+    """
+    def __init__(self, maxsize=0):
+        super().__init__(maxsize=maxsize)
+
+    def get(self, block=True, timeout=None):
+        obj = super().get(block=block, timeout=timeout)
+        self.task_done()
+        return obj
+    
+class ProcessingLoop(Mapping):
+    """
+    This class will process data from a buffer and notify the main thread about important events found during processing.
+    Processing in will run over a list of tasks. A task is a dictionary that needs to contain at least the key "name"
+    which must be a valid function that can be run by this code. Further entries in a "task" dictionary are:
+    MAADF: True/False, whether to run this step on MAADF images
+    HAADF: True/False, whether to run this step on HAADF images
+    args: tuple/list, positional arguments passed to the respective funtion
+    kwargs: dictionary, keyword arguments passed to the respective function
+    """
+    
+    def __init__(self, buffer, **kwargs):
+        self.buffer = buffer
+        self.tasks = kwargs.get('tasks', [])
+        self.buffer_timeout = None
+        self._pause_timeout = None
+        self._pause_event = threading.Event()
+        self._abort_event = threading.Event()
+        self._t = None
+        self.on_event_found = None
+        
+    def start(self):
+        self._pause_event.set()
+        self._abort_event.clear()
+    
+    def pause(self):
+        self._pause_event.clear()
+    
+    def unpause(self):
+        self._pause_event.set()
+    
+    def abort(self):
+        self._abort_event.set()
+    
+    def _processing_thread(self):
+        pass
 
 #def find_offset_and_rotation(as2, superscan):
 #    """
