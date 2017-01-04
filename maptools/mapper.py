@@ -1085,7 +1085,7 @@ class Mapping(object):
 
             config_file.close()
 
-class AcquisitionLoop(Mapping):
+class AcquisitionLoop(object):
     """
     This class grabs images from SuperScan and pushes them into a buffer. The items in the buffer will be dictionaries,
     with the data in the key "data". The acquisition function adds additional info to each image that is retrieved by
@@ -1094,6 +1094,7 @@ class AcquisitionLoop(Mapping):
     """
     def __init__(self, **kwargs):
         self.buffer = kwargs.get('buffer', Buffer(maxsize=200))
+        self.superscan = kwargs.get('superscan')
         self._n = -1
         self.buffer_timeout = None
         self._pause_timeout = None
@@ -1122,12 +1123,15 @@ class AcquisitionLoop(Mapping):
     
     def pause(self, time=None):
         self._pause_event.clear()
+        self.superscan.stop_playing()
     
     def unpause(self):
+        self.superscan.start_playing()
         self._pause_event.set()
     
     def abort(self):
         self._abort_event.set()
+        self.superscan.stop_playing()
     
     def wait_for_acquisition(self, timeout=None):
         return self._acquisition_finished_event.wait(timeout=timeout)
@@ -1135,13 +1139,12 @@ class AcquisitionLoop(Mapping):
     def _acquisition_thread(self):
         counter = 0
         with self.superscan.create_view_task(**self.nion_frame_parameters):
+            self.superscan.start_playing()
             while self._n < 0 or counter < self._n:
-                self.superscan.start_playing()
                 image = {}
-                if not self._pause_event.is_set() or self._abort_event.is_set() or counter == self._n - 1:
+                if counter == self._n - 1:
                     self.superscan.stop_playing()
-                    if self._pause_event.is_set(): # This means it is the last round or abort event occured
-                        image['is_last'] = True
+                    image['is_last'] = True
                 self._acquisition_finished_event.clear()
                 image['data'] = self.superscan.grab_next_to_finish()
                 self.buffer.put(image, timeout=self.buffer_timeout)
@@ -1170,10 +1173,10 @@ class Buffer(queue.Queue):
         self.task_done()
         return obj
     
-class ProcessingLoop(Mapping):
+class ProcessingLoop(object):
     """
     This class will process data from a buffer and notify the main thread about important events found during processing.
-    Processing in will run over a list of tasks. A task is a dictionary that needs to contain at least the key "name"
+    Processing in will run over a list of tasks. A task is a dictionary that needs to contain at least the key "function"
     which must be a valid function that can be run by this code. Further entries in a "task" dictionary are:
     args: tuple/list, positional arguments passed to the respective funtion
     kwargs: dictionary, keyword arguments passed to the respective function
@@ -1213,16 +1216,16 @@ class ProcessingLoop(Mapping):
             for task in self.tasks:
                 if task in skip_tasks:
                     continue
-                function = getattr(self, task['name'])
+                function = task['function']
                 args = task.get('args', tuple())
                 kwargs = task.get('kwargs', dict())
                 kwargs.update(image)
                 res = function(data, *args, **kwargs)
                 if res is not None and callable(self.on_found_something):
-                    self.on_found_something(task['name'], res)
+                    self.on_found_something(function.__name__, res)
             self._pause_event.wait(timeout=self._pause_timeout)
 
-class MappingLoop(Mapping):
+class MappingLoop(object):
     """
     This class will iterate over a coordinate list and move the stage to each position. It also takes care of focus
     interpolation. After the "start" method is called it will move to the first position and block until the stabilize
@@ -1234,6 +1237,8 @@ class MappingLoop(Mapping):
     
     def __init__(self, coordinate_list, **kwargs):
         self._coordinate_list = coordinate_list
+        self.as2 = kwargs.get('as2')
+        self.switches = kwargs.get('switches', dict())
         self.coordinate_info = kwargs.get('coordinate_info')
         self.first_wait_time = kwargs.get('first_wait_time', 10)
         self.wait_time = kwargs.get('wait_time', 3)        
@@ -1253,7 +1258,7 @@ class MappingLoop(Mapping):
         stagez, fine_focus = self.interpolation_rbf((stagex, stagey))
         self.as2.set_property_as_float('StageOutX', stagex_corrected)
         self.as2.set_property_as_float('StageOutY', stagey_corrected)
-        if self.switches['use_z_drive']:
+        if self.switches.get('use_z_drive'):
             self.as2.set_property_as_float('StageOutZ', stagez)
         self.as2.set_property_as_float('EHTFocus', fine_focus)
         time.sleep(wait_time)
@@ -1272,7 +1277,8 @@ class SuperScanMapper(Mapping):
         super().__init__(**kwargs)
         self.buffer = Buffer(maxsize=200)
         self.processing_loop = ProcessingLoop(self.buffer)
-        self.mapping_loop = MappingLoop(self.map_coords, coordinate_info=self.map_infos)
+        self.mapping_loop = MappingLoop(self.map_coords, coordinate_info=self.map_infos, as2=self.as2,
+                                        switches=self.switches)
         self.acquisition_loop = None
         self._abort_event = threading.Event()
         self._pause_event = threading.Event()
@@ -1351,7 +1357,8 @@ class SuperScanMapper(Mapping):
                               for i in range(self.number_of_images)]
             def get_info_dict():
                 return image_info.pop(0)
-            self.acquisition_loop = AcquisitionLoop(buffer=self.buffer, get_info_dict=get_info_dict)
+            self.acquisition_loop = AcquisitionLoop(buffer=self.buffer, get_info_dict=get_info_dict,
+                                                    superscan=self.superscan)
             self.acquisition_loop.start()
             self.wait_for_message_or_finished()
             self._pause_event.wait()
