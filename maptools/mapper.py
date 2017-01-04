@@ -1137,14 +1137,17 @@ class AcquisitionLoop(Mapping):
         with self.superscan.create_view_task(**self.nion_frame_parameters):
             while self._n < 0 or counter < self._n:
                 self.superscan.start_playing()
+                image = {}
                 if not self._pause_event.is_set() or self._abort_event.is_set() or counter == self._n - 1:
                     self.superscan.stop_playing()
+                    if self._pause_event.is_set(): # This means it is the last round or abort event occured
+                        image['is_last'] = True
                 self._acquisition_finished_event.clear()
-                image = {'data': self.superscan.grab_next_to_finish()}
+                image['data'] = self.superscan.grab_next_to_finish()
+                self.buffer.put(image, timeout=self.buffer_timeout)
                 if callable(self.get_info_dict):
                     info_dict = self.get_info_dict()
                     image.update(info_dict)
-                self.buffer.put(image, timeout=self.buffer_timeout)
                 if not self._pause_event.is_set() or self._abort_event.is_set():
                     self._acquisition_finished_event.set()
                     if self._abort_event.is_set():
@@ -1273,6 +1276,7 @@ class SuperScanMapper(Mapping):
         self.acquisition_loop = None
         self._abort_event = threading.Event()
         self._pause_event = threading.Event()
+        self._processing_finished_event = threading.Event()
         self._t = None
         self.tasks = []
         
@@ -1379,7 +1383,24 @@ class SuperScanMapper(Mapping):
             print('Could not write log message to logfile! Reason: ' + str(e))
     
     def wait_for_message_or_finished(self):
-        pass
+        if self.switches.get('wait_for_processing'):
+            self._processing_finished_event.wait()
+            self._processing_finished_event.clear()
+        else:
+            self.acquisition_loop.wait_for_acquisition()
+    
+    def processing_event_occured(self, taskname, obj):
+        """
+        Handles events from the processing loop.
+        taskname : (str) name of the task that fired that event
+        obj : (object) object that was returned by the task
+        """
+        if taskname == 'processing_finished':
+            self._processing_finished_event.set()
+        if taskname == 'tuning_necessary':
+            pass
+        if taskname == 'dirt_detector':
+            pass
     
     def close(self):
         pass
