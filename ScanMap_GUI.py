@@ -397,32 +397,32 @@ class ScanMapPanelDelegate(object):
                 logging.warn('You must record a peak intensity reference when using "reference" mode.')
                 return
 
-            Mapper = mapper.Mapping(superscan=self.superscan, as2=self.as2, document_controller=document_controller,
-                                    coord_dict=self.coord_dict.copy(), switches=self.switches.copy(), ccd=self.ccd)
+            self.Mapper = mapper.SuperScanMapper(superscan=self.superscan, as2=self.as2, document_controller=document_controller,
+                                            coord_dict=self.coord_dict.copy(), switches=self.switches.copy(), ccd=self.ccd)
 
-            Mapper.number_of_images = self.number_of_images
-            Mapper.dirt_area = self.dirt_area
-            Mapper.offset = self.offset
-            Mapper.savepath = self.savepath
-            Mapper.peak_intensity_reference = self.peak_intensity_reference
-            Mapper.frame_parameters = self.frame_parameters.copy()
+            self.Mapper.number_of_images = self.number_of_images
+            self.Mapper.dirt_area = self.dirt_area
+            self.Mapper.offset = self.offset
+            self.Mapper.savepath = self.savepath
+            self.Mapper.peak_intensity_reference = self.peak_intensity_reference
+            self.Mapper.frame_parameters = self.frame_parameters.copy()
             self.isotope_mapping_settings['frame_parameters'] = self.isotope_frame_parameters.copy()
-            Mapper.isotope_mapping_settings = self.isotope_mapping_settings.copy()
-            Mapper.retuning_mode = self.retuning_mode.copy()
-            Mapper.average_number = self.average_number
-            Mapper.max_align_dist = self.max_align_dist
-            Mapper.sleeptime = self.sleeptime
-            self.thread_communication = Mapper.gui_communication
+            self.Mapper.isotope_mapping_settings = self.isotope_mapping_settings.copy()
+            self.Mapper.retuning_mode = self.retuning_mode.copy()
+            self.Mapper.average_number = self.average_number
+            self.Mapper.max_align_dist = self.max_align_dist
+            self.Mapper.sleeptime = self.sleeptime
+            self.thread_communication = self.Mapper.gui_communication
             self.thread_communication['abort_button'] = abort_button
             self.thread_communication['done_button'] = done_button
             self.thread_communication['analyze_button'] = analyze_button
             self.tune_now_event = threading.Event()
-            Mapper.tune_now_event = self.tune_now_event
+            self.Mapper.tune_now_event = self.tune_now_event
             self.tune_event = threading.Event()
-            Mapper.tune_event = self.tune_event
+            self.Mapper.tune_event = self.tune_event
             if self.switches.get('isotope_mapping') or self.number_of_images > 1:
                 self.abort_series_event = threading.Event()
-                Mapper.abort_series_event = self.abort_series_event
+                self.Mapper.abort_series_event = self.abort_series_event
 
             logging.info('FOV: ' + str(self.frame_parameters['fov'])+' nm')
             logging.info('Offset: ' + str(self.offset)+' x image size')
@@ -432,20 +432,23 @@ class ScanMapPanelDelegate(object):
             logging.info('Number of images per location: ' + str(self.number_of_images))
 
             self.event = threading.Event()
-            Mapper.event = self.event
-            self.thread = threading.Thread(target=Mapper.SuperScan_mapping)
-            self.thread.start()
+            self.Mapper.event = self.event
+            self.Mapper.start()
+            
+#            self.thread = threading.Thread(target=Mapper.SuperScan_mapping)
+#            self.thread.start()
 
         def abort_button_clicked():
             #self.stop_tuning()
-            if self.thread_communication.get('series_running'):
-                self.abort_series_event.set()
-                self.thread_communication['series_running'] = False
-                self.thread_communication['abort_button'].text = 'Abort map'
-#                    self.document_controller.queue_task(lambda: self.update_abort_button('Abort map'))
-            else:
-                logging.info('Aborting after current frame is finished. (May take a short while until actual abort)')
-                self.event.set()
+            self.Mapper.abort()
+#            if self.thread_communication.get('series_running'):
+#                self.abort_series_event.set()
+#                self.thread_communication['series_running'] = False
+#                self.thread_communication['abort_button'].text = 'Abort map'
+##                    self.document_controller.queue_task(lambda: self.update_abort_button('Abort map'))
+#            else:
+#                logging.info('Aborting after current frame is finished. (May take a short while until actual abort)')
+#                self.event.set()
 
         def analyze_button_clicked():
             if self.thread is not None and self.thread.is_alive():
