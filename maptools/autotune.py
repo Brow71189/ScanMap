@@ -198,7 +198,7 @@ class Imaging(object):
 
         return {'frame_parameters': parameters, 'channels_enabled': detector_list}
 
-    def dirt_detector(self, median_blur_diam=59, gaussian_blur_radius=3, **kwargs):
+    def dirt_detector(self, median_blur_diam=59, gaussian_blur_radius=3, *args, **kwargs):
         """
         Returns a mask with the same shape as "image" that is 1 where there is dirt and 0 otherwise
         Possible keyword arguments are (all optional):
@@ -1144,7 +1144,7 @@ class Peaking(Imaging):
                                                                         vertical[:len(ydata)/2], p0=(vert_a, mean_fft))
                 vertical_perr = np.sqrt(np.diag(vertical_pcov))
                 horizontal_perr = np.sqrt(np.diag(horizontal_pcov))
-                print(vertical_popt, vertical_perr, horizontal_popt, horizontal_perr)
+                #print(vertical_popt, vertical_perr, horizontal_popt, horizontal_perr)
                 if (np.abs(horizontal_popt) > 2*horizontal_perr).any():
                     cross[self.center[0] + i, xdata + self.center[1]] = hyperbola1D(xdata, *horizontal_popt) - 1.5 * mean_fft
                 if (np.abs(vertical_popt) > 2*vertical_perr).any():

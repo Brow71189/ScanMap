@@ -343,6 +343,10 @@ if __name__ == '__main__':
     frame_data_file.write('light threshold: {:f}\theavy threshold: {:f}\t'.format(light_threshold, heavy_threshold))
     frame_data_file.write('minimum number peaks: {:.0f}\t'.format(minimum_number_peaks))
     frame_data_file.write('Dirt border: {:n}\tminimum graphene area: {:f}\n'.format(dirt_border, minimum_graphene_area))
+    if os.path.isfile(os.path.join(dirpath, 'map_info.txt')):
+        with open(os.path.join(dirpath, 'map_info.txt')) as infofile:
+            for line in infofile:
+                frame_data_file.write(line)
     frame_data_file.write('#label\tgraphene\tnumpeak\ttuning\ttilt\tella\tellb\tellphi\n\n')
     
     for frame_data in res_list:

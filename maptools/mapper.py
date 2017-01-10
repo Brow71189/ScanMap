@@ -87,7 +87,7 @@ class Mapping(object):
     def savepath(self, savepath):
         self._savepath = os.path.normpath(savepath)
 
-    def add_to_last_images(self, image):
+    def add_to_last_images(self, image, *args, **kwargs):
         if self.detectors['HAADF'] and self.detectors['MAADF']:
             haadfimage = image[0]
             maadfimage = image[1]
@@ -686,7 +686,7 @@ class Mapping(object):
 
         #config_file.close()
 
-    def show_average_of_last_frames(self):
+    def show_average_of_last_frames(self, *args, **kwargs):
         assert self.document_controller is not None, 'Cannot create a data item without a document controller instance'
         if self.detectors['HAADF']:
             assert len(self.last_frames_HAADF) > 0, 'No HAADF data to average.'
@@ -1095,6 +1095,7 @@ class AcquisitionLoop(object):
     def __init__(self, **kwargs):
         self.buffer = kwargs.get('buffer', Buffer(maxsize=200))
         self.superscan = kwargs.get('superscan')
+        self.nion_frame_parameters = kwargs.get('nion_frame_parameters')
         self._n = -1
         self.buffer_timeout = None
         self._pause_timeout = None
@@ -1126,6 +1127,7 @@ class AcquisitionLoop(object):
         self.superscan.stop_playing()
     
     def unpause(self):
+        self.superscan.set_frame_parameters(**self.nion_frame_parameters)
         self.superscan.start_playing()
         self._pause_event.set()
     
@@ -1160,6 +1162,9 @@ class AcquisitionLoop(object):
         self.superscan.stop_playing()
         self._acquisition_finished_event.set()
         self._n = -1
+    
+    def close(self):
+        self.abort()
     
 class Buffer(queue.Queue):
     """
@@ -1224,6 +1229,10 @@ class ProcessingLoop(object):
                 if res is not None and callable(self.on_found_something):
                     self.on_found_something(function.__name__, res)
             self._pause_event.wait(timeout=self._pause_timeout)
+    
+    def close(self):
+        self.buffer.join()
+        self.abort()
 
 class MappingLoop(object):
     """
@@ -1239,10 +1248,16 @@ class MappingLoop(object):
         self._coordinate_list = coordinate_list
         self.as2 = kwargs.get('as2')
         self.switches = kwargs.get('switches', dict())
+        self.interpolation = kwargs.get('interpolation')
         self.coordinate_info = kwargs.get('coordinate_info')
         self.first_wait_time = kwargs.get('first_wait_time', 10)
         self.wait_time = kwargs.get('wait_time', 3)        
         self.counter = 0
+        self._current_position = None
+    
+    @property
+    def current_position(self):
+        return self._current_position
         
     def start(self):
         self._coordinate_iterator = iter(self._coordinate_list)
@@ -1254,8 +1269,9 @@ class MappingLoop(object):
     
     def _next(self, wait_time):
         self.counter += 1
-        stagex, stagey, stagex_corrected, stagey_corrected = next(self._coordinate_iterator)
-        stagez, fine_focus = self.interpolation_rbf((stagex, stagey))
+        self._current_position = next(self._coordinate_iterator)
+        stagex, stagey, stagex_corrected, stagey_corrected = self.current_position
+        stagez, fine_focus = self.interpolation((stagex, stagey))
         self.as2.set_property_as_float('StageOutX', stagex_corrected)
         self.as2.set_property_as_float('StageOutY', stagey_corrected)
         if self.switches.get('use_z_drive'):
@@ -1277,8 +1293,7 @@ class SuperScanMapper(Mapping):
         super().__init__(**kwargs)
         self.buffer = Buffer(maxsize=200)
         self.processing_loop = ProcessingLoop(self.buffer)
-        self.mapping_loop = MappingLoop(self.map_coords, coordinate_info=self.map_infos, as2=self.as2,
-                                        switches=self.switches)
+        self.mapping_loop = None
         self.acquisition_loop = None
         self._abort_event = threading.Event()
         self._pause_event = threading.Event()
@@ -1297,6 +1312,7 @@ class SuperScanMapper(Mapping):
         self.Tuner = Tuning(frame_parameters=self.frame_parameters.copy(), detectors=self.detectors, event=self.event,
                      online=self.online, document_controller=self.document_controller, as2=self.as2,
                      superscan=self.superscan)
+        self.create_nion_frame_parameters()
         # Find rectangle inside the four points given by the user
         self.leftX = np.amax((self.coord_dict['top-left'][0], self.coord_dict['bottom-left'][0]))
         self.rightX = np.amin((self.coord_dict['top-right'][0], self.coord_dict['bottom-right'][0]))
@@ -1304,6 +1320,8 @@ class SuperScanMapper(Mapping):
         self.botY = np.amax((self.coord_dict['bottom-left'][1], self.coord_dict['bottom-right'][1]))
         self.map_coords, self.map_infos = self.create_map_coordinates(compensate_stage_error=
                                                             self.switches['compensate_stage_error'])
+        self.mapping_loop = MappingLoop(self.map_coords, coordinate_info=self.map_infos, as2=self.as2,
+                                        switches=self.switches, interpolation = self.interpolation_rbf)
         # create output folder:
         self.store = os.path.join(self.savepath, self.foldername)
         if not os.path.exists(self.store):
@@ -1313,14 +1331,16 @@ class SuperScanMapper(Mapping):
         self.test_map = []
         self.write_map_info_file()
         if self.switches.get('save'):
-            self.tasks.append({'name': 'save'})
+            self.tasks.append({'function': self.save_image})
         if self.switches.get('show_last_frames_average'):
-            self.tasks.append({'name': 'add_to_last_images'})
-            self.tasks.append({'name':'show_average_of_last_frames'})
+            self.tasks.append({'function': self.add_to_last_images})
+            self.tasks.append({'function': self.show_average_of_last_frames})
         if self.switches.get('abort_series_on_dirt'):
-            self.tasks.append({'name': 'Tuner.dirt_detector'})
+            self.tasks.append({'function': self.Tuner.dirt_detector})
         if self.switches.get('do_returning'):
-            self.tasks.append({'name': 'handle_retuning'})
+            self.tasks.append({'function': self.tuning_necessary})
+        # Replace string names in self.tasks with actual functions
+        self.setup_tasks()
         self.processing_loop.tasks = self.tasks
         self.processing_loop.start()
         self._t = threading.Thread(target=self._mapping_thread)
@@ -1358,7 +1378,8 @@ class SuperScanMapper(Mapping):
             def get_info_dict():
                 return image_info.pop(0)
             self.acquisition_loop = AcquisitionLoop(buffer=self.buffer, get_info_dict=get_info_dict,
-                                                    superscan=self.superscan)
+                                                    superscan=self.superscan,
+                                                    nion_frame_parameters=self.nion_frame_parameters)
             self.acquisition_loop.start()
             self.wait_for_message_or_finished()
             self._pause_event.wait()
@@ -1390,7 +1411,7 @@ class SuperScanMapper(Mapping):
             print('Could not write log message to logfile! Reason: ' + str(e))
     
     def wait_for_message_or_finished(self):
-        if self.switches.get('wait_for_processing'):
+        if self.switches.get('wait_for_processing', True):
             self._processing_finished_event.wait()
             self._processing_finished_event.clear()
         else:
@@ -1405,12 +1426,56 @@ class SuperScanMapper(Mapping):
         if taskname == 'processing_finished':
             self._processing_finished_event.set()
         if taskname == 'tuning_necessary':
-            pass
+            if obj[0]:
+                self.write_log('Starting retuning, reason: ' + obj[1])
+                self.handle_retuning()
         if taskname == 'dirt_detector':
-            pass
+            if self.switches.get('abort_series_on_dirt') and np.sum(obj) > np.prod(obj.shape)*self.dirt_area:
+                self.acquisition_loop.abort()
+                self.write_log('Aborted series because of too high dirt coverage.')
     
+    def handle_retuning(self):
+        self.acquisition_loop.pause()
+        message = ''
+        return_message, focused = self.wait_for_focused(message)
+        message = return_message
+        if focused is not None:
+            new_z, newEHTFocus = focused
+            self.tuning_successful(True, self.mapping_loop.current_position[:2] + (new_z, newEHTFocus))
+        else:
+            self.tuning_successful(False, None)
+        self.acquisition_loop.unpause()
+    
+    def save_image(self, image, *args, **kwargs):
+        tifffile.imsave(image.get('name') + '.tif', image.get('data').data)
+    
+    def setup_tasks(self):
+        tasks = []
+        for task in self.tasks:
+            if callable(task.get('function')):
+               tasks.append(task)
+            else:
+                try:
+                    function = getattr(self, task.get('function'))
+                except AttributeError:
+                    self.write_log('Could not find a function matching name {:s}. Skipping this task.'.format(task))
+                else:
+                    task['function'] = function
+                    tasks.append(task)
+        self.tasks = tasks
+        
+    def create_nion_frame_parameters(self):
+        self.nion_frame_parameters = {}
+        self.nion_frame_parameters['size'] = tuple(self.frame_parameters['size_pixels'])
+        self.nion_frame_parameters['pixel_time_us'] = self.frame_parameters['pixeltime']
+        self.nion_frame_parameters['fov_nm'] = self.frame_parameters['fov']
+        self.nion_frame_parameters['rotation_rad'] = self.frame_parameters['rotation']/180*np.pi
+        
     def close(self):
-        pass
+        self.logfile.close()
+        self.acquisition_loop.close()
+        self.processing_loop.close()
+        
         
 #def find_offset_and_rotation(as2, superscan):
 #    """
