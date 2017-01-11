@@ -21,7 +21,7 @@ from scipy.interpolate import Rbf
 from .autoalign import align
 import threading
 import queue
-    
+
 class Mapping(object):
 
     _corners = ['top-left', 'top-right', 'bottom-right', 'bottom-left']
@@ -1104,11 +1104,11 @@ class AcquisitionLoop(object):
         self._acquisition_finished_event = threading.Event()
         self._t = None
         self.get_info_dict = kwargs.get('get_info_dict')
-        
+
     @property
     def is_acquiring(self):
         return not self._acquisition_finished_event.is_set()
-        
+
     def start(self, n=-1):
         if self._t is not None and self._t.is_alive():
             return
@@ -1120,52 +1120,57 @@ class AcquisitionLoop(object):
         else:
             self._n = -1
         self._t = threading.Thread(target=self._acquisition_thread, daemon=True)
-        self._t.start()     
-    
+        self._t.start()
+
     def pause(self, time=None):
         self._pause_event.clear()
         self.superscan.stop_playing()
-    
+
     def unpause(self):
-        self.superscan.set_frame_parameters(**self.nion_frame_parameters)
+        self.superscan.set_frame_parameters(self.nion_frame_parameters)
         self.superscan.start_playing()
         self._pause_event.set()
-    
+
     def abort(self):
         self._abort_event.set()
         self.superscan.stop_playing()
-    
+
     def wait_for_acquisition(self, timeout=None):
         return self._acquisition_finished_event.wait(timeout=timeout)
-    
+
     def _acquisition_thread(self):
         counter = 0
-        with self.superscan.create_view_task(**self.nion_frame_parameters):
-            self.superscan.start_playing()
-            while self._n < 0 or counter < self._n:
-                image = {}
-                if counter == self._n - 1:
-                    self.superscan.stop_playing()
-                    image['is_last'] = True
-                self._acquisition_finished_event.clear()
-                image['data'] = self.superscan.grab_next_to_finish()
-                self.buffer.put(image, timeout=self.buffer_timeout)
+        self.superscan.set_frame_parameters(self.nion_frame_parameters)
+        self.superscan.start_playing()
+        while self._n < 0 or counter < self._n:
+            image = {}
+            if counter == self._n - 1:
+                self.superscan.stop_playing()
+                image['is_last'] = True
+            self._acquisition_finished_event.clear()
+            image['data'] = self.superscan.grab_next_to_finish()
+            try:
                 if callable(self.get_info_dict):
                     info_dict = self.get_info_dict()
                     image.update(info_dict)
-                if not self._pause_event.is_set() or self._abort_event.is_set():
-                    self._acquisition_finished_event.set()
-                    if self._abort_event.is_set():
-                        break
-                self._pause_event.wait(timeout=self._pause_timeout)
-                counter += 1
+            except IndexError:
+                pass
+            else:
+                if len(image['data']) > 0:
+                    self.buffer.put(image, timeout=self.buffer_timeout)
+            if not self._pause_event.is_set() or self._abort_event.is_set():
+                self._acquisition_finished_event.set()
+                if self._abort_event.is_set():
+                    break
+            self._pause_event.wait(timeout=self._pause_timeout)
+            counter += 1
         self.superscan.stop_playing()
         self._acquisition_finished_event.set()
         self._n = -1
-    
+
     def close(self):
         self.abort()
-    
+
 class Buffer(queue.Queue):
     """
     A buffer for acquired images
@@ -1177,7 +1182,7 @@ class Buffer(queue.Queue):
         obj = super().get(block=block, timeout=timeout)
         self.task_done()
         return obj
-    
+
 class ProcessingLoop(object):
     """
     This class will process data from a buffer and notify the main thread about important events found during processing.
@@ -1186,7 +1191,7 @@ class ProcessingLoop(object):
     args: tuple/list, positional arguments passed to the respective funtion
     kwargs: dictionary, keyword arguments passed to the respective function
     """
-    
+
     def __init__(self, buffer, **kwargs):
         self.buffer = buffer
         self.tasks = kwargs.get('tasks', [])
@@ -1196,23 +1201,24 @@ class ProcessingLoop(object):
         self._abort_event = threading.Event()
         self._t = None
         self.on_found_something = None
-        
+
     def start(self):
         if self._t is not None and self._t.is_alive():
             return
         self._pause_event.set()
         self._abort_event.clear()
         self._t = threading.Thread(target=self._processing_thread, daemon=True)
-    
+        self._t.start()
+
     def pause(self, time=None):
         self._pause_event.clear()
-    
+
     def unpause(self):
         self._pause_event.set()
-    
+
     def abort(self):
         self._abort_event.set()
-    
+
     def _processing_thread(self):
         while not self._abort_event.is_set():
             image = self.buffer.get(timeout=self.buffer_timeout)
@@ -1229,7 +1235,7 @@ class ProcessingLoop(object):
                 if res is not None and callable(self.on_found_something):
                     self.on_found_something(function.__name__, res)
             self._pause_event.wait(timeout=self._pause_timeout)
-    
+
     def close(self):
         self.buffer.join()
         self.abort()
@@ -1243,30 +1249,30 @@ class MappingLoop(object):
     The attribute "coordinate_info" can be set to a list of the same length as "coordinate_list". If it is given,
     "start" and "next" will return the corresponding info to each coordinate.
     """
-    
+
     def __init__(self, coordinate_list, **kwargs):
         self._coordinate_list = coordinate_list
         self.as2 = kwargs.get('as2')
         self.switches = kwargs.get('switches', dict())
         self.interpolation = kwargs.get('interpolation')
         self.coordinate_info = kwargs.get('coordinate_info')
-        self.first_wait_time = kwargs.get('first_wait_time', 10)
-        self.wait_time = kwargs.get('wait_time', 3)        
+        self.first_wait_time = kwargs.get('first_wait_time', 3)
+        self.wait_time = kwargs.get('wait_time', 2)
         self.counter = 0
         self._current_position = None
-    
+
     @property
     def current_position(self):
         return self._current_position
-        
+
     def start(self):
         self._coordinate_iterator = iter(self._coordinate_list)
         self._coordinate_info_iterator = iter(self.coordinate_info) if self.coordinate_info is not None else None
         return self._next(self.first_wait_time)
-        
+
     def next(self):
         return self._next(self.wait_time)
-    
+
     def _next(self, wait_time):
         self.counter += 1
         self._current_position = next(self._coordinate_iterator)
@@ -1288,7 +1294,7 @@ class SuperScanMapper(Mapping):
     This class is the main part of a mapping process. It takes care of live logging, saving log files and coordinating
     actions between the different working threads.
     """
-    
+
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
         self.buffer = Buffer(maxsize=200)
@@ -1300,13 +1306,13 @@ class SuperScanMapper(Mapping):
         self._processing_finished_event = threading.Event()
         self._t = None
         self.tasks = []
-        
+
     def start(self):
         if self._t is not None and self._t.is_alive():
             return
         self._abort_event.clear()
         self._pause_event.set()
-        
+
         self.save_mapping_config()
         self.document_controller.queue_task(lambda: self.update_button('analyze_button', 'Retune now'))
         self.Tuner = Tuning(frame_parameters=self.frame_parameters.copy(), detectors=self.detectors, event=self.event,
@@ -1330,7 +1336,7 @@ class SuperScanMapper(Mapping):
 
         self.test_map = []
         self.write_map_info_file()
-        if self.switches.get('save'):
+        if self.switches.get('save_images', True):
             self.tasks.append({'function': self.save_image})
         if self.switches.get('show_last_frames_average'):
             self.tasks.append({'function': self.add_to_last_images})
@@ -1339,33 +1345,42 @@ class SuperScanMapper(Mapping):
             self.tasks.append({'function': self.Tuner.dirt_detector})
         if self.switches.get('do_returning'):
             self.tasks.append({'function': self.tuning_necessary})
+        self.tasks.append({'function': self.processing_finished})
         # Replace string names in self.tasks with actual functions
         self.setup_tasks()
         self.processing_loop.tasks = self.tasks
+        self.processing_loop.on_found_something = self.processing_event_occured
         self.processing_loop.start()
         self._t = threading.Thread(target=self._mapping_thread)
         self._t.start()
-    
+
     def abort(self):
         self._abort_event.set()
-    
+
     def pause(self, time=None):
         self._pause_event.clear()
-    
+
     def unpause(self):
         self._pause_event.set()
-    
+
     def _mapping_thread(self):
         stagex, stagey, stagex_corrected, stagey_corrected, stagez, focus, counter, info_dict = self.mapping_loop.start()
-        self.write_log('{:.0f}/{:.0f} (No. {:.0f}): x: {:f}, y: {:f}, z: {:f}, focus: {:f}'.format(counter,
+        self.write_log('{:.0f}/{:.0f} (No. {:.0f}): x: {:g}, y: {:g}, z: {:g}, focus: {:g}'.format(counter,
                                                                                                    len(self.map_coords),
                                                                                                    info_dict['number'],
                                                                                                    stagex_corrected,
                                                                                                    stagey_corrected,
-                                                                                                   stagez,
-                                                                                                   focus))
-        basename = '{:.4d}_{:.3f}_{:.3f}'.format(info_dict['number'], stagex_corrected, stagey_corrected)
-        
+                                                                                                   float(stagez),
+                                                                                                   float(focus)))
+#        self.write_log('{:.0f}/{:.0f} (No. {:.0f}): x: {:f}, y: {:f}, z: {:f}, focus: {:f}'.format(counter,
+#                                                                                                   len(self.map_coords),
+#                                                                                                   info_dict['number'],
+#                                                                                                   stagex_corrected,
+#                                                                                                   stagey_corrected,
+#                                                                                                   stagez,
+#                                                                                                   focus))
+        basename = '{:04d}_{:.3f}_{:.3f}'.format(info_dict['number'], stagex_corrected, stagey_corrected)
+
         self.processing_loop.start()
         while not self._abort_event.is_set():
             self.test_map.append((stagex, stagey, stagex_corrected, stagey_corrected, stagez, focus))
@@ -1380,26 +1395,29 @@ class SuperScanMapper(Mapping):
             self.acquisition_loop = AcquisitionLoop(buffer=self.buffer, get_info_dict=get_info_dict,
                                                     superscan=self.superscan,
                                                     nion_frame_parameters=self.nion_frame_parameters)
-            self.acquisition_loop.start()
+            self.acquisition_loop.start(n=self.number_of_images)
+            print('Waiting for acuqisiiton to finish')
             self.wait_for_message_or_finished()
+            print('waiting for unpause')
             self._pause_event.wait()
+            print('going to next position')
             try:
                 stagex, stagey, stagex_corrected, stagey_corrected, stagez, focus, counter, info_dict = self.mapping_loop.next()
             except StopIteration:
                 break
-            self.write_log('{:.0f}/{:.0f} (No. {:.0f}): x: {:f}, y: {:f}, z: {:f}, focus: {:f}'.format(counter,
+            self.write_log('{:.0f}/{:.0f} (No. {:.0f}): x: {:g}, y: {:g}, z: {:g}, focus: {:g}'.format(counter,
                                                                                                    len(self.map_coords),
                                                                                                    info_dict['number'],
                                                                                                    stagex_corrected,
                                                                                                    stagey_corrected,
-                                                                                                   stagez,
-                                                                                                   focus))
-            basename = '{:.4d}_{:.3f}_{:.3f}'.format(info_dict['number'], stagex_corrected, stagey_corrected)
-        
+                                                                                                   float(stagez),
+                                                                                                   float(focus)))
+            basename = '{:04d}_{:.3f}_{:.3f}'.format(info_dict['number'], stagex_corrected, stagey_corrected)
+
         self.write_log('\nDONE')
         self.close()
-            
-        
+
+
     def write_log(self, message):
         try:
             self.Tuner.logwrite(message)
@@ -1409,14 +1427,16 @@ class SuperScanMapper(Mapping):
             self.logfile.write(message + '\n')
         except Exception as e:
             print('Could not write log message to logfile! Reason: ' + str(e))
-    
+
     def wait_for_message_or_finished(self):
         if self.switches.get('wait_for_processing', True):
+            print('waiting for event')
             self._processing_finished_event.wait()
+            print('event happened')
             self._processing_finished_event.clear()
         else:
             self.acquisition_loop.wait_for_acquisition()
-    
+
     def processing_event_occured(self, taskname, obj):
         """
         Handles events from the processing loop.
@@ -1433,7 +1453,7 @@ class SuperScanMapper(Mapping):
             if self.switches.get('abort_series_on_dirt') and np.sum(obj) > np.prod(obj.shape)*self.dirt_area:
                 self.acquisition_loop.abort()
                 self.write_log('Aborted series because of too high dirt coverage.')
-    
+
     def handle_retuning(self):
         self.acquisition_loop.pause()
         message = ''
@@ -1445,10 +1465,17 @@ class SuperScanMapper(Mapping):
         else:
             self.tuning_successful(False, None)
         self.acquisition_loop.unpause()
-    
+
     def save_image(self, image, *args, **kwargs):
-        tifffile.imsave(image.get('name') + '.tif', image.get('data').data)
-    
+        tifffile.imsave(os.path.join(self.store, kwargs.get('name') + '.tif'), image[0].data)
+
+    def processing_finished(self, *args, **kwargs):
+        """
+        This function has the only purpose to inform the main thread that all images from a certain position were
+        processed. It has to return a not None value in order for the notification to happen.
+        """
+        return kwargs.get('is_last')
+
     def setup_tasks(self):
         tasks = []
         for task in self.tasks:
@@ -1463,20 +1490,20 @@ class SuperScanMapper(Mapping):
                     task['function'] = function
                     tasks.append(task)
         self.tasks = tasks
-        
+
     def create_nion_frame_parameters(self):
         self.nion_frame_parameters = {}
         self.nion_frame_parameters['size'] = tuple(self.frame_parameters['size_pixels'])
         self.nion_frame_parameters['pixel_time_us'] = self.frame_parameters['pixeltime']
         self.nion_frame_parameters['fov_nm'] = self.frame_parameters['fov']
         self.nion_frame_parameters['rotation_rad'] = self.frame_parameters['rotation']/180*np.pi
-        
+
     def close(self):
         self.logfile.close()
         self.acquisition_loop.close()
         self.processing_loop.close()
-        
-        
+
+
 #def find_offset_and_rotation(as2, superscan):
 #    """
 #    This function finds the current rotation of the scan with respect to the stage coordinate system and the offset that has to be set between two neighboured images when no overlap should occur.

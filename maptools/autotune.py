@@ -1595,7 +1595,7 @@ class Tuning(Peaking):
                     if C12 is not None:
                         self.keys = ['C21_a', 'C21_b', 'C23_a', 'C23_b']
                         aberrations['C12_b'] = C12[0]
-                        aberration['C12_a'] = C12[1]
+                        aberrations['C12_a'] = C12[1]
                     self.image_grabber(acquire_image=False, aberrations=aberrations)
 
             for key in self.keys:
@@ -1779,6 +1779,8 @@ class Tuning(Peaking):
                                                                                            astig_angle*180/np.pi))
         #astig_angle -= np.pi/2 if astig_defocus > 0 else 0
         #shear_angle = np.pi/4
+        if astig_angle < np.pi:
+            astig_angle += np.pi
         # Calculate astigmatism in carthesian coordinates
         C12 = np.array((-np.sin(astig_angle), np.cos(astig_angle)))
 #        # Calculate astigmatism in weird coordinates of the corrector from polar coordinates

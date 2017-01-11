@@ -44,16 +44,12 @@ class AnalyzeFFTPanelDelegate(object):
                     self.change_label_text(self.state_label, 'Measuring...')
                     self.change_button_state(self.find_focus_button, False)
                     self.change_button_state(self.correct_button, False)
-                    print('Measuring Focus')
                     self.T.focus = self.T.find_focus(method='general')[0][1]
-                    print('Done with focus')
                     self.as2.set_control_output('EHTFocus', -self.T.focus*1e-9, options={'inform': True, 'confirm': True})
-                    print('Measuring astig')
                     self.C12 = self.T.measure_astig(method='general')
-                    print('DOne with astig')
                     if self.C12 is not None:
-                        self.as2.set_control_output('C12.u', -abs(self.C12[1])*1e-9, options={'inform': True, 'confirm': True})
-                        self.as2.set_control_output('C12.v', -abs(self.C12[0])*1e-9, options={'inform': True, 'confirm': True})
+                        self.as2.set_control_output('C12.u', self.C12[1]*1e-9, options={'inform': True, 'confirm': True})
+                        self.as2.set_control_output('C12.v', self.C12[0]*1e-9, options={'inform': True, 'confirm': True})
 
                     focus_string = 'Measurement {:s}:\n C10\t{:.2f} nm\n'.format(time.strftime('%d-%m-%Y %H:%M'),
                                                                                  self.T.focus)
