@@ -571,16 +571,16 @@ class Imaging(object):
                     self.as2.set_property_as_float('CSH.x', rotated_center[1])
                     time.sleep(0.1)
 
-                im = None
-                import threading
-                image_finished = threading.Event()
-                def get_image():
-                    nonlocal im
-                    im = self.superscan.record(**record_parameters)
-                    image_finished.set()
-                self.document_controller.queue_task(get_image)
-                image_finished.wait()
-                image_finished.clear()
+                #im = None
+                #import threading
+                #image_finished = threading.Event()
+                #def get_image():
+                #    nonlocal im
+                im = self.superscan.record(**record_parameters)
+                #    image_finished.set()
+                #self.document_controller.queue_task(get_image)
+                #image_finished.wait()
+                #image_finished.clear()
 
                 return_image = [data_and_metadata.data for data_and_metadata in im]
 
@@ -1191,7 +1191,7 @@ class Tuning(Peaking):
     @property
     def merits(self):
         return self._merits
-    
+
     @property
     def analysis_methods(self):
         return self._analysis_methods
