@@ -25,9 +25,10 @@ class AnalyzeFFTPanelDelegate(object):
         self.C12 = None
 
     def create_panel_widget(self, ui, document_controller):
-        def find_focus_button_clicked():
+        def measure_button_clicked():
             reload(at)
             self.T = at.Tuning()
+            self.T.method = self.method_combo._widget.current_item
             self.T.document_controller = document_controller
             if self.superscan is None:
                 self.superscan = self.__api.get_hardware_source_by_id('superscan', '1')
@@ -39,14 +40,19 @@ class AnalyzeFFTPanelDelegate(object):
             save_tuning = False
             if self.save_tuning_data_checkbox.checked:
                 save_tuning = True
-            def run_find_focus():
+            def run_measure():
                 try:
                     self.change_label_text(self.state_label, 'Measuring...')
                     self.change_button_state(self.find_focus_button, False)
                     self.change_button_state(self.correct_button, False)
-                    self.T.focus = self.T.find_focus(method='general')[0][1]
+                    stepsize = int(self.T.imsize/10)
+                    if stepsize < 2:
+                        stepsize = 2
+                    elif stepsize > 10:
+                        stepsize = 10
+                    self.T.focus = self.T.find_focus(stepsize=stepsize, range=3*stepsize)[0][1]
                     self.as2.set_control_output('EHTFocus', -self.T.focus*1e-9, options={'inform': True, 'confirm': True})
-                    self.C12 = self.T.measure_astig(method='general')
+                    self.C12 = self.T.measure_astig()
                     if self.C12 is not None:
                         self.as2.set_control_output('C12.u', self.C12[1]*1e-9, options={'inform': True, 'confirm': True})
                         self.as2.set_control_output('C12.v', self.C12[0]*1e-9, options={'inform': True, 'confirm': True})
@@ -82,15 +88,7 @@ class AnalyzeFFTPanelDelegate(object):
                     self.change_button_state(self.find_focus_button, True)
 
 
-            threading.Thread(target=run_find_focus).start()
-
-        def measure_astig_button_clicked():
-            def run_measure_astig():
-                self.C12 = self.T.measure_astig(method='general')
-                self.change_button_state(self.correct_button, True)
-                astig_string = ' C12.a\t{:.2f} nm\n C12.b\t{:.2f} nm\n\n'.format(self.C12[1], self.C12[0])
-                self.__api.queue_task(lambda: self.result_widget.insert_text(astig_string))
-            run_measure_astig()
+            threading.Thread(target=run_measure).start()
 
         def correct_button_clicked():
             def run_correct():
@@ -136,10 +134,10 @@ class AnalyzeFFTPanelDelegate(object):
         column = ui.create_column_widget()
         #self.input_field.on_editing_finished = send_button_clicked
         self.find_focus_button = ui.create_push_button_widget('Measure')
-        self.find_focus_button.on_clicked = find_focus_button_clicked
-        self.measure_astig_button = ui.create_push_button_widget('Measure Astig')
-        self.measure_astig_button.on_clicked = measure_astig_button_clicked
-        self.measure_astig_button._PushButtonWidget__push_button_widget.enabled = False
+        self.find_focus_button.on_clicked = measure_button_clicked
+        self.method_label = ui.create_label_widget('Method: ')
+        self.method_combo = ui.create_combo_box_widget()
+        self.method_combo.items = ['general', 'graphene']
         self.result_widget = ui.create_text_edit_widget()
         self.result_widget._TextEditWidget__text_edit_widget.editable = False
         self.save_tuning_data_checkbox = ui.create_check_box_widget()
@@ -151,8 +149,8 @@ class AnalyzeFFTPanelDelegate(object):
         self.state_label = ui.create_label_widget('')
 
         focus_row = ui.create_row_widget()
-        astig_row = ui.create_row_widget()
         correct_row = ui.create_row_widget()
+        method_row = ui.create_row_widget()
         result_row = ui.create_row_widget()
         focus_row.add_spacing(5)
         focus_row.add(self.find_focus_button)
@@ -163,10 +161,14 @@ class AnalyzeFFTPanelDelegate(object):
         focus_row.add_stretch()
         column.add_spacing(10)
         column.add(focus_row)
-#        column.add_spacing(10)
-#        astig_row.add(self.measure_astig_button)
-        astig_row.add_stretch()
-        column.add(astig_row)
+        column.add_spacing(10)
+        method_row.add_spacing(5)
+        method_row.add_stretch()
+        method_row.add(self.method_label)
+        method_row.add(self.method_combo)
+        method_row.add_spacing(10)
+        column.add_spacing(10)
+        column.add(method_row)
         column.add_spacing(10)
         correct_row.add_spacing(5)
         correct_row.add(self.correct_button)
@@ -178,8 +180,8 @@ class AnalyzeFFTPanelDelegate(object):
         column.add(result_row)
         result_row.add_spacing(5)
         result_row.add(self.result_widget)
-        result_row.add_spacing(5)
-        column.add_spacing(5)
+        result_row.add_spacing(10)
+        column.add_spacing(10)
         #column.add_stretch()
 
         return column

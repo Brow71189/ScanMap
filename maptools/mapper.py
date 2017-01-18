@@ -586,8 +586,8 @@ class Mapping(object):
                 focus.append(value[3])
 
             self.interpolator = []
-            self.interpolator.append(Rbf(x, y, z, function='inverse'))
-            self.interpolator.append(Rbf(x, y, focus, function='inverse'))
+            self.interpolator.append(Rbf(x, y, z, function='thin_plate'))
+            self.interpolator.append(Rbf(x, y, focus, function='thin_plate'))
 
         return (self.interpolator[0](*target), self.interpolator[1](*target))
 
@@ -936,24 +936,7 @@ class Mapping(object):
 
         #acquire overview image if desired
         if self.online and self.switches['acquire_overview']:
-            self.Tuner.logwrite('Acquiring overview...')
-            #Use longest edge as image size
-            if abs(self.rightX-self.leftX) < abs(self.topY-self.botY):
-                over_size = abs(self.topY-self.botY)*1e9 + 6*self.frame_parameters['fov']
-            else:
-                over_size = abs(self.rightX-self.leftX)*1e9 + 6*self.frame_parameters['fov']
-
-            #Find center of mapped area:
-            map_center = ((self.leftX+self.rightX)/2, (self.topY+self.botY)/2)
-            #Goto center
-            self.as2.set_property_as_float('StageOutX', map_center[0])
-            self.as2.set_property_as_float('StageOutY', map_center[1])
-            time.sleep(5)
-            #acquire image and save it
-            overview_parameters = {'size_pixels': (4096, 4096), 'center': (0,0), 'pixeltime': 4, \
-                                'fov': over_size, 'rotation': self.frame_parameters['rotation']}
-            self.Tuner.image = self.Tuner.image_grabber(frame_parameters=overview_parameters, show_live_image=True)[0]
-            tifffile.imsave(os.path.join(self.store, 'Overview_{:.0f}_nm.tif'.format(over_size)), self.Tuner.image)
+            self.acquire_overview()
 
         if self.event is None or not self.event.is_set():
             x_map = np.zeros((self.num_subframes[1], self.num_subframes[0]))
@@ -992,6 +975,26 @@ class Mapping(object):
         self.document_controller.queue_task(lambda: self.update_button('abort_button', 'Abort map'))
         self.document_controller.queue_task(lambda: self.update_button('analyze_button', 'Analyze image'))
         self.Tuner.logwrite('\nDONE\n')
+    
+    def acquire_overview(self):
+        self.Tuner.logwrite('Acquiring overview...')
+        #Use longest edge as image size
+        if abs(self.rightX-self.leftX) < abs(self.topY-self.botY):
+            over_size = abs(self.topY-self.botY)*1e9 + 6*self.frame_parameters['fov']
+        else:
+            over_size = abs(self.rightX-self.leftX)*1e9 + 6*self.frame_parameters['fov']
+
+        #Find center of mapped area:
+        map_center = ((self.leftX+self.rightX)/2, (self.topY+self.botY)/2)
+        #Goto center
+        self.as2.set_property_as_float('StageOutX', map_center[0])
+        self.as2.set_property_as_float('StageOutY', map_center[1])
+        time.sleep(5)
+        #acquire image and save it
+        overview_parameters = {'size_pixels': (4096, 4096), 'center': (0,0), 'pixeltime': 4, \
+                            'fov': over_size, 'rotation': self.frame_parameters['rotation']}
+        self.Tuner.image = self.Tuner.image_grabber(frame_parameters=overview_parameters, show_live_image=True)[0]
+        tifffile.imsave(os.path.join(self.store, 'Overview_{:.0f}_nm.tif'.format(over_size)), self.Tuner.image)
 
     def update_button(self, button, text):
         if self.gui_communication.get(button) is not None:
@@ -1014,7 +1017,7 @@ class Mapping(object):
                                                                str(accept_timeout) +  ' seconds, otherwise the map ' +
                                                                'will continue with the old values.',
                                                                was_accepted)
-        )
+                                            )
         starttime = time.time()
         while time.time() - starttime < accept_timeout:
             if accepted:
@@ -1101,6 +1104,7 @@ class AcquisitionLoop(object):
         self._pause_timeout = None
         self._pause_event = threading.Event()
         self._abort_event = threading.Event()
+        self._abort_event.set()
         self._acquisition_finished_event = threading.Event()
         self._t = None
         self.get_info_dict = kwargs.get('get_info_dict')
@@ -1127,8 +1131,9 @@ class AcquisitionLoop(object):
         self.superscan.stop_playing()
 
     def unpause(self):
-        self.superscan.set_frame_parameters(self.nion_frame_parameters)
-        self.superscan.start_playing()
+        if not self._abort_event.is_set():
+            self.superscan.set_frame_parameters(self.nion_frame_parameters)
+            self.superscan.start_playing()
         self._pause_event.set()
 
     def abort(self):
@@ -1306,6 +1311,7 @@ class SuperScanMapper(Mapping):
         self._processing_finished_event = threading.Event()
         self._t = None
         self.tasks = []
+        self.on_low_level_event_occured = None
 
     def start(self):
         if self._t is not None and self._t.is_alive():
@@ -1314,7 +1320,8 @@ class SuperScanMapper(Mapping):
         self._pause_event.set()
 
         self.save_mapping_config()
-        self.document_controller.queue_task(lambda: self.update_button('analyze_button', 'Retune now'))
+        if callable(self.on_low_level_event_occured):
+            self.on_low_level_event_occured('map_started')
         self.Tuner = Tuning(frame_parameters=self.frame_parameters.copy(), detectors=self.detectors, event=self.event,
                      online=self.online, document_controller=self.document_controller, as2=self.as2,
                      superscan=self.superscan)
@@ -1334,7 +1341,7 @@ class SuperScanMapper(Mapping):
             os.makedirs(self.store)
         self.logfile = open(os.path.join(self.store, 'log.txt'), mode='w')
 
-        self.test_map = []
+        self._mapped_coordinates = []
         self.write_map_info_file()
         if self.switches.get('save_images', True):
             self.tasks.append({'function': self.save_image})
@@ -1343,8 +1350,8 @@ class SuperScanMapper(Mapping):
             self.tasks.append({'function': self.show_average_of_last_frames})
         if self.switches.get('abort_series_on_dirt'):
             self.tasks.append({'function': self.Tuner.dirt_detector})
-        if self.switches.get('do_returning'):
-            self.tasks.append({'function': self.tuning_necessary})
+#        if self.switches.get('do_retuning'):
+#            self.tasks.append({'function': self.tuning_necessary})
         self.tasks.append({'function': self.processing_finished})
         # Replace string names in self.tasks with actual functions
         self.setup_tasks()
@@ -1353,6 +1360,14 @@ class SuperScanMapper(Mapping):
         self.processing_loop.start()
         self._t = threading.Thread(target=self._mapping_thread)
         self._t.start()
+        
+    @property
+    def is_running(self):
+        return self._t is not None and self._t.is_alive()
+    
+    @property
+    def series_running(self):
+        return self.number_of_images > 1 and self.acquisition_loop.is_acquiring
 
     def abort(self):
         self._abort_event.set()
@@ -1362,6 +1377,9 @@ class SuperScanMapper(Mapping):
 
     def unpause(self):
         self._pause_event.set()
+    
+    def abort_series(self):
+        self.acquisition_loop.abort()
 
     def _mapping_thread(self):
         stagex, stagey, stagex_corrected, stagey_corrected, stagez, focus, counter, info_dict = self.mapping_loop.start()
@@ -1383,7 +1401,9 @@ class SuperScanMapper(Mapping):
 
         self.processing_loop.start()
         while not self._abort_event.is_set():
-            self.test_map.append((stagex, stagey, stagex_corrected, stagey_corrected, stagez, focus))
+            self._mapped_coordinates.append((stagex, stagey, stagex_corrected, stagey_corrected, stagez, focus))
+            if self.switches.get('do_retuning') and self.retuning_mode[0] == 'at_every_position':
+                self.handle_retuning()
             if self.number_of_images < 2:
                 image_info = [{'name': basename}]
             else:
@@ -1396,11 +1416,8 @@ class SuperScanMapper(Mapping):
                                                     superscan=self.superscan,
                                                     nion_frame_parameters=self.nion_frame_parameters)
             self.acquisition_loop.start(n=self.number_of_images)
-            print('Waiting for acuqisiiton to finish')
             self.wait_for_message_or_finished()
-            print('waiting for unpause')
             self._pause_event.wait()
-            print('going to next position')
             try:
                 stagex, stagey, stagex_corrected, stagey_corrected, stagez, focus, counter, info_dict = self.mapping_loop.next()
             except StopIteration:
@@ -1414,7 +1431,12 @@ class SuperScanMapper(Mapping):
                                                                                                    float(focus)))
             basename = '{:04d}_{:.3f}_{:.3f}'.format(info_dict['number'], stagex_corrected, stagey_corrected)
 
+        if self.switches.get('acquire_overview'):
+            self.acquire_overview()
         self.write_log('\nDONE')
+        self.save_mapped_coordinates()
+        if callable(self.on_low_level_event_occured):
+            self.on_low_level_event_occured('map_finished')
         self.close()
 
 
@@ -1430,9 +1452,7 @@ class SuperScanMapper(Mapping):
 
     def wait_for_message_or_finished(self):
         if self.switches.get('wait_for_processing', True):
-            print('waiting for event')
             self._processing_finished_event.wait()
-            print('event happened')
             self._processing_finished_event.clear()
         else:
             self.acquisition_loop.wait_for_acquisition()
@@ -1445,29 +1465,101 @@ class SuperScanMapper(Mapping):
         """
         if taskname == 'processing_finished':
             self._processing_finished_event.set()
-        if taskname == 'tuning_necessary':
+        elif taskname == 'tuning_necessary':
             if obj[0]:
                 self.write_log('Starting retuning, reason: ' + obj[1])
                 self.handle_retuning()
-        if taskname == 'dirt_detector':
-            if self.switches.get('abort_series_on_dirt') and np.sum(obj) > np.prod(obj.shape)*self.dirt_area:
-                self.acquisition_loop.abort()
-                self.write_log('Aborted series because of too high dirt coverage.')
+        elif taskname == 'dirt_detector':
+            if np.sum(obj) > np.prod(obj.shape)*self.dirt_area:
+                if self.switches.get('do_retuning') and self.retuning_mode[0] == 'on_dirt':
+                    self.handle_retuning()
+                if self.switches.get('abort_series_on_dirt'):
+                    self.acquisition_loop.abort()
+                    self._processing_finished_event.set()
+                    self.write_log('Aborted series because of too high dirt coverage.')
 
     def handle_retuning(self):
+        self.pause()
         self.acquisition_loop.pause()
-        message = ''
-        return_message, focused = self.wait_for_focused(message)
-        message = return_message
+        self.acquisition_loop.wait_for_acquisition()
+        focused = None
+        if self.retuning_mode[1] == 'manual':
+            message = ''
+            return_message, focused = self.wait_for_focused(message)
+            message = return_message
+        elif self.retuning_mode[1] == 'auto':
+            focused = self.auto_focus_and_astig()
+            
         if focused is not None:
             new_z, newEHTFocus = focused
             self.tuning_successful(True, self.mapping_loop.current_position[:2] + (new_z, newEHTFocus))
         else:
             self.tuning_successful(False, None)
         self.acquisition_loop.unpause()
+        self.unpause()
+    
+    def auto_focus_and_astig(self):
+        try:
+            self.Tuner.focus = self.Tuner.find_focus(method='general' if self.retuning_mode[0] == 'on_dirt' else
+                                                     'graphene')[0][1]
+        except RuntimeError:
+            self.write_log('Not able to find focus automatically.')
+            return
+            
+        self.as2.set_control_output('EHTFocus', self.Tuner.focus*1e-9, options={'value_type': 'delta', 'confirm': True})
+        self.write_log('Adjusted focus by {:.1f} nm.'.format(self.Tuner.focus))
+
+        self.C12 = self.Tuner.measure_astig()
+        if self.C12 is not None:
+            self.as2.set_control_output('C12.u', self.C12[1]*1e-9, options={'inform': True, 'confirm': True})
+            self.as2.set_control_output('C12.v', self.C12[0]*1e-9, options={'inform': True, 'confirm': True})
+            self.write_log('Adjusted C12.a by {:.1f} and C12.b by {:.1f} nm.'.format(self.as2.get_control_output('C12.a'),
+                                                                                     self.as2.get_control_output('C12.b')))
+            C12a_target = self.as2.get_control_output('^C12.a')
+            C12b_target = self.as2.get_control_output('^C12.b')
+            self.as2.set_control_output('C12.a', C12a_target, options={'confirm': True})
+            self.as2.set_control_output('C12.b', C12b_target, options={'confirm': True})
+        return (self.as2.get_control_output('C10'), self.as2.get_control_output('EHTFocus'))
 
     def save_image(self, image, *args, **kwargs):
         tifffile.imsave(os.path.join(self.store, kwargs.get('name') + '.tif'), image[0].data)
+    
+    def save_mapped_coordinates(self):
+        x_map = np.zeros((self.num_subframes[1], self.num_subframes[0]))
+        y_map = np.zeros((self.num_subframes[1], self.num_subframes[0]))
+        x_corrected_map = np.zeros((self.num_subframes[1], self.num_subframes[0]))
+        y_corrected_map = np.zeros((self.num_subframes[1], self.num_subframes[0]))
+        z_map = np.zeros((self.num_subframes[1], self.num_subframes[0]))
+        focus_map = np.zeros((self.num_subframes[1], self.num_subframes[0]))
+        exit_loop = False
+        for j in range(self.num_subframes[1]):
+            for i in range(self.num_subframes[0]):
+                if i+j*self.num_subframes[0] >= len(self._mapped_coordinates):
+                    exit_loop = True
+                    break
+                if j%2 == 0: #Odd lines, e.g. map from left to right
+                    x_map[j,i] = self._mapped_coordinates[i+j*self.num_subframes[0]][0]
+                    y_map[j,i] = self._mapped_coordinates[i+j*self.num_subframes[0]][1]
+                    x_corrected_map[j,i] = self._mapped_coordinates[i+j*self.num_subframes[0]][2]
+                    y_corrected_map[j,i] = self._mapped_coordinates[i+j*self.num_subframes[0]][3]
+                    z_map[j,i] = self._mapped_coordinates[i+j*self.num_subframes[0]][4]
+                    focus_map[j,i] = self._mapped_coordinates[i+j*self.num_subframes[0]][5]
+                else: #Even lines, e.g. scan from right to left
+                    x_map[j,(self.num_subframes[0]-(i+1))] = self._mapped_coordinates[i+j*self.num_subframes[0]][0]
+                    y_map[j,(self.num_subframes[0]-(i+1))] = self._mapped_coordinates[i+j*self.num_subframes[0]][1]
+                    x_corrected_map[j,(self.num_subframes[0]-(i+1))] = self._mapped_coordinates[i+j*self.num_subframes[0]][2]
+                    y_corrected_map[j,(self.num_subframes[0]-(i+1))] = self._mapped_coordinates[i+j*self.num_subframes[0]][3]
+                    z_map[j,(self.num_subframes[0]-(i+1))] = self._mapped_coordinates[i+j*self.num_subframes[0]][4]
+                    focus_map[j,(self.num_subframes[0]-(i+1))] = self._mapped_coordinates[i+j*self.num_subframes[0]][5]
+            if exit_loop:
+                break
+
+        tifffile.imsave(os.path.join(self.store, 'x_map.tif'), np.asarray(x_map, dtype='float32'))
+        tifffile.imsave(os.path.join(self.store, 'y_map.tif'), np.asarray(y_map, dtype='float32'))
+        tifffile.imsave(os.path.join(self.store, 'x_corrected_map.tif'), np.asarray(x_corrected_map, dtype='float32'))
+        tifffile.imsave(os.path.join(self.store, 'y_corrected_map.tif'), np.asarray(y_corrected_map, dtype='float32'))
+        tifffile.imsave(os.path.join(self.store, 'z_map.tif'), np.asarray(z_map, dtype='float32'))
+        tifffile.imsave(os.path.join(self.store, 'focus_map.tif'), np.asarray(focus_map, dtype='float32'))
 
     def processing_finished(self, *args, **kwargs):
         """

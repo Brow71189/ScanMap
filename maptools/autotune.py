@@ -1318,7 +1318,7 @@ class Tuning(Peaking):
         self.logwrite('Latest ' + merit + ' merit: ' + str(current))
         return direction
 
-    def find_focus(self, stepsize=3, range=9, **kwargs):
+    def find_focus(self, stepsize=3, range=9, maxsteps=10, **kwargs):
         if kwargs.get('method') is not None:
             self.method = kwargs.pop('method')
 
@@ -1340,8 +1340,11 @@ class Tuning(Peaking):
             raise RuntimeError('Could not find focus.')
 
         best_focus = np.argmin(analysis_results[:, 7]) if _has_kurtosis else np.argmax(analysis_results[:, 1])
-
+        counter = 0
         while best_focus == 0 or best_focus == len(analysis_results)-1:
+            if counter > maxsteps:
+                raise RuntimeError('Could not find focus.')
+            counter += 1
             if best_focus == 0:
                 aberrations = {'EHTFocus': analysis_results[0, 0] - stepsize}
             else:

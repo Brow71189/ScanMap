@@ -59,6 +59,7 @@ class ScanMapPanelDelegate(object):
         self.superscan = self.__api.get_hardware_source_by_id('scan_controller', '1')
         self.as2 = self.__api.get_instrument_by_id('autostem_controller', '1')
         self.ccd = self.__api.get_hardware_source_by_id('nionccd1010', '1')
+        self.document_controller = document_controller
 
         column = ui.create_column_widget()
 
@@ -440,7 +441,12 @@ class ScanMapPanelDelegate(object):
 
         def abort_button_clicked():
             #self.stop_tuning()
-            self.Mapper.abort()
+            if self.number_of_images < 2 or (hasattr(self, 'last_time_abort_clicked') and
+                                             time.time() - self.last_time_abort_clicked < 1):
+                self.Mapper.abort()
+            else:
+                self.last_time_abort_clicked = time.time()
+                self.Mapper.abort_series()
 #            if self.thread_communication.get('series_running'):
 #                self.abort_series_event.set()
 #                self.thread_communication['series_running'] = False
@@ -451,9 +457,8 @@ class ScanMapPanelDelegate(object):
 #                self.event.set()
 
         def analyze_button_clicked():
-            if self.thread is not None and self.thread.is_alive():
-                self.tune_now_event.set()
-                logging.info('Tuning after the current frame is acquired.')
+            if self.Mapper is not None and self.Mapper.is_running:
+                self.Mapper.handle_retuning()
             else:
                 selected_data_item = document_controller.target_data_item
                 imsize = selected_data_item.dimensional_calibrations[0].scale * selected_data_item.data.shape[0]
@@ -554,8 +559,10 @@ class ScanMapPanelDelegate(object):
         right_fields_column.add_spacing(5)
         right_fields_column.add(right_edit_row3)
         right_fields_column.add_spacing(10)
+        left_fields_column.add_stretch()
         left_fields_column.add(ui.create_label_widget(_("Save Coordinates")))
         left_fields_column.add_spacing(5)
+        right_fields_column.add_stretch()
         right_fields_column.add(ui.create_label_widget(_("Goto Coordinates")))
         right_fields_column.add_spacing(5)
         left_fields_column.add(left_buttons_row1)
@@ -571,8 +578,8 @@ class ScanMapPanelDelegate(object):
         column.add_spacing(5)
         column.add(checkbox_row4)
         column.add_spacing(5)
-        column.add(checkbox_row5)
-        column.add_spacing(5)
+#        column.add(checkbox_row5)
+#        column.add_spacing(5)
         column.add(checkbox_row6)
         column.add_spacing(5)
         column.add(checkbox_row7)
@@ -690,10 +697,10 @@ class ScanMapPanelDelegate(object):
         abort_button = ui.create_push_button_widget(_("Abort map"))
         analyze_button = ui.create_push_button_widget(_("Analyze image"))
 
-        retune_checkbox = ui.create_check_box_widget(_("Retune live, method: "))
+        retune_checkbox = ui.create_check_box_widget(_("Retune live "))
         retune_checkbox.on_check_state_changed = checkbox_changed
         method_combo_box = ui.create_combo_box_widget()
-        method_combo_box.items = ['edges', 'reference', 'missing peaks']
+        method_combo_box.items = ['at every position', 'on dirt']
         method_combo_box.on_current_item_changed = method_combo_box_changed
         mode_combo_box = ui.create_combo_box_widget()
         mode_combo_box.items = ['manual', 'auto']
@@ -755,7 +762,7 @@ class ScanMapPanelDelegate(object):
 
         checkbox_row2.add(overview_checkbox)
         checkbox_row2.add_spacing(3)
-        checkbox_row2.add(blank_checkbox)
+        #checkbox_row2.add(blank_checkbox)
         checkbox_row2.add_stretch()
 
         checkbox_row3.add(correct_stage_errors_checkbox)
@@ -768,8 +775,8 @@ class ScanMapPanelDelegate(object):
         checkbox_row4.add(ui.create_label_widget(_('% dirt in image')))
         checkbox_row4.add_stretch()
 
-        checkbox_row5.add(isotope_mapping_checkbox)
-        checkbox_row5.add_stretch()
+#        checkbox_row5.add(isotope_mapping_checkbox)
+#        checkbox_row5.add_stretch()
 
         checkbox_row6.add(show_average_checkbox)
         checkbox_row6.add(average_number_line_edit)
@@ -803,6 +810,17 @@ class ScanMapPanelDelegate(object):
         self._checkboxes['aligned_average'] = align_average_checkbox
 
         return column
+    
+    def low_level_event_occured(self, name):
+        if name == 'map_started':
+            def update_button():
+                self.thread_communication['analyze_button'].text = 'Retune now'
+            self.document_controller.queue_task(update_button)
+        if name == 'map_finished':
+            def update_button():
+                self.thread_communication['analyze_button'].text = 'Analyze Image'
+            self.document_controller.queue_task(update_button)
+            
 
     def save_coords(self, position):
         self.coord_dict[position] = (self.as2.get_property_as_float('StageOutX'),
@@ -853,7 +871,7 @@ class ScanMapPanelDelegate(object):
                          % (num_subframes[0]*num_subframes[1]*(self.frame_parameters['fov']*1e-3)**2))
             logging.info('Approximate mapping time: %.0f s'
                          % (num_subframes[0]*num_subframes[1]*(self.frame_parameters['size_pixels'][0]**2
-                            *np.mean(self.frame_parameters['pixeltime'])*1e-6*self.number_of_images + 4)))
+                            *np.mean(self.frame_parameters['pixeltime'])*1e-6*self.number_of_images + self.sleeptime)))
 
 
 class ScanMapExtension(object):
