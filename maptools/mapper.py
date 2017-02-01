@@ -33,24 +33,27 @@ class Mapping(object):
         self.document_controller = kwargs.get('document_controller')
         self.coord_dict = kwargs.get('coord_dict')
         # frame_parameters are: rotation, imsize, impix, pixeltime
-        self.frame_parameters = kwargs.get('frame_parameters', {})
+        self.frame_parameters = kwargs.get('frame_parameters',
+                                           {'size_pixels': (2048, 2048), 'pixeltime': 0.2, 'fov': 20,
+                                           'rotation': 90})
         self.detectors = kwargs.get('detectors', {'HAADF': False, 'MAADF': True})
         # supported switches are: do_autotuning, use_z_drive, auto_offset, auto_rotation, compensate_stage_error,
         # acquire_overview, blank_beam, tune_at_edges, abort_series_on_dirt, isotope_mapping
-        self.switches = kwargs.get('switches', {})
+        self.switches = kwargs.get('switches', {'do_retuning': False, 'use_z_drive': False,
+                                                'abort_series_on_dirt': False, 'compensate_stage_error': False,
+                                                'acquire_overview': True, 'show_last_frames_average': False,
+                                                'aligned_average': False})
         self.number_of_images = kwargs.get('number_of_images', 1)
         self.dirt_area = kwargs.get('dirt_area', 0.5)
         self.peak_intensity_reference = kwargs.get('peak_intensity_reference')
-        if kwargs.get('savepath') is not None:
-            self._savepath = os.path.normpath(kwargs.get('savepath'))
-        else:
-            self._savepath = None
+        self._savepath = None
+        self.savepath = kwargs.get('savepath', 'Z:/ScanMap/')
         self.event = kwargs.get('event')
         self.tune_event = kwargs.get('tune_event')
         self.tune_now_event = kwargs.get('tune_now_event')
         self.abort_series_event = kwargs.get('abort_series_event')
         self.foldername = 'map_' + time.strftime('%Y_%m_%d_%H_%M')
-        self.offset = kwargs.get('offset', 0)
+        self.offset = kwargs.get('offset', 1)
         self._online = kwargs.get('online')
         self.retuning_mode = kwargs.get('retuning_mode', ['missing_peaks', 'manual'])
         self.gui_communication = {'series_running': False}
@@ -1323,8 +1326,8 @@ class SuperScanMapper(Mapping):
         if callable(self.on_low_level_event_occured):
             self.on_low_level_event_occured('map_started')
         self.Tuner = Tuning(frame_parameters=self.frame_parameters.copy(), detectors=self.detectors, event=self.event,
-                     online=self.online, document_controller=self.document_controller, as2=self.as2,
-                     superscan=self.superscan)
+                            online=self.online, document_controller=self.document_controller, as2=self.as2,
+                            superscan=self.superscan)
         self.create_nion_frame_parameters()
         # Find rectangle inside the four points given by the user
         self.leftX = np.amax((self.coord_dict['top-left'][0], self.coord_dict['bottom-left'][0]))
@@ -1368,6 +1371,20 @@ class SuperScanMapper(Mapping):
     @property
     def series_running(self):
         return self.number_of_images > 1 and self.acquisition_loop.is_acquiring
+    
+    @property
+    def dirt_threshold(self):
+        if hasattr(self, 'Tuner'):
+            return self.Tuner.dirt_threshold
+        else:
+            return None
+    
+    @dirt_threshold.setter
+    def dirt_threshold(self, dirt_threshold):
+        if hasattr(self, 'Tuner'):
+            self.Tuner.dirt_threshold = dirt_threshold
+        else:
+            self._dirt_threshold = dirt_threshold
 
     def abort(self):
         self._abort_event.set()
@@ -1485,7 +1502,11 @@ class SuperScanMapper(Mapping):
         focused = None
         if self.retuning_mode[1] == 'manual':
             message = ''
+            if callable(self.on_low_level_event_occured):
+                self.on_low_level_event_occured('waiting_for_focus')
             return_message, focused = self.wait_for_focused(message)
+            if callable(self.on_low_level_event_occured):
+                self.on_low_level_event_occured('finished_focus')
             message = return_message
         elif self.retuning_mode[1] == 'auto':
             focused = self.auto_focus_and_astig()
