@@ -1264,7 +1264,7 @@ class MappingLoop(object):
         self.switches = kwargs.get('switches', dict())
         self.interpolation = kwargs.get('interpolation')
         self.coordinate_info = kwargs.get('coordinate_info')
-        self.first_wait_time = kwargs.get('first_wait_time', 3)
+        self.first_wait_time = kwargs.get('first_wait_time', 10)
         self.wait_time = kwargs.get('wait_time', 2)
         self.counter = 0
         self._current_position = None
@@ -1328,6 +1328,9 @@ class SuperScanMapper(Mapping):
         self.Tuner = Tuning(frame_parameters=self.frame_parameters.copy(), detectors=self.detectors, event=self.event,
                             online=self.online, document_controller=self.document_controller, as2=self.as2,
                             superscan=self.superscan)
+        if hasattr(self, '_dirt_threshold'):
+            self.Tuner.dirt_threshold = self._dirt_threshold
+            delattr(self, '_dirt_threshold')
         self.create_nion_frame_parameters()
         # Find rectangle inside the four points given by the user
         self.leftX = np.amax((self.coord_dict['top-left'][0], self.coord_dict['bottom-left'][0]))
@@ -1337,7 +1340,8 @@ class SuperScanMapper(Mapping):
         self.map_coords, self.map_infos = self.create_map_coordinates(compensate_stage_error=
                                                             self.switches['compensate_stage_error'])
         self.mapping_loop = MappingLoop(self.map_coords, coordinate_info=self.map_infos, as2=self.as2,
-                                        switches=self.switches, interpolation = self.interpolation_rbf)
+                                        switches=self.switches, interpolation = self.interpolation_rbf,
+                                        wait_time=self.sleeptime)
         # create output folder:
         self.store = os.path.join(self.savepath, self.foldername)
         if not os.path.exists(self.store):
@@ -1376,6 +1380,8 @@ class SuperScanMapper(Mapping):
     def dirt_threshold(self):
         if hasattr(self, 'Tuner'):
             return self.Tuner.dirt_threshold
+        elif hasattr(self, '_dirt_threshold'):
+            return self._dirt_threshold
         else:
             return None
     
@@ -1495,7 +1501,7 @@ class SuperScanMapper(Mapping):
                     self._processing_finished_event.set()
                     self.write_log('Aborted series because of too high dirt coverage.')
 
-    def handle_retuning(self):
+    def handle_retuning(self, *args, **kwargs):
         self.pause()
         self.acquisition_loop.pause()
         self.acquisition_loop.wait_for_acquisition()

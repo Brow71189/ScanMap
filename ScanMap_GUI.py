@@ -2,7 +2,6 @@
 import gettext
 import logging
 import numpy as np
-import threading
 import os
 import time
 import copy
@@ -238,6 +237,12 @@ class ScanMapPanelDelegate(object):
             self.Mapper.retuning_mode[0] = item.replace(' ', '_')
         def mode_combo_box_changed(item):
             self.Mapper.retuning_mode[1] = item.replace(' ', '_')
+            
+        def browse_button_clicked():
+            existing_directory, directory = self.document_controller._document_controller.ui.get_existing_directory_dialog('Select the savepath', self.Mapper.savepath)
+            if len(existing_directory) > 0:
+                self.Mapper.savepath = os.path.normpath(existing_directory)
+                sync_gui()
 
         def save_button_clicked():
             self.Mapper.save_mapping_config()
@@ -245,10 +250,14 @@ class ScanMapPanelDelegate(object):
                                                                  'configs_map.txt'))
 
         def load_button_clicked():
-            if not os.path.isfile(self.savepath):
+            configfilepath = self.Mapper.savepath
+            if not os.path.isfile(configfilepath):
+                configfilepath = os.path.join(configfilepath, 'configs_map.txt')
+                
+            if not os.path.isfile(configfilepath):
                 logging.warn('Please type the path to the config file into the \'savepath\' field to load configs.')
             else:
-                self.Mapper.load_mapping_config(self.Mapper.savepath)
+                self.Mapper.load_mapping_config(configfilepath)
                 sync_gui()
                 logging.info('Loaded all mapping configs successfully.')
 
@@ -392,9 +401,10 @@ class ScanMapPanelDelegate(object):
                 else:
                     intensities_sum = np.sum(peaks[0][:,-1])+np.sum(peaks[1][:,-1])
                     #self.peak_intensity_reference = intensities_sum
-                    logging.info('Measured peak intensities in {} from {} to: {:.0f}.'
-                                 .format(selected_data_item._data_item.title,
-                                 str(selected_data_item.data_and_metadata.timestamp).split('.')[0], intensities_sum))
+                    logging.info('Measured peak intensities in {} from {} to: {:.0f}.'.format(
+                                            selected_data_item._data_item.title,
+                                            str(selected_data_item.data_and_metadata.timestamp).split('.')[0],
+                                            intensities_sum))
                 Peak.image[dirt_mask==1] = 1
                 result_data_item.set_data(Peak.image)
                 def finished_analysis():
@@ -586,6 +596,11 @@ class ScanMapPanelDelegate(object):
         savepath_line_edit = ui.create_line_edit_widget()
         savepath_line_edit.on_editing_finished = saving_finished
         savepath_row.add(savepath_line_edit)
+        savepath_row.add_spacing(5)
+        browse_button = ui.create_push_button_widget("Browse...")
+        browse_button.on_clicked = browse_button_clicked
+        savepath_row.add(browse_button)
+        
         dirt_area_line_edit = ui.create_line_edit_widget()
         dirt_area_line_edit.on_editing_finished = dirt_area_finished
         average_number_line_edit = ui.create_line_edit_widget()
@@ -764,7 +779,7 @@ class ScanMapPanelDelegate(object):
             
             def disable_text_fields():
                 for key, value in self._text_fields.items():
-                    if key in ['fov', 'size', 'rotation', 'offset', 'time', 'savepath']:
+                    if key in ['fov', 'size', 'rotation', 'offset', 'time', 'savepath', 'sleeptime']:
                         value._widget.enabled = False
             self.document_controller.queue_task(disable_text_fields)
             
@@ -788,7 +803,7 @@ class ScanMapPanelDelegate(object):
 
             def enable_text_fields():
                 for key, value in self._text_fields.items():
-                    if key in ['fov', 'size', 'rotation', 'offset', 'time', 'savepath']:
+                    if key in ['fov', 'size', 'rotation', 'offset', 'time', 'savepath', 'sleeptime']:
                         value._widget.enabled = True
             self.document_controller.queue_task(enable_text_fields)            
             
