@@ -59,7 +59,7 @@ class ScanMapPanelDelegate(object):
         self.sync_gui_working = False
         self.Mapper = None
         self.waiting_for_focus = False
-        
+
 
     def create_panel_widget(self, ui, document_controller):
 
@@ -67,11 +67,11 @@ class ScanMapPanelDelegate(object):
         self.as2 = self.__api.get_instrument_by_id('autostem_controller', '1')
         self.ccd = self.__api.get_hardware_source_by_id('nionccd1010', '1')
         self.document_controller = document_controller
-        
+
         self.Mapper = mapper.SuperScanMapper(superscan=self.superscan, as2=self.as2,
                                              document_controller=document_controller)
         self.Mapper.on_low_level_event_occured = self.low_level_event_occured
-        
+
         column = ui.create_column_widget()
 
         def fov_finished(text):
@@ -84,7 +84,7 @@ class ScanMapPanelDelegate(object):
                     self.Mapper.frame_parameters['fov'] = fov
 
                 self.total_number_frames()
-            
+
             fov_line_edit.text = '{:.1f}'.format(self.Mapper.frame_parameters['fov'])
 
         def size_finished(text):
@@ -97,7 +97,7 @@ class ScanMapPanelDelegate(object):
                     self.Mapper.frame_parameters['size_pixels'] = (size, size)
 
                 self.total_number_frames()
-            
+
             size_line_edit.text = '{:.0f}'.format(self.Mapper.frame_parameters['size_pixels'][0])
 
         def offset_finished(text):
@@ -110,7 +110,7 @@ class ScanMapPanelDelegate(object):
                     self.Mapper.offset = offset
 
                 self.total_number_frames()
-            
+
             offset_line_edit.text = '{:.0f}'.format(self.Mapper.offset)
 
         def time_finished(text):
@@ -123,7 +123,7 @@ class ScanMapPanelDelegate(object):
                     self.Mapper.frame_parameters['pixeltime'] = pixeltime
 
                 self.total_number_frames()
-            
+
             time_line_edit.text = '{:.1f}'.format(self.Mapper.frame_parameters['pixeltime'])
 
         def rotation_finished(text):
@@ -134,7 +134,7 @@ class ScanMapPanelDelegate(object):
                     pass
                 else:
                     self.Mapper.frame_parameters['rotation'] = rotation
-                
+
             rotation_line_edit.text = '{:.1f}'.format(self.Mapper.frame_parameters['rotation'])
 
         def number_of_images_finished(text):
@@ -147,7 +147,7 @@ class ScanMapPanelDelegate(object):
                     self.Mapper.number_of_images = number_of_images
 
                 self.total_number_frames()
-            
+
             number_line_edit.text = '{:.0f}'.format(self.Mapper.number_of_images)
 
         def sleeptime_finished(text):
@@ -160,7 +160,7 @@ class ScanMapPanelDelegate(object):
                     self.Mapper.sleeptime = sleeptime
 
                 self.total_number_frames()
-                
+
             sleeptime_line_edit.text = '{:.1f}'.format(self.Mapper.sleeptime)
 
         def dirt_area_finished(text):
@@ -171,7 +171,7 @@ class ScanMapPanelDelegate(object):
                     pass
                 else:
                     self.Mapper.dirt_area = dirt_area
-            
+
             dirt_area_line_edit.text = '{:.0f}'.format(self.Mapper.dirt_area*100)
 
         def saving_finished(text):
@@ -180,7 +180,7 @@ class ScanMapPanelDelegate(object):
                     self.Mapper.savepath = text
                 else:
                     logging.warn(text+' is not an absolute path. Please enter a complete pathname starting from root.')
-            
+
             savepath_line_edit.text = self.Mapper.savepath
 
         def average_number_finished(text):
@@ -191,10 +191,10 @@ class ScanMapPanelDelegate(object):
                     pass
                 else:
                     self.Mapper.average_number = average_number
-            
+
             average_number_line_edit.text = '{:.0f}'.format(self.Mapper.average_number)
-            
-            
+
+
 
         def max_align_dist_finished(text):
             if len(text) > 0:
@@ -204,7 +204,7 @@ class ScanMapPanelDelegate(object):
                     pass
                 else:
                     self.Mapper.max_align_dist = max_align_dist
-                    
+
             max_align_dist_line_edit.text = '{:.3f}'.format(self.Mapper.max_align_dist)
 
         def checkbox_changed(check_state):
@@ -237,7 +237,7 @@ class ScanMapPanelDelegate(object):
             self.Mapper.retuning_mode[0] = item.replace(' ', '_')
         def mode_combo_box_changed(item):
             self.Mapper.retuning_mode[1] = item.replace(' ', '_')
-            
+
         def browse_button_clicked():
             existing_directory, directory = self.document_controller._document_controller.ui.get_existing_directory_dialog('Select the savepath', self.Mapper.savepath)
             if len(existing_directory) > 0:
@@ -245,6 +245,7 @@ class ScanMapPanelDelegate(object):
                 sync_gui()
 
         def save_button_clicked():
+            self.Mapper.coord_dict = self.coord_dict.copy()
             self.Mapper.save_mapping_config()
             logging.info('Saved config file to: ' + os.path.join(self.Mapper.savepath, self.Mapper.foldername,
                                                                  'configs_map.txt'))
@@ -253,11 +254,12 @@ class ScanMapPanelDelegate(object):
             configfilepath = self.Mapper.savepath
             if not os.path.isfile(configfilepath):
                 configfilepath = os.path.join(configfilepath, 'configs_map.txt')
-                
+
             if not os.path.isfile(configfilepath):
                 logging.warn('Please type the path to the config file into the \'savepath\' field to load configs.')
             else:
                 self.Mapper.load_mapping_config(configfilepath)
+                self.coord_dict = self.Mapper.coord_dict.copy()
                 sync_gui()
                 logging.info('Loaded all mapping configs successfully.')
 
@@ -282,14 +284,14 @@ class ScanMapPanelDelegate(object):
         def done_button_clicked():
 
 #            if self.thread is not None and self.thread.is_alive():
-            self.low_level_event_occured('map_started')
-            return
+#            self.low_level_event_occured('map_started')
+#            return
             if self.Mapper.is_running:
 #                if self.tune_event is not None and self.tune_event.is_set():
                 if self.waiting_for_focus:
                     self.thread_communication['new_EHTFocus'] = self.as2.get_property_as_float('EHTFocus')
                     self.thread_communication['new_z'] = self.as2.get_property_as_float('StageOutZ')
-                    #self.tune_event.clear()
+                    self.Mapper.tune_event.clear()
                     return
                 else:
                     logging.warn('There is already a mapping going on. Please abort it or wait for it to terminate.')
@@ -355,17 +357,18 @@ class ScanMapPanelDelegate(object):
 #            self.event = threading.Event()
 #            self.Mapper.event = self.event
             self.Mapper.start()
-            
+
 #            self.thread = threading.Thread(target=Mapper.SuperScan_mapping)
 #            self.thread.start()
 
         def abort_button_clicked():
-            self.low_level_event_occured('map_finished')
-            return
+#            self.low_level_event_occured('map_finished')
+#            return
             #self.stop_tuning()
-            if self.number_of_images < 2 or (hasattr(self, 'last_time_abort_clicked') and
+            if self.Mapper.number_of_images < 2 or (hasattr(self, 'last_time_abort_clicked') and
                                              time.time() - self.last_time_abort_clicked < 1):
                 self.Mapper.abort()
+                logging.info('Aborting map.')
             else:
                 self.last_time_abort_clicked = time.time()
                 self.Mapper.abort_series()
@@ -421,12 +424,12 @@ class ScanMapPanelDelegate(object):
 
             for key, value in self._checkboxes.items():
                 value.checked = self.Mapper.switches.get(key, False)
-            
+
             for key, value in self._text_fields.items():
                 value.on_editing_finished('')
 
-            method_combo_box._ComboBoxWidget__combo_box_widget.current_item = self.Mapper.retuning_mode[0]
-            mode_combo_box._ComboBoxWidget__combo_box_widget.current_item = self.Mapper.retuning_mode[1]
+            method_combo_box._ComboBoxWidget__combo_box_widget.current_item = self.Mapper.retuning_mode[0].replace('_', ' ')
+            mode_combo_box._ComboBoxWidget__combo_box_widget.current_item = self.Mapper.retuning_mode[1].replace('_', ' ')
 #            fov_line_edit.text = str(self.Mapper.frame_parameters.get('fov'))
 #            size_line_edit.text = str(self.Mapper.frame_parameters.get('size_pixels')[0])
 #            rotation_line_edit.text = str(self.Mapper.frame_parameters.get('rotation'))
@@ -600,7 +603,7 @@ class ScanMapPanelDelegate(object):
         browse_button = ui.create_push_button_widget("Browse...")
         browse_button.on_clicked = browse_button_clicked
         savepath_row.add(browse_button)
-        
+
         dirt_area_line_edit = ui.create_line_edit_widget()
         dirt_area_line_edit.on_editing_finished = dirt_area_finished
         average_number_line_edit = ui.create_line_edit_widget()
@@ -734,7 +737,7 @@ class ScanMapPanelDelegate(object):
         self._checkboxes['abort_series_on_dirt'] = abort_series_on_dirt_checkbox
         self._checkboxes['show_last_frames_average'] = show_average_checkbox
         self._checkboxes['aligned_average'] = align_average_checkbox
-        
+
         self._buttons['test'] = test_button
         self._buttons['done'] = done_button
         self._buttons['load'] = load_button
@@ -749,7 +752,7 @@ class ScanMapPanelDelegate(object):
         self._buttons['drive_br'] = drive_br
         self._buttons['drive_tl'] = drive_tl
         self._buttons['drive_tr'] = drive_tr
-        
+
         self._text_fields['sleeptime'] = sleeptime_line_edit
         self._text_fields['fov'] = fov_line_edit
         self._text_fields['size'] = size_line_edit
@@ -761,14 +764,16 @@ class ScanMapPanelDelegate(object):
         self._text_fields['average_number'] = average_number_line_edit
         self._text_fields['max_align_dist'] = max_align_dist_line_edit
         self._text_fields['savepath'] = savepath_line_edit
-        
+
         self._dropdowns['mode'] = mode_combo_box
         self._dropdowns['method'] = method_combo_box
-        
+
         sync_gui()
 
+        print(self.Mapper.retuning_mode)
+
         return column
-    
+
     def low_level_event_occured(self, name):
         if name == 'map_started':
             def update_button():
@@ -776,25 +781,25 @@ class ScanMapPanelDelegate(object):
                 if self.Mapper.number_of_images > 1:
                     self._buttons['abort'].text = 'Abort series'
             self.document_controller.queue_task(update_button)
-            
+
             def disable_text_fields():
                 for key, value in self._text_fields.items():
                     if key in ['fov', 'size', 'rotation', 'offset', 'time', 'savepath', 'sleeptime']:
                         value._widget.enabled = False
             self.document_controller.queue_task(disable_text_fields)
-            
+
             def disable_buttons():
                 for key, value in self._buttons.items():
                     if key in ['tl', 'tr', 'bl', 'br', 'drive_tl', 'drive_tr', 'drive_bl', 'drive_br', 'save', 'load']:
                         value._widget.enabled = False
-            self.document_controller.queue_task(disable_buttons)  
+            self.document_controller.queue_task(disable_buttons)
 
             def disable_checkboxes():
                 for key, value in self._checkboxes.items():
                     if key in ['compensate_stage_error', 'use_z_drive']:
                         value._widget.enabled = False
             self.document_controller.queue_task(disable_checkboxes)
-            
+
         elif name == 'map_finished':
             def update_button():
                 self._buttons['test'].text = 'Test image'
@@ -805,8 +810,8 @@ class ScanMapPanelDelegate(object):
                 for key, value in self._text_fields.items():
                     if key in ['fov', 'size', 'rotation', 'offset', 'time', 'savepath', 'sleeptime']:
                         value._widget.enabled = True
-            self.document_controller.queue_task(enable_text_fields)            
-            
+            self.document_controller.queue_task(enable_text_fields)
+
             def enable_buttons():
                 for key, value in self._buttons.items():
                     if key in ['tl', 'tr', 'bl', 'br', 'drive_tl', 'drive_tr', 'drive_bl', 'drive_br', 'save', 'load']:
@@ -818,17 +823,17 @@ class ScanMapPanelDelegate(object):
                     if key in ['compensate_stage_error', 'use_z_drive']:
                         value._widget.enabled = True
             self.document_controller.queue_task(enable_checkboxes)
-            
+
         elif name == 'waiting_for_focus':
             def update_button():
-                self._buttons['done_button'].text = 'Done tuning'
+                self._buttons['done'].text = 'Done tuning'
             self.document_controller.queue_task(update_button)
             self.waiting_for_focus = True
         elif name == 'finished_focus':
             def update_button():
-                self._buttons['done_button'].text = 'Start map'
+                self._buttons['done'].text = 'Start map'
             self.document_controller.queue_task(update_button)
-            self.waiting_for_focus = False            
+            self.waiting_for_focus = False
 
     def save_coords(self, position):
         self.coord_dict[position] = (self.as2.get_property_as_float('StageOutX'),
@@ -851,7 +856,7 @@ class ScanMapPanelDelegate(object):
             self.as2.set_property_as_float('StageOutX', self.coord_dict[position][0])
             self.as2.set_property_as_float('StageOutY', self.coord_dict[position][1])
             self.as2.set_property_as_float('EHTFocus', self.coord_dict[position][3])
-            if self.switches['use_z_drive']:
+            if self.Mapper.switches['use_z_drive']:
                 self.as2.set_property_as_float('StageOutZ', self.coord_dict[position][2])
 
     def total_number_frames(self):

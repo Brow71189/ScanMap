@@ -49,13 +49,13 @@ class Mapping(object):
         self._savepath = None
         self.savepath = kwargs.get('savepath', 'Z:/ScanMap/')
         self.event = kwargs.get('event')
-        self.tune_event = kwargs.get('tune_event')
+        self.tune_event = kwargs.get('tune_event', threading.Event())
         self.tune_now_event = kwargs.get('tune_now_event')
         self.abort_series_event = kwargs.get('abort_series_event')
         self.foldername = 'map_' + time.strftime('%Y_%m_%d_%H_%M')
         self.offset = kwargs.get('offset', 1)
         self._online = kwargs.get('online')
-        self.retuning_mode = kwargs.get('retuning_mode', ['missing_peaks', 'manual'])
+        self.retuning_mode = kwargs.get('retuning_mode', ['at_every_position', 'manual'])
         self.gui_communication = {'series_running': False}
         self.missing_peaks = 0
         self.isotope_mapping_settings = kwargs.get('isotope_mapping_settings', {})
@@ -978,7 +978,7 @@ class Mapping(object):
         self.document_controller.queue_task(lambda: self.update_button('abort_button', 'Abort map'))
         self.document_controller.queue_task(lambda: self.update_button('analyze_button', 'Analyze image'))
         self.Tuner.logwrite('\nDONE\n')
-    
+
     def acquire_overview(self):
         self.Tuner.logwrite('Acquiring overview...')
         #Use longest edge as image size
@@ -1030,7 +1030,7 @@ class Mapping(object):
             message += 'Timeout during waiting for confirmation. Continuing with old values. '
             self.Tuner.logwrite(message, level='warn')
             self.superscan.stop_playing()
-            self.tune_event.clear()
+            #self.tune_event.clear()
             return (message, None)
 
         if self.switches.get('blank_beam'):
@@ -1286,6 +1286,7 @@ class MappingLoop(object):
         self._current_position = next(self._coordinate_iterator)
         stagex, stagey, stagex_corrected, stagey_corrected = self.current_position
         stagez, fine_focus = self.interpolation((stagex, stagey))
+        print(fine_focus)
         self.as2.set_property_as_float('StageOutX', stagex_corrected)
         self.as2.set_property_as_float('StageOutY', stagey_corrected)
         if self.switches.get('use_z_drive'):
@@ -1317,11 +1318,12 @@ class SuperScanMapper(Mapping):
         self.on_low_level_event_occured = None
 
     def start(self):
+        print(self.retuning_mode)
         if self._t is not None and self._t.is_alive():
             return
         self._abort_event.clear()
         self._pause_event.set()
-
+        self.foldername = 'map_' + time.strftime('%Y_%m_%d_%H_%M')
         self.save_mapping_config()
         if callable(self.on_low_level_event_occured):
             self.on_low_level_event_occured('map_started')
@@ -1367,15 +1369,15 @@ class SuperScanMapper(Mapping):
         self.processing_loop.start()
         self._t = threading.Thread(target=self._mapping_thread)
         self._t.start()
-        
+
     @property
     def is_running(self):
         return self._t is not None and self._t.is_alive()
-    
+
     @property
     def series_running(self):
         return self.number_of_images > 1 and self.acquisition_loop.is_acquiring
-    
+
     @property
     def dirt_threshold(self):
         if hasattr(self, 'Tuner'):
@@ -1384,7 +1386,7 @@ class SuperScanMapper(Mapping):
             return self._dirt_threshold
         else:
             return None
-    
+
     @dirt_threshold.setter
     def dirt_threshold(self, dirt_threshold):
         if hasattr(self, 'Tuner'):
@@ -1400,7 +1402,7 @@ class SuperScanMapper(Mapping):
 
     def unpause(self):
         self._pause_event.set()
-    
+
     def abort_series(self):
         self.acquisition_loop.abort()
 
@@ -1474,7 +1476,8 @@ class SuperScanMapper(Mapping):
             print('Could not write log message to logfile! Reason: ' + str(e))
 
     def wait_for_message_or_finished(self):
-        if self.switches.get('wait_for_processing', True):
+        print('waiting for acquisition')
+        if self.switches.get('wait_for_processing', False):
             self._processing_finished_event.wait()
             self._processing_finished_event.clear()
         else:
@@ -1503,8 +1506,9 @@ class SuperScanMapper(Mapping):
 
     def handle_retuning(self, *args, **kwargs):
         self.pause()
-        self.acquisition_loop.pause()
-        self.acquisition_loop.wait_for_acquisition()
+        if self.acquisition_loop is not None:
+            self.acquisition_loop.pause()
+            self.acquisition_loop.wait_for_acquisition()
         focused = None
         if self.retuning_mode[1] == 'manual':
             message = ''
@@ -1516,15 +1520,16 @@ class SuperScanMapper(Mapping):
             message = return_message
         elif self.retuning_mode[1] == 'auto':
             focused = self.auto_focus_and_astig()
-            
+
         if focused is not None:
             new_z, newEHTFocus = focused
             self.tuning_successful(True, self.mapping_loop.current_position[:2] + (new_z, newEHTFocus))
         else:
             self.tuning_successful(False, None)
-        self.acquisition_loop.unpause()
+        if self.acquisition_loop is not None:
+            self.acquisition_loop.unpause()
         self.unpause()
-    
+
     def auto_focus_and_astig(self):
         try:
             self.Tuner.focus = self.Tuner.find_focus(method='general' if self.retuning_mode[0] == 'on_dirt' else
@@ -1532,7 +1537,7 @@ class SuperScanMapper(Mapping):
         except RuntimeError:
             self.write_log('Not able to find focus automatically.')
             return
-            
+
         self.as2.set_control_output('EHTFocus', self.Tuner.focus*1e-9, options={'value_type': 'delta', 'confirm': True})
         self.write_log('Adjusted focus by {:.1f} nm.'.format(self.Tuner.focus))
 
@@ -1550,7 +1555,7 @@ class SuperScanMapper(Mapping):
 
     def save_image(self, image, *args, **kwargs):
         tifffile.imsave(os.path.join(self.store, kwargs.get('name') + '.tif'), image[0].data)
-    
+
     def save_mapped_coordinates(self):
         x_map = np.zeros((self.num_subframes[1], self.num_subframes[0]))
         y_map = np.zeros((self.num_subframes[1], self.num_subframes[0]))
