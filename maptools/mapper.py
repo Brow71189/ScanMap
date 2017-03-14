@@ -118,6 +118,13 @@ class Mapping(object):
 
     def create_map_coordinates(self, compensate_stage_error=False,
                                positionfile='C:/Users/ASUser/repos/ScanMap/positioncollection.npz'):
+                                   
+        # Find rectangle inside the four points given by the user
+        self.leftX = np.amax((self.coord_dict['top-left'][0], self.coord_dict['bottom-left'][0]))
+        self.rightX = np.amin((self.coord_dict['top-right'][0], self.coord_dict['bottom-right'][0]))
+        self.topY = np.amin((self.coord_dict['top-left'][1], self.coord_dict['top-right'][1]))
+        self.botY = np.amax((self.coord_dict['bottom-left'][1], self.coord_dict['bottom-right'][1]))
+        
         imsize = self.frame_parameters['fov']*1e-9
         distance = self.offset*imsize
         self.num_subframes = np.array((int(np.abs(self.rightX-self.leftX)/(imsize+distance))+1,
@@ -1055,7 +1062,8 @@ class Mapping(object):
         self.superscan.abort_playing()
         if self.switches.get('blank_beam'):
             self.as2.set_property_as_float('C_Blank', 1)
-
+        # add short wait time to make sure abort_playing is finished
+        time.sleep(0.1)
         return (message, (self.gui_communication.pop('new_z'), self.gui_communication.pop('new_EHTFocus')))
 
     def write_map_info_file(self):
@@ -1334,11 +1342,8 @@ class SuperScanMapper(Mapping):
             self.Tuner.dirt_threshold = self._dirt_threshold
             delattr(self, '_dirt_threshold')
         self.create_nion_frame_parameters()
-        # Find rectangle inside the four points given by the user
-        self.leftX = np.amax((self.coord_dict['top-left'][0], self.coord_dict['bottom-left'][0]))
-        self.rightX = np.amin((self.coord_dict['top-right'][0], self.coord_dict['bottom-right'][0]))
-        self.topY = np.amin((self.coord_dict['top-left'][1], self.coord_dict['top-right'][1]))
-        self.botY = np.amax((self.coord_dict['bottom-left'][1], self.coord_dict['bottom-right'][1]))
+        # Sort coordinates in case they were not in the right order
+        self.coord_dict = self.sort_quadrangle()
         self.map_coords, self.map_infos = self.create_map_coordinates(compensate_stage_error=
                                                             self.switches['compensate_stage_error'])
         self.mapping_loop = MappingLoop(self.map_coords, coordinate_info=self.map_infos, as2=self.as2,
