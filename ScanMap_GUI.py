@@ -770,8 +770,6 @@ class ScanMapPanelDelegate(object):
 
         sync_gui()
 
-        print(self.Mapper.retuning_mode)
-
         return column
 
     def low_level_event_occured(self, name):
