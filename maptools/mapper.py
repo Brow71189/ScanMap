@@ -118,13 +118,13 @@ class Mapping(object):
 
     def create_map_coordinates(self, compensate_stage_error=False,
                                positionfile='C:/Users/ASUser/repos/ScanMap/positioncollection.npz'):
-                                   
+
         # Find rectangle inside the four points given by the user
         self.leftX = np.amax((self.coord_dict['top-left'][0], self.coord_dict['bottom-left'][0]))
         self.rightX = np.amin((self.coord_dict['top-right'][0], self.coord_dict['bottom-right'][0]))
         self.topY = np.amin((self.coord_dict['top-left'][1], self.coord_dict['top-right'][1]))
         self.botY = np.amax((self.coord_dict['bottom-left'][1], self.coord_dict['bottom-right'][1]))
-        
+
         imsize = self.frame_parameters['fov']*1e-9
         distance = self.offset*imsize
         self.num_subframes = np.array((int(np.abs(self.rightX-self.leftX)/(imsize+distance))+1,
@@ -1523,12 +1523,14 @@ class SuperScanMapper(Mapping):
             if callable(self.on_low_level_event_occured):
                 self.on_low_level_event_occured('finished_focus')
             message = return_message
+            self.write_log(message)
         elif self.retuning_mode[1] == 'auto':
             focused = self.auto_focus_and_astig()
 
         if focused is not None:
             new_z, newEHTFocus = focused
             self.tuning_successful(True, self.mapping_loop.current_position[:2] + (new_z, newEHTFocus))
+            self.write_log('\tNew focus: ' + str(newEHTFocus))
         else:
             self.tuning_successful(False, None)
         if self.acquisition_loop is not None:

@@ -5,6 +5,7 @@ import numpy as np
 import os
 import time
 import copy
+import threading
 
 try:
     from importlib import reload
@@ -265,7 +266,7 @@ class ScanMapPanelDelegate(object):
 
         def test_button_clicked():
             if self.Mapper is not None and self.Mapper.is_running:
-                self.Mapper.handle_retuning()
+                threading.Thread(target=self.Mapper.handle_retuning).start()
             else:
                 if None in self.frame_parameters.values():
                     logging.warn('You must specify all scan parameters (e.g. FOV, framesize, rotation, pixeltime) ' +
