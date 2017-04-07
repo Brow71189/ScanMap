@@ -17,7 +17,7 @@ with warnings.catch_warnings():
     from . import tifffile
 
 from .autotune import Imaging, Tuning, DirtError
-from scipy.interpolate import Rbf
+from scipy.interpolate import Rbf, SmoothBivariateSpline
 from .autoalign import align
 import threading
 import queue
@@ -306,7 +306,7 @@ class Mapping(object):
             try:
                 first_order, second_order = self.Tuner.find_peaks(imsize=self.frame_parameters['fov'],
                                                              second_order=True)
-            except RuntimeError:
+            except RuntimeError as detail:
                 first_order = second_order = 0
                 number_peaks = 0
                 message += str(detail) + ' '
@@ -599,6 +599,34 @@ class Mapping(object):
             self.interpolator.append(Rbf(x, y, z, function='thin_plate'))
             self.interpolator.append(Rbf(x, y, focus, function='thin_plate'))
 
+        return (self.interpolator[0](*target), self.interpolator[1](*target))
+    
+    def interpolation_spline(self, target):
+        if not hasattr(self, 'interpolator'):
+            x = []
+            y = []
+            z = []
+            focus = []
+            weigths = []
+            
+            for key, value in self.coord_dict.items():
+                splitkey = key.split('_')
+                if splitkey[0] == 'new':
+                    weight = 10
+                    divisor = 2**(len(self.coord_dict) - 4 - int(splitkey[-1]))
+                    weight /= divisor
+                    if weight < 1:
+                        weight = 1
+                    weigths.append(weight)
+                else:
+                    weigths.append(1)
+                x.append(value[0])
+                y.append(value[1])
+                z.append(value[2])
+                focus.append(value[3])
+            self.interpolator = []
+            self.interpolator.append(SmoothBivariateSpline(x, y, z, kx=1, ky=1, w=weigths))
+            self.interpolator.append(SmoothBivariateSpline(x, y, focus, kx=1, ky=1, w=weigths))
         return (self.interpolator[0](*target), self.interpolator[1](*target))
 
     def load_mapping_config(self, path):
@@ -1347,7 +1375,7 @@ class SuperScanMapper(Mapping):
         self.map_coords, self.map_infos = self.create_map_coordinates(compensate_stage_error=
                                                             self.switches['compensate_stage_error'])
         self.mapping_loop = MappingLoop(self.map_coords, coordinate_info=self.map_infos, as2=self.as2,
-                                        switches=self.switches, interpolation = self.interpolation_rbf,
+                                        switches=self.switches, interpolation = self.interpolation_spline,
                                         wait_time=self.sleeptime)
         # create output folder:
         self.store = os.path.join(self.savepath, self.foldername)
