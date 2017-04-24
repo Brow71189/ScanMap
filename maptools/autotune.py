@@ -864,9 +864,9 @@ class Peaking(Imaging):
             fft = scipy.ndimage.gaussian_filter(fft, 2)
             # cut the image off at 10 x pixel size
             outer_filter = gaussian2D(np.mgrid[0:self.shape[0], 0:self.shape[1]], self.center[0], self.center[1],
-                                      self.shape[0]/20, self.shape[1]/20, 1, 0)
-            fft = fft*outer_filter + 1
-            draw_circle(fft, self.center, np.rint(self.imsize/8) or 1, color=1)
+                                      self.shape[0]/30, self.shape[1]/30, 1, 0)
+            fft = fft*outer_filter
+            #draw_circle(fft, self.center, np.rint(self.imsize/8) or 1, color=1)
             #fft = np.log(fft)
             
         #fft[:, self.center[1]] = 0
