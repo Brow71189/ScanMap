@@ -852,20 +852,23 @@ class Peaking(Imaging):
             fft = kwargs['fft']
         else:
             fft = np.abs(self.fft)
-            center = np.zeros(fft.shape)
-            draw_circle(center, self.center, np.rint(self.imsize/8) or 1, color=1)
-            center = fft * center
+            #center = np.zeros(fft.shape)
+            #draw_circle(center, self.center, np.rint(self.imsize/8) or 1, color=1)
+            #center = fft * center
             # This has to be with the default color (-1) in order to make remove_edge_effects work correctly
-            draw_circle(fft, self.center, np.rint(self.imsize/8) or 1)
-            fft = self.remove_edge_effects(fft, half_line_thickness=1)
-            fft += center
+            draw_circle(fft, self.center, np.rint(self.imsize/8) or 1, 0)
+            #fft = self.remove_edge_effects(fft, half_line_thickness=1)
+            #fft += center
             #draw_circle(fft, self.center, np.rint(self.imsize/8) or 1, color=2*np.mean(fft))
             #inner_filter = gaussian2D(np.mgrid[0:self.shape[0], 0:self.shape[1]], self.shape[0]/2, self.shape[1]/2, 4, 4, -1, 1)
-            fft = (np.real(np.fft.ifft2(scipy.ndimage.fourier_gaussian(np.fft.fft2(fft), 2))))**2
+            fft = scipy.ndimage.gaussian_filter(fft, 2)
             # cut the image off at 10 x pixel size
             outer_filter = gaussian2D(np.mgrid[0:self.shape[0], 0:self.shape[1]], self.center[0], self.center[1],
-                                      self.shape[0]/10, self.shape[1]/10, 1, 0)
-            fft = fft*outer_filter
+                                      self.shape[0]/20, self.shape[1]/20, 1, 0)
+            fft = fft*outer_filter + 1
+            draw_circle(fft, self.center, np.rint(self.imsize/8) or 1, color=1)
+            #fft = np.log(fft)
+            
         #fft[:, self.center[1]] = 0
         #fft[self.center[0], :] = 0
         nu00 = np.sum(fft)
