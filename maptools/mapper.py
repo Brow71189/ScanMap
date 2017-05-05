@@ -120,13 +120,14 @@ class Mapping(object):
                                positionfile='C:/Users/ASUser/repos/ScanMap/positioncollection.npz'):
 
         # Find rectangle inside the four points given by the user
-        self.leftX = np.amax((self.coord_dict['top-left'][0], self.coord_dict['bottom-left'][0]))
-        self.rightX = np.amin((self.coord_dict['top-right'][0], self.coord_dict['bottom-right'][0]))
-        self.topY = np.amin((self.coord_dict['top-left'][1], self.coord_dict['top-right'][1]))
-        self.botY = np.amax((self.coord_dict['bottom-left'][1], self.coord_dict['bottom-right'][1]))
+        self.leftX = np.amin((self.coord_dict['top-left'][0], self.coord_dict['bottom-left'][0]))
+        self.rightX = np.amax((self.coord_dict['top-right'][0], self.coord_dict['bottom-right'][0]))
+        self.topY = np.amax((self.coord_dict['top-left'][1], self.coord_dict['top-right'][1]))
+        self.botY = np.amin((self.coord_dict['bottom-left'][1], self.coord_dict['bottom-right'][1]))
 
         imsize = self.frame_parameters['fov']*1e-9
         distance = self.offset*imsize
+        print(self.leftX, self.rightX, self.topY, self.botY, imsize, distance)
         self.num_subframes = np.array((int(np.abs(self.rightX-self.leftX)/(imsize+distance))+1,
                                        int(np.abs(self.topY-self.botY)/(imsize+distance))+1))
 
@@ -600,7 +601,7 @@ class Mapping(object):
             self.interpolator.append(Rbf(x, y, focus, function='thin_plate'))
 
         return (self.interpolator[0](*target), self.interpolator[1](*target))
-    
+
     def interpolation_spline(self, target):
         if not hasattr(self, 'interpolator'):
             x = []
@@ -608,7 +609,7 @@ class Mapping(object):
             z = []
             focus = []
             weigths = []
-            
+
             for key, value in self.coord_dict.items():
                 splitkey = key.split('_')
                 if splitkey[0] == 'new':

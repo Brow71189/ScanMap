@@ -871,10 +871,10 @@ class ScanMapPanelDelegate(object):
                 coords.append(self.coord_dict_sorted[corner])
             imsize = self.Mapper.frame_parameters['fov']*1e-9
             distance = self.Mapper.offset*imsize
-            leftX = np.min((coords[0][0],coords[3][0]))
-            rightX = np.max((coords[1][0],coords[2][0]))
-            topY = np.max((coords[0][1],coords[1][1]))
-            botY = np.min((coords[2][1],coords[3][1]))
+            leftX = np.amin((coords[0][0],coords[3][0]))
+            rightX = np.amax((coords[1][0],coords[2][0]))
+            topY = np.amax((coords[0][1],coords[1][1]))
+            botY = np.amin((coords[2][1],coords[3][1]))
             num_subframes = (int(np.abs(rightX-leftX)/(imsize+distance))+1, int(np.abs(topY-botY)/(imsize+distance))+1)
 
             logging.info('With the current settings, %dx%d frames (%d in total) will be taken.'
