@@ -1475,8 +1475,8 @@ class SuperScanMapper(Mapping):
                                                     superscan=self.superscan,
                                                     nion_frame_parameters=self.nion_frame_parameters)
             self.acquisition_loop.start(n=self.number_of_images)
-            self.wait_for_message_or_finished()
             self._pause_event.wait()
+            self.wait_for_message_or_finished()
             try:
                 stagex, stagey, stagex_corrected, stagey_corrected, stagez, focus, counter, info_dict = self.mapping_loop.next()
             except StopIteration:
