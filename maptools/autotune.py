@@ -548,7 +548,7 @@ class Imaging(object):
                         originals[key] = self.as2.get_property_as_float(controls[key]) * 1e9
             # Apply corrector values to the Hardware
             for key in self.aberrations.keys():
-                self.as2.set_property_as_float(controls[key], self.aberrations[key] * 1e-9)
+                self.as2.set_control_output(controls[key], self.aberrations[key] * 1e-9, options={'confirm': True})
 
             if acquire_image:
                 assert self.superscan is not None, \
