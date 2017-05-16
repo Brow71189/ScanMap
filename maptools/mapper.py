@@ -1019,12 +1019,12 @@ class Mapping(object):
         self.Tuner.logwrite('Acquiring overview...')
         #Use longest edge as image size
         if abs(self.rightX-self.leftX) < abs(self.topY-self.botY):
-            over_size = abs(self.topY-self.botY)*1e9 + 6*self.frame_parameters['fov']
+            over_size = abs(self.topY-self.botY)*1e9 + 10*self.frame_parameters['fov']
         else:
-            over_size = abs(self.rightX-self.leftX)*1e9 + 6*self.frame_parameters['fov']
+            over_size = abs(self.rightX-self.leftX)*1e9 + 10*self.frame_parameters['fov']
 
         #Find center of mapped area:
-        map_center = ((self.leftX+self.rightX)/2, (self.topY+self.botY)/2)
+        map_center = (self.leftX + (self.rightX - self.leftX)/2, self.botY + (self.topY - self.botY)/2)
         #Goto center
         self.as2.set_property_as_float('StageOutX', map_center[0])
         self.as2.set_property_as_float('StageOutY', map_center[1])

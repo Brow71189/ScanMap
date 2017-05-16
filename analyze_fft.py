@@ -9,7 +9,9 @@ import time
 import os
 
 _ = gettext.gettext
-# _HardwareSource_hardware_source.acquire_data_elements()
+
+image_save_path = 'Z:/Andreas/tuning'
+
 class AnalyzeFFTPanelDelegate(object):
 
 
@@ -41,6 +43,7 @@ class AnalyzeFFTPanelDelegate(object):
             if self.save_tuning_data_checkbox.checked:
                 save_tuning = True
             def run_measure():
+                timestamp = time.strftime('%Y%m%d-%Hh%M')
                 try:
                     self.change_label_text(self.state_label, 'Measuring...')
                     self.change_button_state(self.find_focus_button, False)
@@ -50,7 +53,8 @@ class AnalyzeFFTPanelDelegate(object):
                         stepsize = 2
                     elif stepsize > 10:
                         stepsize = 10
-                    self.T.focus = self.T.find_focus(stepsize=stepsize, range=3*stepsize)[0][1]
+                    savepath = os.path.join(image_save_path, timestamp) if save_tuning else None
+                    self.T.focus = self.T.find_focus(stepsize=stepsize, range=3*stepsize, savepath=savepath)[0][1]
                     self.as2.set_control_output('EHTFocus', -self.T.focus*1e-9, options={'inform': True, 'confirm': True})
                     self.C12 = self.T.measure_astig()
                     if self.C12 is not None:
@@ -76,7 +80,7 @@ class AnalyzeFFTPanelDelegate(object):
                             with np.load(os.path.join(path, 'tuning_results.npz')) as npzfile:
                                 for key, value in npzfile.items():
                                     savedict[key] = value
-                        savedict[time.strftime('%Y%m%d-%Hh%M')] = np.array(self.T.analysis_results)
+                        savedict[timestamp] = np.array(self.T.analysis_results)
                         np.savez(os.path.join(path, 'tuning_results.npz'), **savedict)
                 except:
                     self.change_label_text(self.state_label, 'Error')

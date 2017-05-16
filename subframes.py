@@ -28,16 +28,18 @@ except:
 #######################################################################################################################
 #######################################################################################################################
 #######################################################################################################################
-dirpath = '/3tb/maps_data/map_2016_09_05_11_53'
-imsize = 12
-graphene_threshold = 0.021
-light_threshold = -1
-heavy_threshold = 0.033
+dirpath = '/3tb/maps_data/map_2017_05_04_16_31'
+imsize = 20
+graphene_threshold = 0.02
+light_threshold = 0.042
+heavy_threshold = 0.068
 dirt_border = 50
-minimum_graphene_area = 0.3
-minimum_number_peaks = 8
+minimum_graphene_area = 0.1
+minimum_number_peaks = 6
 maximum_number_peaks = 12
 only_process_this_number_of_images = -1
+only_process_images_of_shape = (2048, 2048) # None or tuple
+remove_left_edge_number_pixels = 150 # -1 nothing to remove
 #######################################################################################################################
 #######################################################################################################################
 #######################################################################################################################
@@ -201,12 +203,18 @@ def subframes_preprocessing(filename, dirname, imsize, counts_threshold=1e-9, gr
     if image is None:
         raise ValueError(dirname+filename+' is not an image file. Make sure you give the total path as input argument.')
     #image_org = image.copy()
+    if only_process_images_of_shape is not None and image.shape != tuple(only_process_images_of_shape):
+        success = False
+        return (filename, 0, None, None, None, None, None, None, None, success)
     
     Peak = at.Peaking(image=image.copy(), imsize=imsize)
     #get mask to filter dirt and check if less than "minimum_graphene_area" is graphene in the image
 #    mask = Peak.dirt_detector(dirt_threshold=dirt_threshold, median_blur_diam=median_blur_diameter,
 #                              gaussian_blur_radius=gaussian_blur_radius)
     mask = create_mask(Peak, graphene_threshold, light_threshold, heavy_threshold, dirt_border)
+    
+    if remove_left_edge_number_pixels > 0:
+        mask[:, :remove_left_edge_number_pixels] = 16
     
     graphene_area = float(np.sum(mask[mask==1]))/(np.shape(image)[0]*np.shape(image)[1])
     if graphene_area < minimum_graphene_area:
@@ -346,7 +354,7 @@ if __name__ == '__main__':
     if os.path.isfile(os.path.join(dirpath, 'map_info.txt')):
         with open(os.path.join(dirpath, 'map_info.txt')) as infofile:
             for line in infofile:
-                frame_data_file.write(line)
+                frame_data_file.write('#' + line)
     frame_data_file.write('#label\tgraphene\tnumpeak\ttuning\ttilt\tella\tellb\tellphi\n\n')
     
     for frame_data in res_list:
