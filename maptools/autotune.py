@@ -549,7 +549,7 @@ class Imaging(object):
             # Apply corrector values to the Hardware
             for key in self.aberrations.keys():
                 self.as2.set_property_as_float(controls[key], self.aberrations[key] * 1e-9)
-
+            time.sleep(0.1)
             if acquire_image:
                 assert self.superscan is not None, \
                     'You have to provide an instance of superscan in order to perform superscan-related operations.'
@@ -868,7 +868,7 @@ class Peaking(Imaging):
             fft = fft*outer_filter
             #draw_circle(fft, self.center, np.rint(self.imsize/8) or 1, color=1)
             #fft = np.log(fft)
-            
+
         #fft[:, self.center[1]] = 0
         #fft[self.center[0], :] = 0
         nu00 = np.sum(fft)

@@ -1657,6 +1657,7 @@ class SuperScanMapper(Mapping):
         self.nion_frame_parameters['pixel_time_us'] = self.frame_parameters['pixeltime']
         self.nion_frame_parameters['fov_nm'] = self.frame_parameters['fov']
         self.nion_frame_parameters['rotation_rad'] = self.frame_parameters['rotation']/180*np.pi
+        self.nion_frame_parameters['flyback_time_us'] = 120
 
     def close(self):
         self.logfile.close()
