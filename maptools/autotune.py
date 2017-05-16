@@ -15,6 +15,9 @@ import numpy as np
 import scipy.optimize
 from scipy.ndimage import gaussian_filter, uniform_filter, distance_transform_cdt
 from scipy.signal import fftconvolve
+import os
+import json
+import tifffile
 #import cv2
 #try:
 #    import cv2
@@ -553,7 +556,7 @@ class Imaging(object):
             if acquire_image:
                 assert self.superscan is not None, \
                     'You have to provide an instance of superscan in order to perform superscan-related operations.'
-                record_parameters = self.create_record_parameters()
+                self.record_parameters = self.create_record_parameters()
                 #self.superscan.set_frame_parameters(**self.record_parameters)
                 #if self.superscan.is_playing:
                 #    self.superscan.stop_playing()
@@ -576,7 +579,7 @@ class Imaging(object):
                 #image_finished = threading.Event()
                 #def get_image():
                 #    nonlocal im
-                im = self.superscan.record(**record_parameters)
+                im = self.superscan.record(**self.record_parameters)
                 #    image_finished.set()
                 #self.document_controller.queue_task(get_image)
                 #image_finished.wait()
@@ -1324,11 +1327,19 @@ class Tuning(Peaking):
     def find_focus(self, stepsize=3, range=9, maxsteps=10, **kwargs):
         if kwargs.get('method') is not None:
             self.method = kwargs.pop('method')
+        save_images = False
+        if kwargs.get('savepath') is not None:
+            savepath = kwargs.pop('savepath')
+            save_images = True
 
         self.analysis_results = []
         for i in np.arange(-range, range+stepsize, stepsize):
             aberrations = {'EHTFocus': i}
             self.image = self.image_grabber(aberrations=aberrations, reset_aberrations=True, show_live_image=True)[0]
+            if save_images:
+                if not os.path.exists(savepath):
+                    os.makedirs(savepath)
+                tifffile.imsave(os.path.join(savepath, 'defocus_{:.0f}_nm.tif'.format(i)), self.image)
             try:
                 res = self.analysis_methods[self.method]()
             except RuntimeError:
@@ -1336,7 +1347,8 @@ class Tuning(Peaking):
                 continue
             else:
                 self.analysis_results.append(((i, np.sum(self.peaks)) + res))
-
+        if save_images:
+            json.dump(self.record_parameters, os.path.join(savepath, 'frame_parameters.json'))
         analysis_results = np.array(self.analysis_results)
         _has_kurtosis = analysis_results.shape[1] > 7 and self.method == 'general'
         if len(self.analysis_results) < 1:
@@ -1354,6 +1366,8 @@ class Tuning(Peaking):
                 aberrations = {'EHTFocus': analysis_results[-1, 0] + stepsize}
 
             self.image = self.image_grabber(aberrations=aberrations, reset_aberrations=True, show_live_image=True)[0]
+            if save_images:
+                tifffile.imsave(os.path.join(savepath, 'defocus_{:.0f}_nm.tif'.format(aberrations['EHTFocus'])), self.image)
             try:
                 res = self.analysis_methods[self.method]()
             except RuntimeError:
