@@ -17,7 +17,7 @@ from scipy.ndimage import gaussian_filter, uniform_filter, distance_transform_cd
 from scipy.signal import fftconvolve
 import os
 import json
-import tifffile
+from . import tifffile
 #import cv2
 #try:
 #    import cv2

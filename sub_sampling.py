@@ -29,7 +29,7 @@ class SubSamplingPanelDelegate(object):
         self.superscan = None
 
     def create_panel_widget(self, ui, document_controller):
-        
+
         def sampling_finished(text):
             if len(text) > 0:
                 try:
@@ -39,15 +39,15 @@ class SubSamplingPanelDelegate(object):
                 else:
                     self.sub_samples = sub_samples
             sampling_field.text = '{:.0f}'.format(self.sub_samples)
-        
+
         def record_button_clicked():
             if self.superscan is None:
                 self.superscan = self.__api.get_hardware_source_by_id('superscan', '1')
-            
+
             frame_parameters = self.superscan.get_record_frame_parameters()
-            pixelsize = frame_parameters['fov_nm']/frame_parameters['size']
-            sub_size = int(frame_parameters['size']/self.sub_samples)
-            self.sub_samples = frame_parameters['size']/sub_size
+            pixelsize = frame_parameters['fov_nm']/frame_parameters['size'][0]
+            sub_size = int(frame_parameters['size'][0]/self.sub_samples)
+            self.sub_samples = int(frame_parameters['size'][0]/sub_size)
             sampling_field.text = '{:.0f}'.format(self.sub_samples)
             result = np.zeros(frame_parameters['size'])
             result_data_item = document_controller.create_data_item_from_data(result, title='Sub-sampled (MAADF)')
@@ -55,20 +55,20 @@ class SubSamplingPanelDelegate(object):
                 for k in range(self.sub_samples):
                     for i in range(self.sub_samples):
                         sub_frame_parameters = frame_parameters.copy()
-                        sub_frame_parameters['size'] = sub_size
+                        sub_frame_parameters['size'] = (sub_size, sub_size)
                         sub_frame_parameters['center_nm'] = (k*pixelsize/self.sub_samples, i*pixelsize/self.sub_samples)
                         image = self.superscan.record(frame_parameters=sub_frame_parameters, channels_enabled=[False, True, False, False])[0]
                         result[k::self.sub_samples, i::self.sub_samples] = image.data
                         self.__api.queue_task(lambda: result_data_item.set_data(result))
                 self.superscan.set_record_frame_parameters(frame_parameters)
             threading.Thread(target=record_image).start()
-        
+
         sampling_label = ui.create_label_widget('Number sub-samples: ')
         sampling_field = ui.create_line_edit_widget()
         sampling_field.on_editing_finished = sampling_finished
         record_button = ui.create_push_button_widget('Record')
         record_button.on_clicked = record_button_clicked
-        
+
         column = ui.create_column_widget()
         row1 = ui.create_row_widget()
         row2 = ui.create_row_widget()
@@ -81,13 +81,15 @@ class SubSamplingPanelDelegate(object):
         row2.add(record_button)
         row2.add_spacing(10)
         row2.add_stretch()
-        
+
         column.add_spacing(10)
         column.add(row1)
         column.add_spacing(5)
         column.add(row2)
         column.add_spacing(10)
         column.add_stretch()
+
+        sampling_finished('')
 
         return column
 
