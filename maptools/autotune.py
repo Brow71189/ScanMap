@@ -1347,7 +1347,8 @@ class Tuning(Peaking):
             else:
                 self.analysis_results.append(((i, np.sum(self.peaks)) + res))
         if save_images:
-            json.dump(self.record_parameters, os.path.join(savepath, 'frame_parameters.json'))
+            with open(os.path.join(savepath, 'frame_parameters.json'), 'w+') as record_parameters_file:
+                json.dump(self.record_parameters, record_parameters_file)
         analysis_results = np.array(self.analysis_results)
         _has_kurtosis = analysis_results.shape[1] > 7 and self.method == 'general'
         if len(self.analysis_results) < 1:
