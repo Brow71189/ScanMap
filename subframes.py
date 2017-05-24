@@ -28,18 +28,18 @@ except:
 #######################################################################################################################
 #######################################################################################################################
 #######################################################################################################################
-dirpath = '/3tb/maps_data/map_2017_05_04_16_31'
-imsize = 20
-graphene_threshold = 0.02
-light_threshold = 0.042
-heavy_threshold = 0.068
+dirpath = '/3tb/maps_data/map_2017_05_23_23_56'
+imsize = 40
+graphene_threshold = -1
+light_threshold = -1
+heavy_threshold = 0.05
 dirt_border = 50
-minimum_graphene_area = 0.1
-minimum_number_peaks = 6
+minimum_graphene_area = 0.3
+minimum_number_peaks = 2
 maximum_number_peaks = 12
 only_process_this_number_of_images = -1
 only_process_images_of_shape = (2048, 2048) # None or tuple
-remove_left_edge_number_pixels = 150 # -1 nothing to remove
+remove_left_edge_number_pixels = 10 # -1 nothing to remove
 #######################################################################################################################
 #######################################################################################################################
 #######################################################################################################################

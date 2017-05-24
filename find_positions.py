@@ -525,7 +525,7 @@ class Positionfinder(object):
                         
         print('Finished optimizing frame positions.')
         
-    def relax_positions(self, relax_searchrange=0.5, relax_min_correlation=0.3):
+    def relax_positions(self, relax_searchrange=1, relax_min_correlation=0.1):
         searchradius = relax_searchrange
         min_correlation = relax_min_correlation
         print('\nRelaxing positions of the given frames...')
@@ -871,14 +871,14 @@ class Positionfinder(object):
             
 if __name__=='__main__':
     
-    dirpath = '/3tb/maps_data/map_2016_08_31_19_43'
+    dirpath = '/3tb/maps_data/map_2017_05_24_00_07'
     
 #    overview = '/3tb/maps_data/map_2015_08_18_17_07/Overview_1576.59891322_nm.tif'
     
-    size_overview = 678 #nm
-    size_frames = 16 #nm
+    size_overview = 1139 #nm
+    size_frames = 40 #nm
     #number of frames in x- and y-direction
-    number_frames = (10,9)
+    number_frames = (10,8)
     
     Finder = Positionfinder(number_frames=number_frames, size_overview=size_overview, size_frames=size_frames,
                             framepath=dirpath)
@@ -887,10 +887,10 @@ if __name__=='__main__':
 #    Finder.data_to_load.remove('positions')
 #    Finder.data_to_load.remove('borders')
 #    Finder.data_to_load = []
-#    Finder.data_to_load = ['scaledframes', 'borders']
+    Finder.data_to_load = ['scaledframes', 'leftborder', 'topborder', 'rightborder', 'bottomborder']
 #    Finder.data_to_load = ['scaledframes', 'leftborder', 'topborder', 'rightborder', 'bottomborder']
 #                           'options']
 #    Finder.data_to_load.remove('scaledframes')
-    Finder.main(save_plots=True, plot_results=False, border_min_correlation=0.90,
-                optimize_searchrange=3, optimize_min_correlation=0.85, outlier_tolerance=0.6, relax_searchrange=3,
-                relax_min_correlation=0.75, choose_frame=-1, discard_final_result=False, use_saved_parameters=True)
+    Finder.main(save_plots=True, plot_results=False, border_min_correlation=0.7,
+                optimize_searchrange=3, optimize_min_correlation=0.75, outlier_tolerance=0.6, relax_searchrange=3,
+                relax_min_correlation=0.5, choose_frame=0, discard_final_result=False, use_saved_parameters=True)
