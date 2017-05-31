@@ -1343,8 +1343,8 @@ class SuperScanMapper(Mapping):
 
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
-        self.buffer = Buffer(maxsize=200)
-        self.processing_loop = ProcessingLoop(self.buffer)
+        self.buffer = None
+        self.processing_loop = None
         self.mapping_loop = None
         self.acquisition_loop = None
         self._abort_event = threading.Event()
@@ -1378,6 +1378,8 @@ class SuperScanMapper(Mapping):
         self.mapping_loop = MappingLoop(self.map_coords, coordinate_info=self.map_infos, as2=self.as2,
                                         switches=self.switches, interpolation = self.interpolation_spline,
                                         wait_time=self.sleeptime)
+        self.buffer = Buffer(maxsize=200)
+        self.processing_loop = ProcessingLoop(self.buffer)
         # create output folder:
         self.store = os.path.join(self.savepath, self.foldername)
         if not os.path.exists(self.store):
