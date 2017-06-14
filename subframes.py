@@ -28,18 +28,23 @@ except:
 #######################################################################################################################
 #######################################################################################################################
 #######################################################################################################################
-dirpath = '/3tb/maps_data/map_2017_05_23_23_56'
-imsize = 40
-graphene_threshold = -1
+dirpath = '/3tb/maps_data/map_2015_04_15_13_13'
+imsize = 12
+graphene_threshold = 0.0028
 light_threshold = -1
-heavy_threshold = 0.05
+heavy_threshold = 0.0077
 dirt_border = 50
 minimum_graphene_area = 0.3
 minimum_number_peaks = 2
 maximum_number_peaks = 12
 only_process_this_number_of_images = -1
-only_process_images_of_shape = (2048, 2048) # None or tuple
-remove_left_edge_number_pixels = 10 # -1 nothing to remove
+only_process_images_of_shape = None #(2048, 2048) # None or tuple
+remove_left_edge_number_pixels = -1 # -1 nothing to remove
+save_fft = True
+#parameters for electron counting
+baseline = 0.002
+countlevel = 0.01
+peaklength = 5
 #######################################################################################################################
 #######################################################################################################################
 #######################################################################################################################
@@ -186,10 +191,31 @@ def create_mask(Peak, graphene_threshold, light_threshold, heavy_threshold, dirt
         
     return mask
 
+def electron_counting(image, baseline=0.002, countlevel=0.01, peaklength=5):
+    res = np.zeros(image.shape, dtype=np.uint16)
+    for k in range(image.shape[0]):
+        integral = 0
+        index = -1
+        for i in range(image.shape[1]):
+            if index != -1 and (image[k, i] < countlevel/2 or i - index >= peaklength): #integral/2 > countlevel:
+                #integral /= 2
+                integral /= i - index
+                res[k, index] = int(np.rint(integral/countlevel))
+                integral = 0
+                index = -1
+            if image[k, i] >= countlevel/2:
+                if index == -1:
+                    index = i
+                    integral = 0
+                #    integral += im[k, i]
+                
+                integral += image[k, i]
+    return res
+
 def subframes_preprocessing(filename, dirname, imsize, counts_threshold=1e-9, graphene_threshold=0, light_threshold=0, 
                             heavy_threshold=0.02, median_blur_diameter=39, gaussian_blur_radius=3,
                             minimum_graphene_area=0.5, dirt_border=100, save_fft=True, counts_divisor=None,
-                            minimum_number_peaks=-1):
+                            minimum_number_peaks=-1, baseline=0.002, countlevel=0.01, peaklength=5):
     """
     Returns tuple of the form:
             (filename, success, dirt coverage, counts divisor, angle of lattice rotation, mean peak radius)
@@ -245,24 +271,26 @@ def subframes_preprocessing(filename, dirname, imsize, counts_threshold=1e-9, gr
             success = False
     
     #Get counts divisor for image
-    if counts_divisor is None:        
-        counts_divisor = calculate_counts(image, threshold=counts_threshold)[0]
-    #Calculate actual counts in image and "translate" it to 16bit unsigned integer.
-    image[image<0]=0.0
-    image = np.asarray(np.rint(image/counts_divisor), dtype='uint16')
+#    if counts_divisor is None:        
+#        counts_divisor = calculate_counts(image, threshold=counts_threshold)[0]
+#    #Calculate actual counts in image and "translate" it to 16bit unsigned integer.
+#    image[image<0]=0.0
+#    image = np.asarray(np.rint(image/counts_divisor), dtype='uint16')
+    # New version of calculating counts
+    image = electron_counting(image, baseline=baseline, countlevel=countlevel, peaklength=peaklength)
     #dilate mask if dirt_border > 0
 #    if dirt_border > 0:
 #        mask = cv2.dilate(mask, np.ones((dirt_border, dirt_border)))
     #Set pixels where dirt was detected to maximum of 16bit range
     #image[mask==1] = 65535
     #save the image to disk
-    if not os.path.exists(dirname+'prep_'+dirname.split('/')[-2]+'/'):
-        os.makedirs(dirname+'prep_'+dirname.split('/')[-2]+'/')
-    if not os.path.exists(dirname+'mask_'+dirname.split('/')[-2]+'/'):
-        os.makedirs(dirname+'mask_'+dirname.split('/')[-2]+'/')
-    if save_fft:
-        if not os.path.exists(dirname+'fft_'+dirname.split('/')[-2]+'/'):
-            os.makedirs(dirname+'fft_'+dirname.split('/')[-2]+'/')
+#    if not os.path.exists(dirname+'prep_'+dirname.split('/')[-2]+'/'):
+#        os.makedirs(dirname+'prep_'+dirname.split('/')[-2]+'/')
+#    if not os.path.exists(dirname+'mask_'+dirname.split('/')[-2]+'/'):
+#        os.makedirs(dirname+'mask_'+dirname.split('/')[-2]+'/')
+#    if save_fft:
+#        if not os.path.exists(dirname+'fft_'+dirname.split('/')[-2]+'/'):
+#            os.makedirs(dirname+'fft_'+dirname.split('/')[-2]+'/')
     
     if success:
         #cv2.imwrite(dirname+'subframes_preprocessing/'+filename, image)
@@ -320,13 +348,21 @@ if __name__ == '__main__':
     matched_dirlist.sort()
     #starttime = time.time()
     #matched_dirlist=matched_dirlist[400:600]
+    if not os.path.exists(dirpath+'prep_'+dirpath.split('/')[-2]+'/'):
+        os.makedirs(dirpath+'prep_'+dirpath.split('/')[-2]+'/')
+    if not os.path.exists(dirpath+'mask_'+dirpath.split('/')[-2]+'/'):
+        os.makedirs(dirpath+'mask_'+dirpath.split('/')[-2]+'/')
+    if save_fft:
+        if not os.path.exists(dirpath+'fft_'+dirpath.split('/')[-2]+'/'):
+            os.makedirs(dirpath+'fft_'+dirpath.split('/')[-2]+'/')
     
     pool = Pool()
     res = [pool.apply_async(subframes_preprocessing, (filename, dirpath, imsize),
                             {'graphene_threshold': graphene_threshold, 'light_threshold': light_threshold,
                              'heavy_threshold': heavy_threshold, 'dirt_border':dirt_border, 'median_blur_diameter': 67,
-                             'gaussian_blur_radius': 4, 'save_fft': True,
+                             'gaussian_blur_radius': 4, 'save_fft': save_fft,
                              'minimum_graphene_area': minimum_graphene_area, 'minimum_number_peaks': minimum_number_peaks,
+                             'baseline': baseline, 'countlevel': countlevel, 'peaklength': peaklength,
                              }) for filename in matched_dirlist[0:only_process_this_number_of_images if
                                                                 only_process_this_number_of_images > 0 else None]]
     res_list = [p.get() for p in res]

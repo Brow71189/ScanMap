@@ -230,6 +230,8 @@ class Imaging(object):
         #apply Gaussian Blur to improve dirt detection
         if gaussian_blur_radius > 0:
             image = gaussian_filter(self.image, gaussian_blur_radius)
+        else:
+            image = self.image
         #create mask
         mask = np.zeros(self.shape)
         mask[image > self.dirt_threshold] = 1
