@@ -24,6 +24,8 @@ try:
    from maptools import autotune as at
 except:
     from .maptools import autotune as at
+import pyximport; pyximport.install()
+import c_electron_counting
 
 #######################################################################################################################
 #######################################################################################################################
@@ -42,9 +44,9 @@ only_process_images_of_shape = None #(2048, 2048) # None or tuple
 remove_left_edge_number_pixels = -1 # -1 nothing to remove
 save_fft = True
 #parameters for electron counting
-baseline = 0.002
-countlevel = 0.01
-peaklength = 5
+baseline = 0.001
+countlevel = 0.015
+peaklength = 4
 #######################################################################################################################
 #######################################################################################################################
 #######################################################################################################################
@@ -277,7 +279,7 @@ def subframes_preprocessing(filename, dirname, imsize, counts_threshold=1e-9, gr
 #    image[image<0]=0.0
 #    image = np.asarray(np.rint(image/counts_divisor), dtype='uint16')
     # New version of calculating counts
-    image = electron_counting(image, baseline=baseline, countlevel=countlevel, peaklength=peaklength)
+    image = c_electron_counting.electron_counting(image, baseline=baseline, countlevel=countlevel, peaklength=peaklength)
     #dilate mask if dirt_border > 0
 #    if dirt_border > 0:
 #        mask = cv2.dilate(mask, np.ones((dirt_border, dirt_border)))
