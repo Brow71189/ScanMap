@@ -30,23 +30,23 @@ import c_electron_counting
 #######################################################################################################################
 #######################################################################################################################
 #######################################################################################################################
-dirpath = '/3tb/maps_data/map_2015_04_15_13_13'
+dirpath = '/3tb/maps_data/map_2016_09_05_11_53'
 imsize = 12
-graphene_threshold = 0.0028
+graphene_threshold = 0.023
 light_threshold = -1
-heavy_threshold = 0.0077
+heavy_threshold = 0.038
 dirt_border = 50
 minimum_graphene_area = 0.3
-minimum_number_peaks = 2
+minimum_number_peaks = 8
 maximum_number_peaks = 12
 only_process_this_number_of_images = -1
 only_process_images_of_shape = None #(2048, 2048) # None or tuple
 remove_left_edge_number_pixels = -1 # -1 nothing to remove
 save_fft = True
 #parameters for electron counting
-baseline = 0.001
-countlevel = 0.015
-peaklength = 4
+baseline = 0.02
+countlevel = 0.06
+peaklength = 3
 #######################################################################################################################
 #######################################################################################################################
 #######################################################################################################################
@@ -389,6 +389,7 @@ if __name__ == '__main__':
     frame_data_file.write('light threshold: {:f}\theavy threshold: {:f}\t'.format(light_threshold, heavy_threshold))
     frame_data_file.write('minimum number peaks: {:.0f}\t'.format(minimum_number_peaks))
     frame_data_file.write('Dirt border: {:n}\tminimum graphene area: {:f}\n'.format(dirt_border, minimum_graphene_area))
+    frame_data_file.write('#Baseline: {:f}\tcountlevel: {:f}\tpeaklength: {:n}\n'.format(baseline, countlevel, peaklength))
     if os.path.isfile(os.path.join(dirpath, 'map_info.txt')):
         with open(os.path.join(dirpath, 'map_info.txt')) as infofile:
             for line in infofile:

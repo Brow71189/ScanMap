@@ -889,8 +889,8 @@ class Peaking(Imaging):
         excent = np.sqrt(1-np.amin(eigval)**2/np.amax(eigval)**2)
         # Standard deviation in polar coordinates
         # Formula taken from http://stackoverflow.com/questions/13894631/image-skewness-kurtosis-in-python
-        stddev_mag = np.sqrt(nu02 + nu20)
-        stddev_angle = np.arctan2(np.sqrt(nu02), np.sqrt(nu20))
+        #stddev_mag = np.sqrt(nu02 + nu20)
+        #stddev_angle = np.arctan2(np.sqrt(nu02), np.sqrt(nu20))
         # Kurtosis in polar koordinates
         kurtosis_mag = np.sqrt(nu04**2/nu02**4 + nu40**2/nu20**4)
         kurtosis_angle = np.arctan2(nu04/nu02**2, nu40/nu20**2)
@@ -899,12 +899,14 @@ class Peaking(Imaging):
         # rotate result by 90 degrees to get angle from x-axis
         if full_output:
             return (positive_angle(angle+np.pi/2), excent,
-                    positive_angle(stddev_angle+np.pi/2), stddev_mag,
+                    #positive_angle(stddev_angle+np.pi/2), stddev_mag,
+                    np.amin(eigval), np.amax(eigval),
                     positive_angle(kurtosis_angle+np.pi/2), kurtosis_mag,
                     fft)
         else:
             return (positive_angle(angle+np.pi/2), excent,
-                    positive_angle(stddev_angle+np.pi/2), stddev_mag,
+                    #positive_angle(stddev_angle+np.pi/2), stddev_mag,
+                    np.amin(eigval), np.amax(eigval),
                     positive_angle(kurtosis_angle+np.pi/2), kurtosis_mag)
 
     def find_peaks(self, half_line_thickness=3, position_tolerance=5, second_order=False, debug_mode=False, **kwargs):
@@ -954,10 +956,10 @@ class Peaking(Imaging):
                 self.center[1]-4*int(first_order):self.center[1]+4*int(first_order)+1] *= \
             gaussian2D(np.mgrid[self.center[0]-4*int(first_order):self.center[0]+4*int(first_order)+1,
                                 self.center[1]-4*int(first_order):self.center[1]+4*int(first_order)+1],
-                       self.shape[1]/2, self.shape[0]/2, 0.75*first_order, 0.75*first_order, -1, 1)
+                       self.shape[1]/2, self.shape[0]/2, 0.7*first_order, 0.7*first_order, -1, 1)
         else:
             fft *= gaussian2D(np.mgrid[:self.shape[0], :self.shape[1]], self.shape[1]/2, self.shape[0]/2,
-                              0.75*first_order, 0.75*first_order, -1, 1)
+                              0.7*first_order, 0.7*first_order, -1, 1)
         #find peaks
         success = False
         counter = 0
@@ -1043,7 +1045,7 @@ class Peaking(Imaging):
                                                  next_peak[1]-position_tolerance:next_peak[1]+position_tolerance+1]
                             max_next_peak = np.amax(area_next_peak)
                             #if  max_next_peak > mean_fft + 4.0*std_dev_fft:#peaks[0][2]/4:
-                            if max_next_peak > np.mean(area_next_peak)+4*np.std(area_next_peak):
+                            if max_next_peak > np.mean(area_next_peak)+5*np.std(area_next_peak):
                                 next_peak += np.array(np.unravel_index(np.argmax(area_next_peak),
                                                                        np.shape(area_next_peak))) - position_tolerance
                                 peaks[1,i] = np.array(tuple(next_peak) +
@@ -1101,14 +1103,15 @@ class Peaking(Imaging):
         excent = np.sqrt(1-np.amin(eigval)**2/np.amax(eigval)**2)
         # Standard deviation in polar coordinates
         # Formula taken from http://stackoverflow.com/questions/13894631/image-skewness-kurtosis-in-python
-        stddev_mag = np.sqrt(nu02 + nu20)
-        stddev_angle = np.arctan2(np.sqrt(nu02), np.sqrt(nu20))
+        #stddev_mag = np.sqrt(nu02 + nu20)
+        #stddev_angle = np.arctan2(np.sqrt(nu02), np.sqrt(nu20))
         # Kurtosis in polar koordinates
         kurtosis_mag = np.sqrt(nu04**2/nu02**4 + nu40**2/nu20**4)
         kurtosis_angle = np.arctan2(nu04/nu02**2, nu40/nu20**2)
         # rotate result by 90 degrees to get angle from x-axis
         return (positive_angle(angle+np.pi/2), excent,
-                positive_angle(stddev_angle+np.pi/2), stddev_mag,
+                #positive_angle(stddev_angle+np.pi/2), stddev_mag,
+                np.amin(eigval), np.amax(eigval),
                 positive_angle(kurtosis_angle+np.pi/2), kurtosis_mag)
 
     def fourier_filter(self, filter_radius=10, **kwargs):
@@ -1780,8 +1783,9 @@ class Tuning(Peaking):
             self.logwrite('No dominant astigmatism found in this measurement.')
             return None
         analysis_results = np.array(self.analysis_results)
-        normalized_excent = analysis_results[:, 3]/analysis_results[:, 7]
-        astig_defocus = np.argmax(normalized_excent)
+        #normalized_excent = analysis_results[:, 3]/analysis_results[:, 7]
+        excent_long_axis = analysis_results[:, 5]
+        astig_defocus = np.argmax(excent_long_axis)
         print('Defocus: ' + str(astig_defocus))
         if astig_defocus == 0:
             astig_defocus += 1
@@ -1789,9 +1793,12 @@ class Tuning(Peaking):
         if astig_defocus == len(analysis_results) - 1:
             astig_defocus -= 1
         print('Defocus: ' + str(astig_defocus))
-        astig_defocus = parabola_through_three_points((normalized_excent[astig_defocus-1], analysis_results[astig_defocus-1, 0]),
-                                                      (normalized_excent[astig_defocus], analysis_results[astig_defocus, 0]),
-                                                      (normalized_excent[astig_defocus+1], analysis_results[astig_defocus+1, 0]))[1]
+#        astig_defocus = parabola_through_three_points((normalized_excent[astig_defocus-1], analysis_results[astig_defocus-1, 0]),
+#                                                      (normalized_excent[astig_defocus], analysis_results[astig_defocus, 0]),
+#                                                      (normalized_excent[astig_defocus+1], analysis_results[astig_defocus+1, 0]))[1]
+        astig_defocus = parabola_through_three_points((excent_long_axis[astig_defocus-1], analysis_results[astig_defocus-1, 0]),
+                                                      (excent_long_axis[astig_defocus], analysis_results[astig_defocus, 0]),
+                                                      (excent_long_axis[astig_defocus+1], analysis_results[astig_defocus+1, 0]))[1]
         print('Defocus: ' + str(astig_defocus))
         astig_defocus -= self.focus
         astig_angle = self.get_analysis_result_for_defocus(defocus=astig_defocus, **kwargs)[0][2]
@@ -1799,10 +1806,10 @@ class Tuning(Peaking):
         print('self.focus:'  + str(self.focus))
         self.logwrite('Found maximum excentricity at {:.1f} nm defocus. Angle: {:.1f} deg.'.format(astig_defocus,
                                                                                            astig_angle*180/np.pi))
-        #astig_angle -= np.pi/2 if astig_defocus > 0 else 0
+        astig_angle -= np.pi/2 if astig_defocus < 0 else 0
         #shear_angle = np.pi/4
-        if astig_angle < np.pi:
-            astig_angle += np.pi
+        #if astig_angle < np.pi:
+        #    astig_angle += np.pi
         # Calculate astigmatism in carthesian coordinates
         C12 = np.array((-np.sin(astig_angle), np.cos(astig_angle)))
 #        # Calculate astigmatism in weird coordinates of the corrector from polar coordinates
