@@ -112,7 +112,7 @@ class ScanMapPanelDelegate(object):
 
                 self.total_number_frames()
 
-            offset_line_edit.text = '{:.0f}'.format(self.Mapper.offset)
+            offset_line_edit.text = '{:.1f}'.format(self.Mapper.offset)
 
         def time_finished(text):
             if len(text) > 0:
@@ -125,7 +125,7 @@ class ScanMapPanelDelegate(object):
 
                 self.total_number_frames()
 
-            time_line_edit.text = '{:.1f}'.format(self.Mapper.frame_parameters['pixeltime'])
+            time_line_edit.text = '{:.4f}'.format(self.Mapper.frame_parameters['pixeltime'])
 
         def rotation_finished(text):
             if len(text) > 0:
