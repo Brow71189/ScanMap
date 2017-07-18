@@ -67,6 +67,7 @@ class Mapping(object):
         self.last_frames_MAADF = []
         self.sleeptime = kwargs.get('sleeptime', 2)
         self.nion_frame_parameters = {}
+        self.number_samples = 4
 
     @property
     def online(self):
@@ -266,6 +267,25 @@ class Mapping(object):
 #                        frame_info.append(None)
 
         return (map_coords, frame_info)
+    
+    def create_sample_points(self):
+        self.create_map_coordinates()
+        width = self.rightX - self.leftX
+        height = self.topY - self.botY
+        number_samples_1d = int(np.sqrt(self.number_samples) - 1)
+        points = []
+        for j in range(number_samples_1d + 1):
+            for i in range(number_samples_1d + 1):
+                if not (i, j) in [(0, 0),
+                                  (0, number_samples_1d),
+                                  (number_samples_1d, 0),
+                                  (number_samples_1d, number_samples_1d)]:
+                    point = (self.leftX + i*width/number_samples_1d, self.botY + j*height/number_samples_1d)
+                    stagez, fine_focus = self.interpolation_spline(point, order=1)
+                    point += (stagez, fine_focus)
+                    points.append(point)
+        return points
+                    
 
     def tuning_necessary(self, frame_info, message):
         """
@@ -602,7 +622,7 @@ class Mapping(object):
 
         return (self.interpolator[0](*target), self.interpolator[1](*target))
 
-    def interpolation_spline(self, target):
+    def interpolation_spline(self, target, order=None):
         if not hasattr(self, 'interpolator'):
             x = []
             y = []
@@ -625,10 +645,12 @@ class Mapping(object):
                 y.append(value[1])
                 z.append(value[2])
                 focus.append(value[3])
+            if order is None:
+                order = int(np.sqrt(self.number_samples) - 1)
             self.interpolator = []
-            self.interpolator.append(SmoothBivariateSpline(x, y, z, kx=1, ky=1, w=weigths))
-            self.interpolator.append(SmoothBivariateSpline(x, y, focus, kx=1, ky=1, w=weigths))
-        return (self.interpolator[0](*target), self.interpolator[1](*target))
+            self.interpolator.append(SmoothBivariateSpline(x, y, z, kx=order, ky=order, w=weigths))
+            self.interpolator.append(SmoothBivariateSpline(x, y, focus, kx=order, ky=order, w=weigths))
+        return (float(self.interpolator[0](*target)), float(self.interpolator[1](*target)))
 
     def load_mapping_config(self, path):
         #config_file = open(os.path.normpath(path))
@@ -719,7 +741,8 @@ class Mapping(object):
             config_file.write('dirt_area: ' + str(self.dirt_area) + '\n')
             config_file.write('sleeptime: ' + str(self.sleeptime) + '\n')
             config_file.write('average_number: ' + str(self.average_number) + '\n')
-            config_file.write('max_align_dist: ' + str(self.max_align_dist))
+            config_file.write('max_align_dist: ' + str(self.max_align_dist) + '\n')
+            config_file.write('number_samples: ' + str(self.number_samples))
 
             #config_file.write('\nend')
 
@@ -1188,11 +1211,11 @@ class AcquisitionLoop(object):
         self.superscan.set_frame_parameters(self.nion_frame_parameters)
         self.superscan.start_playing()
         while self._n < 0 or counter < self._n:
+            self._acquisition_finished_event.clear()
             image = {}
             if counter == self._n - 1:
                 self.superscan.stop_playing()
                 image['is_last'] = True
-            self._acquisition_finished_event.clear()
             image['data'] = self.superscan.grab_next_to_finish()
             try:
                 if callable(self.get_info_dict):
@@ -1209,7 +1232,7 @@ class AcquisitionLoop(object):
                     break
             self._pause_event.wait(timeout=self._pause_timeout)
             counter += 1
-        self.superscan.stop_playing()
+        #self.superscan.stop_playing()
         self._acquisition_finished_event.set()
         self._n = -1
 

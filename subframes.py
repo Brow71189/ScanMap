@@ -30,14 +30,14 @@ import c_electron_counting
 #######################################################################################################################
 #######################################################################################################################
 #######################################################################################################################
-dirpath = '/3tb/maps_data/map_2016_09_05_11_53'
-imsize = 12
+dirpath = '/3tb/maps_data/map_2017_07_13_14_25'
+imsize = 40
 graphene_threshold = 0.023
 light_threshold = -1
 heavy_threshold = 0.038
 dirt_border = 50
 minimum_graphene_area = 0.3
-minimum_number_peaks = 8
+minimum_number_peaks = 2
 maximum_number_peaks = 12
 only_process_this_number_of_images = -1
 only_process_images_of_shape = None #(2048, 2048) # None or tuple

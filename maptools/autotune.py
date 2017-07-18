@@ -1148,10 +1148,10 @@ class Peaking(Imaging):
                 vert_a = ((np.mean(vertical[int(len(vertical) * 0.6) - 3 : int(len(vertical) * 0.6) + 4]) -
                            np.mean(vertical[int(len(vertical) * 0.7) - 3 : int(len(vertical) * 0.7) + 4])) *
                            2.0 * ydata[int(len(vertical) * 0.6)])
-                horizontal_popt, horizontal_pcov = scipy.optimize.curve_fit(hyperbola1D, xdata[:len(xdata)/2],
-                                                                            horizontal[:len(xdata)/2], p0=(horiz_a, mean_fft))
-                vertical_popt, vertical_pcov = scipy.optimize.curve_fit(hyperbola1D, ydata[:len(ydata)/2],
-                                                                        vertical[:len(ydata)/2], p0=(vert_a, mean_fft))
+                horizontal_popt, horizontal_pcov = scipy.optimize.curve_fit(hyperbola1D, xdata[:int(len(xdata)/2)],
+                                                                            horizontal[:int(len(xdata)/2)], p0=(horiz_a, mean_fft))
+                vertical_popt, vertical_pcov = scipy.optimize.curve_fit(hyperbola1D, ydata[:int(len(ydata)/2)],
+                                                                        vertical[:int(len(ydata)/2)], p0=(vert_a, mean_fft))
                 vertical_perr = np.sqrt(np.diag(vertical_pcov))
                 horizontal_perr = np.sqrt(np.diag(horizontal_pcov))
                 #print(vertical_popt, vertical_perr, horizontal_popt, horizontal_perr)

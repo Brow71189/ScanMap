@@ -57,6 +57,8 @@ class ScanMapPanelDelegate(object):
         self._buttons = {}
         self._dropdowns = {}
         self._text_fields = {}
+        self._last_time_updated_items = 0
+        self._creating_panel = False
         self.sync_gui_working = False
         self.Mapper = None
         self.waiting_for_focus = False
@@ -238,6 +240,32 @@ class ScanMapPanelDelegate(object):
             self.Mapper.retuning_mode[0] = item.replace(' ', '_')
         def mode_combo_box_changed(item):
             self.Mapper.retuning_mode[1] = item.replace(' ', '_')
+            
+        def number_samples_changed(item):
+            self.Mapper.number_samples = int(item)
+            samples = list(self.coord_dict.keys())
+            for key in samples:
+                if 'sample' in key:
+                    self.coord_dict.pop(key)
+            self.Mapper.coord_dict = self.coord_dict.copy()
+            sample_points = self.Mapper.create_sample_points()
+            select_sample_items = ['top-left', 'top-right', 'bottom-left', 'bottom-right']
+            for i in range(5, self.Mapper.number_samples+1):
+                new_name = 'sample_{:02d}'.format(i)
+                select_sample_items.append(new_name)
+                self.coord_dict[new_name] = sample_points[i-5]
+            self._last_time_updated_items = time.time()
+            self._dropdowns['select_sample'].items = select_sample_items
+            for key, value in self.coord_dict.items():
+                print('{:s}: {:s}'.format(key, str(value)))
+        
+        def select_sample_changed(item):
+            if time.time() - self._last_time_updated_items < 0.25 or self._creating_panel:
+                return
+            self.drive_coords(item)
+        
+        def save_sample_button_clicked():
+            self.save_coords(self._dropdowns['select_sample'].current_item)
 
         def browse_button_clicked():
             existing_directory, directory = self.document_controller._document_controller.ui.get_existing_directory_dialog('Select the savepath', self.Mapper.savepath)
@@ -260,8 +288,9 @@ class ScanMapPanelDelegate(object):
                 logging.warn('Please type the path to the config file into the \'savepath\' field to load configs.')
             else:
                 self.Mapper.load_mapping_config(configfilepath)
-                self.coord_dict = self.Mapper.coord_dict.copy()
+                coord_dict = self.Mapper.coord_dict.copy()
                 sync_gui()
+                self.coord_dict = coord_dict
                 logging.info('Loaded all mapping configs successfully.')
 
         def test_button_clicked():
@@ -429,8 +458,9 @@ class ScanMapPanelDelegate(object):
             for key, value in self._text_fields.items():
                 value.on_editing_finished('')
 
-            method_combo_box._ComboBoxWidget__combo_box_widget.current_item = self.Mapper.retuning_mode[0].replace('_', ' ')
-            mode_combo_box._ComboBoxWidget__combo_box_widget.current_item = self.Mapper.retuning_mode[1].replace('_', ' ')
+            method_combo_box.current_item = self.Mapper.retuning_mode[0].replace('_', ' ')
+            mode_combo_box.current_item = self.Mapper.retuning_mode[1].replace('_', ' ')
+            number_samples_combo_box.current_item = str(self.Mapper.number_samples)
 #            fov_line_edit.text = str(self.Mapper.frame_parameters.get('fov'))
 #            size_line_edit.text = str(self.Mapper.frame_parameters.get('size_pixels')[0])
 #            rotation_line_edit.text = str(self.Mapper.frame_parameters.get('rotation'))
@@ -444,6 +474,8 @@ class ScanMapPanelDelegate(object):
 #            sleeptime_line_edit.text = '{:.1f}'.format(self.sleeptime)
 
             self.sync_gui_working = False
+            
+        self._creating_panel = True
 
         mode_row = ui.create_row_widget()
         fields_row = ui.create_row_widget()
@@ -468,6 +500,7 @@ class ScanMapPanelDelegate(object):
         #checkbox_row5 = ui.create_row_widget()
         checkbox_row6 = ui.create_row_widget()
         checkbox_row7 = ui.create_row_widget()
+        number_samples_row = ui.create_row_widget()
         savepath_row = ui.create_row_widget()
         save_button_row = ui.create_row_widget()
         done_button_row = ui.create_row_widget()
@@ -520,6 +553,8 @@ class ScanMapPanelDelegate(object):
         column.add_spacing(5)
         column.add(checkbox_row7)
         column.add_spacing(5)
+        column.add(number_samples_row)
+        column.add_spacing(5)
         column.add(savepath_row)
         column.add_spacing(5)
         column.add(save_button_row)
@@ -553,6 +588,7 @@ class ScanMapPanelDelegate(object):
         #                   checkbox_row5                   #
         #                   checkbox_row6                   #
         #                   checkbox_row7                   #
+        #                 number_samples_row                #
         #                    savepath_row                   #
         #                   done_button_row                 #
         #####################################################
@@ -650,6 +686,15 @@ class ScanMapPanelDelegate(object):
         show_average_checkbox.on_check_state_changed = checkbox_changed
         align_average_checkbox = ui.create_check_box_widget(_("Align average. Maximum distance (images): "))
         align_average_checkbox.on_check_state_changed = checkbox_changed
+        number_samples_label = ui.create_label_widget("Number sample points: ")
+        number_samples_combo_box = ui.create_combo_box_widget()
+        number_samples_combo_box.items = ['4', '9', '16']
+        number_samples_combo_box.on_current_item_changed = number_samples_changed
+        select_sample_combo_box = ui.create_combo_box_widget()
+        select_sample_combo_box.on_current_item_changed = select_sample_changed
+        select_sample_combo_box.items = ['top-left', 'top-right', 'bottom-left', 'bottom-right']
+        save_sample_button = ui.create_push_button_widget('Save')
+        save_sample_button.on_clicked = save_sample_button_clicked
 
         tl_button.on_clicked = tl_button_clicked
         tr_button.on_clicked = tr_button_clicked
@@ -718,6 +763,13 @@ class ScanMapPanelDelegate(object):
         checkbox_row7.add(align_average_checkbox)
         checkbox_row7.add(max_align_dist_line_edit)
         checkbox_row7.add_stretch()
+        
+        number_samples_row.add(number_samples_label)
+        number_samples_row.add(number_samples_combo_box)
+        number_samples_row.add_spacing(5)
+        number_samples_row.add(select_sample_combo_box)
+        number_samples_row.add(save_sample_button)
+        number_samples_row.add_stretch()
 
         save_button_row.add(save_button)
         save_button_row.add_spacing(4)
@@ -753,6 +805,7 @@ class ScanMapPanelDelegate(object):
         self._buttons['drive_br'] = drive_br
         self._buttons['drive_tl'] = drive_tl
         self._buttons['drive_tr'] = drive_tr
+        self._buttons['save_sample'] = save_sample_button
 
         self._text_fields['sleeptime'] = sleeptime_line_edit
         self._text_fields['fov'] = fov_line_edit
@@ -768,9 +821,12 @@ class ScanMapPanelDelegate(object):
 
         self._dropdowns['mode'] = mode_combo_box
         self._dropdowns['method'] = method_combo_box
+        self._dropdowns['number_samples'] = number_samples_combo_box
+        self._dropdowns['select_sample'] = select_sample_combo_box
 
         sync_gui()
-
+        
+        self._creating_panel = False
         return column
 
     def low_level_event_occured(self, name):
@@ -847,9 +903,9 @@ class ScanMapPanelDelegate(object):
 
     def drive_coords(self, position):
         if self.coord_dict[position] is None:
-            logging.warn('You haven\'t set the '+position+' corner yet.')
+            logging.warn('You haven\'t set ' + position + ' yet.')
         else:
-            logging.info('Going to ' + str(position) + ' corner: x: ' + str(self.coord_dict[position][0]) + ', y: ' +
+            logging.info('Going to ' + str(position) + ' : x: ' + str(self.coord_dict[position][0]) + ', y: ' +
                          str(self.coord_dict[position][1]) + ', z: '+str(self.coord_dict[position][2]) + ', focus: ' +
                          str(self.coord_dict[position][3]))
             self.as2.set_property_as_float('StageOutX', self.coord_dict[position][0])

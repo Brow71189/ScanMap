@@ -871,14 +871,14 @@ class Positionfinder(object):
             
 if __name__=='__main__':
     
-    dirpath = '/3tb/maps_data/map_2017_05_24_00_07'
+    dirpath = '/3tb/maps_data/map_2017_07_13_12_33'
     
 #    overview = '/3tb/maps_data/map_2015_08_18_17_07/Overview_1576.59891322_nm.tif'
     
-    size_overview = 1139 #nm
-    size_frames = 40 #nm
+    size_overview = 1100 #nm
+    size_frames = 32 #nm
     #number of frames in x- and y-direction
-    number_frames = (10,8)
+    number_frames = (16,17)
     
     Finder = Positionfinder(number_frames=number_frames, size_overview=size_overview, size_frames=size_frames,
                             framepath=dirpath)
@@ -891,6 +891,6 @@ if __name__=='__main__':
 #    Finder.data_to_load = ['scaledframes', 'leftborder', 'topborder', 'rightborder', 'bottomborder']
 #                           'options']
 #    Finder.data_to_load.remove('scaledframes')
-    Finder.main(save_plots=True, plot_results=False, border_min_correlation=0.7,
-                optimize_searchrange=3, optimize_min_correlation=0.75, outlier_tolerance=0.6, relax_searchrange=3,
+    Finder.main(save_plots=True, plot_results=False, border_min_correlation=0.5,
+                optimize_searchrange=2, optimize_min_correlation=0.1, outlier_tolerance=0.6, relax_searchrange=2,
                 relax_min_correlation=0.5, choose_frame=0, discard_final_result=False, use_saved_parameters=True)
