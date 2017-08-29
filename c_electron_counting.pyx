@@ -9,6 +9,7 @@ Created on Fri Jun 16 12:04:48 2017
 
 import numpy
 from libc.math cimport round
+from libc.stdlib cimport rand, RAND_MAX
 
 def electron_counting(image, baseline=0.002, countlevel=0.01, peaklength=5):
     cdef float[:, :] c_image = image
@@ -27,19 +28,29 @@ cdef void c_electron_counting(float[:, :] image, unsigned short[:, :] result, in
     cdef unsigned int k, i
     cdef float integral
     cdef int index
-    
+    cdef int randnum
+
     for k in range(height):
         integral = 0
         index = -1
-        for i in range(width):
+        i = 0
+        while i < width:
             if index != -1 and (image[k, i] < countlevel/2 or i - index >= peaklength):
-                integral /= i - index
+                integral /= i - index - 1
                 result[k, index] = int(round(integral/countlevel))
                 integral = 0
-                index = -1
+                if image[k, i] >= countlevel/2:
+                    randnum = int(float(rand())/float(RAND_MAX)*peaklength)
+                    i = index + 1 + randnum
+                    index = i
+                else:
+                    index = -1
             if image[k, i] >= countlevel/2:
                 if index == -1:
-                    index = i
+                    if i > 0:
+                        index = i - 1
+                    else:
+                        index = i
                     integral = 0
                 integral += image[k, i]
-            
+            i += 1
