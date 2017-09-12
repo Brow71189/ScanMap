@@ -48,7 +48,7 @@ calculate_actual_counts = True
 # Should we also save electron counted images when there are no peaks found
 always_save_images = True
 #parameters for electron counting
-baseline = 0.001
+baseline = 0.0
 countlevel = 0.0125
 peakwidth = 0.61
 #######################################################################################################################
