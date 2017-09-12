@@ -30,27 +30,27 @@ import c_electron_counting
 #######################################################################################################################
 #######################################################################################################################
 #######################################################################################################################
-dirpath = '/3tb/maps_data/map_2017_08_02_19_33'
-imsize = 18
+dirpath = '/3tb/maps_data/map_2015_04_15_13_13'
+imsize = 12
 graphene_threshold = -1
-light_threshold = 0.014
-heavy_threshold = 0.03
+light_threshold = -1
+heavy_threshold = 0.01
 dirt_border = 50
 minimum_graphene_area = 0.0
 minimum_number_peaks = 2
 maximum_number_peaks = 12
-only_process_this_number_of_images = 20
-only_process_images_of_shape = (2048, 2048) # None or tuple
+only_process_this_number_of_images = 4 # -1 all
+only_process_images_of_shape = None #(1024, 1024) # None or tuple
 remove_left_edge_number_pixels = -1 # -1 nothing to remove
 save_fft = True
 # Should electron counting be done
 calculate_actual_counts = True
 # Should we also save electron counted images when there are no peaks found
-always_save_images = False
+always_save_images = True
 #parameters for electron counting
 baseline = 0.001
-countlevel = 0.1
-peaklength = 4
+countlevel = 0.0125
+peakwidth = 0.61
 #######################################################################################################################
 #######################################################################################################################
 #######################################################################################################################
@@ -221,7 +221,7 @@ def electron_counting(image, baseline=0.002, countlevel=0.01, peaklength=5):
 def subframes_preprocessing(filename, dirname, imsize, counts_threshold=1e-9, graphene_threshold=0, light_threshold=0,
                             heavy_threshold=0.02, median_blur_diameter=39, gaussian_blur_radius=3, counts_divisor=None,
                             minimum_graphene_area=0.5, dirt_border=100, save_fft=True, calculate_actual_counts=True,
-                            minimum_number_peaks=-1, baseline=0.002, countlevel=0.01, peaklength=5):
+                            minimum_number_peaks=-1, baseline=0.002, countlevel=0.01, peakwidth=5):
     """
     Returns tuple of the form:
             (filename, success, dirt coverage, counts divisor, angle of lattice rotation, mean peak radius)
@@ -265,7 +265,7 @@ def subframes_preprocessing(filename, dirname, imsize, counts_threshold=1e-9, gr
     #get angle of rotation and peak radius
     try:
         rotation, radius, number_peaks, peak_intensities_sum, ellipse_a, ellipse_b, angle = rotation_radius(Peak)
-    except RuntimeError as detail:
+    except (RuntimeError, ValueError) as detail:
         print('Error in '+ filename + ': ' + str(detail))
         rotation = ellipse_a = ellipse_b = angle = np.NaN
         number_peaks = peak_intensities_sum = radius = 0
@@ -286,7 +286,7 @@ def subframes_preprocessing(filename, dirname, imsize, counts_threshold=1e-9, gr
             image = np.asarray(np.rint(image/counts_divisor), dtype='uint16')
         else:
         # New version of calculating counts
-            image = c_electron_counting.electron_counting(image, baseline=baseline, countlevel=countlevel, peaklength=peaklength)
+            image = c_electron_counting.electron_counting(image, baseline=baseline, countlevel=countlevel, peakwidth=peakwidth)
         #dilate mask if dirt_border > 0
     #    if dirt_border > 0:
     #        mask = cv2.dilate(mask, np.ones((dirt_border, dirt_border)))
@@ -364,57 +364,58 @@ if __name__ == '__main__':
         if not os.path.exists(dirpath+'fft_'+dirpath.split('/')[-2]+'/'):
             os.makedirs(dirpath+'fft_'+dirpath.split('/')[-2]+'/')
 
-    pool = Pool()
-    res = [pool.apply_async(subframes_preprocessing, (filename, dirpath, imsize),
-                            {'graphene_threshold': graphene_threshold, 'light_threshold': light_threshold,
-                             'heavy_threshold': heavy_threshold, 'dirt_border':dirt_border, 'median_blur_diameter': 67,
-                             'gaussian_blur_radius': 4, 'save_fft': save_fft, 'counts_divisor': 4.0690098e-05,
-                             'minimum_graphene_area': minimum_graphene_area, 'minimum_number_peaks': minimum_number_peaks,
-                             'baseline': baseline, 'countlevel': countlevel, 'peaklength': peaklength,
-                             'calculate_actual_counts': calculate_actual_counts
-                             }) for filename in matched_dirlist[0:only_process_this_number_of_images if
-                                                                only_process_this_number_of_images > 0 else None]]
-    res_list = [p.get() for p in res]
-    pool.close()
-    pool.terminate()
+    try:
+        pool = Pool()
+        res = [pool.apply_async(subframes_preprocessing, (filename, dirpath, imsize),
+                                {'graphene_threshold': graphene_threshold, 'light_threshold': light_threshold,
+                                 'heavy_threshold': heavy_threshold, 'dirt_border':dirt_border, 'median_blur_diameter': 67,
+                                 'gaussian_blur_radius': 4, 'save_fft': save_fft, 'counts_divisor': 4.0690098e-05,
+                                 'minimum_graphene_area': minimum_graphene_area, 'minimum_number_peaks': minimum_number_peaks,
+                                 'baseline': baseline, 'countlevel': countlevel, 'peakwidth': peakwidth,
+                                 'calculate_actual_counts': calculate_actual_counts
+                                 }) for filename in matched_dirlist[0:only_process_this_number_of_images if
+                                                                    only_process_this_number_of_images > 0 else None]]
+        res_list = [p.get() for p in res]
+        pool.close()
+        pool.terminate()
 
-    #duration = time.time()-starttime
+        #duration = time.time()-starttime
 
-    #print('Time for calculation: %.2f s' %(duration,))
+        #print('Time for calculation: %.2f s' %(duration,))
 
-    res_list.sort()
+        res_list.sort()
+    finally:
+        if not os.path.exists(dirpath+'prep_'+dirpath.split('/')[-2]+'/'):
+            os.makedirs(dirpath+'prep_'+dirpath.split('/')[-2]+'/')
 
-    if not os.path.exists(dirpath+'prep_'+dirpath.split('/')[-2]+'/'):
-        os.makedirs(dirpath+'prep_'+dirpath.split('/')[-2]+'/')
+        frame_data_file = open(dirpath+'prep_'+dirpath.split('/')[-2]+'/'+'frame_init_' + dirpath.split('/')[-2] + '.txt',
+                               'w')
 
-    frame_data_file = open(dirpath+'prep_'+dirpath.split('/')[-2]+'/'+'frame_init_' + dirpath.split('/')[-2] + '.txt',
-                           'w')
+        frame_data_file.write('#Informations about all frames of '+(dirpath.split('/')[-2]+'\n'))
+        frame_data_file.write('#Created: ' + time.strftime('%Y/%m/%d %H:%M') + '\n')
+        frame_data_file.write('#Imagesize in nm: {:.1f}\tgraphene threshold: {:f}\t'.format(imsize,graphene_threshold))
+        frame_data_file.write('light threshold: {:f}\theavy threshold: {:f}\t'.format(light_threshold, heavy_threshold))
+        frame_data_file.write('minimum number peaks: {:.0f}\t'.format(minimum_number_peaks))
+        frame_data_file.write('Dirt border: {:n}\tminimum graphene area: {:f}\n'.format(dirt_border, minimum_graphene_area))
+        if calculate_actual_counts:
+            frame_data_file.write('#Baseline: {:f}\tcountlevel: {:f}\tpeakwidth: {:n}\n'.format(baseline, countlevel, peakwidth))
+        if os.path.isfile(os.path.join(dirpath, 'map_info.txt')):
+            with open(os.path.join(dirpath, 'map_info.txt')) as infofile:
+                for line in infofile:
+                    frame_data_file.write('#' + line)
+        frame_data_file.write('#label\tgraphene\tnumpeak\ttuning\ttilt\tella\tellb\tellphi\n\n')
 
-    frame_data_file.write('#Informations about all frames of '+(dirpath.split('/')[-2]+'\n'))
-    frame_data_file.write('#Created: ' + time.strftime('%Y/%m/%d %H:%M') + '\n')
-    frame_data_file.write('#Imagesize in nm: {:.1f}\tgraphene threshold: {:f}\t'.format(imsize,graphene_threshold))
-    frame_data_file.write('light threshold: {:f}\theavy threshold: {:f}\t'.format(light_threshold, heavy_threshold))
-    frame_data_file.write('minimum number peaks: {:.0f}\t'.format(minimum_number_peaks))
-    frame_data_file.write('Dirt border: {:n}\tminimum graphene area: {:f}\n'.format(dirt_border, minimum_graphene_area))
-    if calculate_actual_counts:
-        frame_data_file.write('#Baseline: {:f}\tcountlevel: {:f}\tpeaklength: {:n}\n'.format(baseline, countlevel, peaklength))
-    if os.path.isfile(os.path.join(dirpath, 'map_info.txt')):
-        with open(os.path.join(dirpath, 'map_info.txt')) as infofile:
-            for line in infofile:
-                frame_data_file.write('#' + line)
-    frame_data_file.write('#label\tgraphene\tnumpeak\ttuning\ttilt\tella\tellb\tellphi\n\n')
+        for frame_data in res_list:
+            if frame_data[-1]:
+                    frame_data_file.write('%s\t%.3f\t%d\t%.2f\t%.6f\t%.6f\t%.6f\t%.6f\n' % frame_data[0:-1])
 
-    for frame_data in res_list:
-        if frame_data[-1]:
-                frame_data_file.write('%s\t%.3f\t%d\t%.2f\t%.6f\t%.6f\t%.6f\t%.6f\n' % frame_data[0:-1])
+        frame_data_file.close()
 
-    frame_data_file.close()
+        overall_time = time.time() - overall_starttime
 
-    overall_time = time.time() - overall_starttime
-
-    print('Done analysing %d files in %.2f s.' %(only_process_this_number_of_images if
-                                                 only_process_this_number_of_images > 0 else
-                                                 len(matched_dirlist), overall_time))
+        print('Done analysing %d files in %.2f s.' %(only_process_this_number_of_images if
+                                                     only_process_this_number_of_images > 0 else
+                                                     len(matched_dirlist), overall_time))
 
 #    res_list = []
 #    for name in matched_dirlist:
