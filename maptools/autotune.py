@@ -534,6 +534,8 @@ class Imaging(object):
             self.delta_graphene = None
         if kwargs.get('dopant_concentration') is not None:
             self.delta_graphene = None
+        if kwargs.get('interpolate_positions') is not None:
+            self.delta_graphene = None
         if kwargs.get('delta_graphene') is not None:
             self.delta_graphene = kwargs.get('delta_graphene')
         if kwargs.get('frame_parameters') is not None:
@@ -740,7 +742,8 @@ class Imaging(object):
                     self.delta_graphene = self.graphene_generator(imsize, impix, rotation,
                                                                   vacancy_concentration=kwargs.get('vacancy_concentration', 0),
                                                                   dopant_concentration=kwargs.get('dopant_concentration', 0),
-                                                                  dopant_intensity=kwargs.get('dopant_intensity', 4))
+                                                                  dopant_intensity=kwargs.get('dopant_intensity', 4),
+                                                                  interpolate_positions=kwargs.get('interpolate_positions', True))
 
                 frequencies = np.matrix(np.fft.fftshift(np.fft.fftfreq(kernelpixel, self.imsize/self.shape[0])))
                 x = np.array(np.tile(frequencies, np.size(frequencies)).reshape((kernelpixel,kernelpixel)))
