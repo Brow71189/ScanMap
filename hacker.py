@@ -74,9 +74,9 @@ class HackerPanelDelegate(object):
         self.back_button = PushButtonWidget(ui._ui, text='<', properties={"stylesheet": "background-color: '#e5446d'"})
         self.back_button.on_clicked = back_button_clicked
         self.forward_button = ui.create_push_button_widget('>')
-        properties={"stylesheet": "background-color: '#ABABAB'"}
-        self.forward_button._widget._Widget__behavior.properties = properties
-        self.forward_button._widget._Widget__behavior.update_properties()
+        #properties={"stylesheet": "background-color: '#ABABAB'"}
+        #self.forward_button._widget._Widget__behavior.properties = properties
+        #self.forward_button._widget._Widget__behavior.update_properties()
         self.forward_button.on_clicked = forward_button_clicked
 
         description_row = ui.create_row_widget()

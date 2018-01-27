@@ -24,38 +24,37 @@ try:
    from maptools import autotune as at
 except:
     from .maptools import autotune as at
-import pyximport; pyximport.install()
-try:
-    import c_electron_counting
-except:
-    from . import c_electron_counting
+
+from ElectronCounting import c_electron_counting
 
 #######################################################################################################################
 #######################################################################################################################
 #######################################################################################################################
-dirpath = '/3tb/maps_data/map_2015_12_10_13_27'
-imsize = 20
-graphene_threshold = 0.0063
+dirpath = '/home/mittelberger2/Documents/electron_counting/CTS/cts_series_20180108'
+imsize = 16
+graphene_threshold = -1
 light_threshold = -1
-heavy_threshold = 0.0226
-dirt_border = 30
-minimum_graphene_area = 0.4
-minimum_number_peaks = 2
+heavy_threshold = -1
+dirt_border = 60
+minimum_graphene_area = 0.0
+minimum_number_peaks = 0
 maximum_number_peaks = 12
-only_process_this_number_of_images = 60 # -1 all
-only_process_images_of_shape = None #(1024, 1024) # None or tuple
-remove_left_edge_number_pixels = -1 # -1 nothing to remove
+only_process_this_number_of_images = -1 # -1 all
+only_process_images_of_shape = None #(2048, 2048) #(1024, 1024) # None or tuple
+remove_left_edge_number_pixels = 25 # -1 nothing to remove
 save_fft = True
+# Add 4 digit numbers to beginning of filenames
+rename_images = True
 # Should electron counting be done
 calculate_actual_counts = True
 # Should we also save electron counted images when there are no peaks found
-always_save_images = False
+always_save_images = True
 # parameters for electron counting
-baseline = 0.001
-countlevel = 0.11
-peakwidth = 0.654
+baseline = 0.05
+countlevel = 0.188
+peakwidth = 0.624
 # only integrate electron signal and do not convert to counts
-only_integrate = False
+only_integrate = True
 #######################################################################################################################
 #######################################################################################################################
 #######################################################################################################################
@@ -226,7 +225,7 @@ def electron_counting(image, baseline=0.002, countlevel=0.01, peaklength=5):
 def subframes_preprocessing(filename, dirname, imsize, counts_threshold=1e-9, graphene_threshold=0, light_threshold=0,
                             heavy_threshold=0.02, median_blur_diameter=39, gaussian_blur_radius=3, counts_divisor=None,
                             minimum_graphene_area=0.5, dirt_border=100, save_fft=True, calculate_actual_counts=True,
-                            minimum_number_peaks=-1, baseline=0.002, countlevel=0.01, peakwidth=5):
+                            minimum_number_peaks=-1, baseline=0.002, countlevel=0.01, peakwidth=5, image_number=None):
     """
     Returns tuple of the form:
             (filename, success, dirt coverage, counts divisor, angle of lattice rotation, mean peak radius)
@@ -293,6 +292,7 @@ def subframes_preprocessing(filename, dirname, imsize, counts_threshold=1e-9, gr
         # New version of calculating counts
             image = c_electron_counting.electron_counting(image, baseline=baseline, countlevel=countlevel,
                                                           peakwidth=peakwidth, only_integrate=only_integrate)
+            image = image.astype(np.float32)
         #dilate mask if dirt_border > 0
     #    if dirt_border > 0:
     #        mask = cv2.dilate(mask, np.ones((dirt_border, dirt_border)))
@@ -308,6 +308,8 @@ def subframes_preprocessing(filename, dirname, imsize, counts_threshold=1e-9, gr
     #            os.makedirs(dirname+'fft_'+dirname.split('/')[-2]+'/')
 
             #cv2.imwrite(dirname+'subframes_preprocessing/'+filename, image)
+        if image_number is not None:
+            filename  = '{:04d}_'.format(image_number) + filename
 
         tifffile.imsave(dirname+'prep_'+dirname.split('/')[-2]+'/'+filename, image)
         tifffile.imsave(dirname+'mask_'+dirname.split('/')[-2]+'/'+filename, mask)
@@ -352,14 +354,17 @@ if __name__ == '__main__':
         try:
             splitname = os.path.splitext(filename)
             #int(splitname[0][-4:])
-            int(filename[:4])
-            #if filename.startswith('image'):
-            #    matched_dirlist.append(filename)
+            #int(filename[:4])
+            if filename.startswith('SuperScan'):
+                matched_dirlist.append(filename)
         except:
             pass
         else:
-            matched_dirlist.append(filename)
+            pass
+            #matched_dirlist.append(filename)
     matched_dirlist.sort()
+    if rename_images:
+        number_list = list(np.arange(len(matched_dirlist), dtype=np.int32))
     #starttime = time.time()
     #matched_dirlist=matched_dirlist[400:600]
     if not os.path.exists(dirpath+'prep_'+dirpath.split('/')[-2]+'/'):
@@ -375,10 +380,11 @@ if __name__ == '__main__':
     res = [pool.apply_async(subframes_preprocessing, (filename, dirpath, imsize),
                             {'graphene_threshold': graphene_threshold, 'light_threshold': light_threshold,
                              'heavy_threshold': heavy_threshold, 'dirt_border':dirt_border, 'median_blur_diameter': 67,
-                             'gaussian_blur_radius': 4, 'save_fft': save_fft, 'counts_divisor': 4.0690098e-05,
+                             'gaussian_blur_radius': 4, 'save_fft': save_fft, 'counts_divisor': None,
                              'minimum_graphene_area': minimum_graphene_area, 'minimum_number_peaks': minimum_number_peaks,
                              'baseline': baseline, 'countlevel': countlevel, 'peakwidth': peakwidth,
-                             'calculate_actual_counts': calculate_actual_counts
+                             'calculate_actual_counts': calculate_actual_counts,
+                             'image_number': number_list.pop(0) if rename_images else None,
                              }) for filename in matched_dirlist[0:only_process_this_number_of_images if
                                                                 only_process_this_number_of_images > 0 else None]]
     res_list = [p.get() for p in res]

@@ -388,7 +388,8 @@ class Imaging(object):
         else:
             return threshold
 
-    def graphene_generator(self, imsize, impix, rotation):
+    def graphene_generator(self, imsize, impix, rotation, dopant_concentration=0, vacancy_concentration=0,
+                           dopant_intensity=4):
         rotation = rotation*np.pi/180
 
         #increase size of initially generated image by 20% to avoid missing atoms at the edges (image will be cropped
@@ -420,31 +421,40 @@ class Imaging(object):
                 if (cellposition+a1/3.0+a2*(2.0/3.0) < impix*1.2).all() and \
                 (cellposition+a1/3.0+a2*(2.0/3.0) >= 0).all():
                     success = True
-                    y, x = cellposition + a1/3.0 + a2*(2.0/3.0)
-                    pixelvalues = self.distribute_intensity(x, y)
-                    pixelpositions = [(0, 0), (0, 1), (1, 1), (1, 0)]
-
-                    for i in range(len(pixelvalues)):
-                        try:
-                            image[np.floor(y)+pixelpositions[i][0], np.floor(x)+pixelpositions[i][1]] = pixelvalues[i]
-                        except IndexError:
-                            pass
+                    # check if we need to put a vacancy here
+                    if np.random.rand() >= vacancy_concentration*2:
+                        y, x = cellposition + a1/3.0 + a2*(2.0/3.0)
+                        pixelvalues = np.array(self.distribute_intensity(x, y))
+                        # check if we need to put a dopant here
+                        if np.random.rand() < dopant_concentration/2:
+                            pixelvalues *= dopant_intensity
+                        pixelpositions = [(0, 0), (0, 1), (1, 1), (1, 0)]
+                        for i in range(len(pixelvalues)):
+                            try:
+                                image[int(np.floor(y)+pixelpositions[i][0]),
+                                      int(np.floor(x)+pixelpositions[i][1])] = pixelvalues[i]
+                            except IndexError as e:
+                                print(e)
                 else:
                     success = False
 
                 if (cellposition+a2/3.0+a1*(2.0/3.0) < impix*1.2).all() and \
                    (cellposition+a2/3.0+a1*(2.0/3.0) >= 0).all():
                     success = True
-                    y, x = cellposition + a2/3.0 + a1*(2.0/3.0)
-                    pixelvalues = self.distribute_intensity(x, y)
-                    pixelpositions = [(0, 0), (0, 1), (1, 1), (1, 0)]
-
-                    for i in range(len(pixelvalues)):
-                        try:
-                            image[np.floor(y) + pixelpositions[i][0], np.floor(x) +
-                                  pixelpositions[i][1]] = pixelvalues[i]
-                        except IndexError:
-                            pass
+                    # check if we need to put a vacancy here
+                    if np.random.rand() >= vacancy_concentration*2:
+                        y, x = cellposition + a2/3.0 + a1*(2.0/3.0)
+                        pixelvalues = np.array(self.distribute_intensity(x, y))
+                        # check if we need to put a dopant here
+                        if np.random.rand() < dopant_concentration/2:
+                            pixelvalues *= dopant_intensity
+                        pixelpositions = [(0, 0), (0, 1), (1, 1), (1, 0)]
+                        for i in range(len(pixelvalues)):
+                            try:
+                                image[int(np.floor(y) + pixelpositions[i][0]), int(np.floor(x) +
+                                      pixelpositions[i][1])] = pixelvalues[i]
+                            except IndexError as e:
+                                print(e)
                 else:
                     success = False
 
@@ -508,6 +518,10 @@ class Imaging(object):
         by changing the mean intensity in your image.
         """
         # Check input for additinal parameters that override instance variables
+        if kwargs.get('vacancy_concentration') is not None:
+            self.delta_graphene = None
+        if kwargs.get('dopant_concentration') is not None:
+            self.delta_graphene = None
         if kwargs.get('delta_graphene') is not None:
             self.delta_graphene = kwargs.get('delta_graphene')
         if kwargs.get('frame_parameters') is not None:
@@ -711,7 +725,10 @@ class Imaging(object):
                     impix = self.shape[0]+kernelpixel-1
                     imsize = impix/self.shape[0]*self.imsize
                     rotation = self.frame_parameters.get('rotation', 0)
-                    self.delta_graphene = self.graphene_generator(imsize, impix, rotation)
+                    self.delta_graphene = self.graphene_generator(imsize, impix, rotation,
+                                                                  vacancy_concentration=kwargs.get('vacancy_concentration', 0),
+                                                                  dopant_concentration=kwargs.get('dopant_concentration', 0),
+                                                                  dopant_intensity=kwargs.get('dopant_intensity', 4))
 
                 frequencies = np.matrix(np.fft.fftshift(np.fft.fftfreq(kernelpixel, self.imsize/self.shape[0])))
                 x = np.array(np.tile(frequencies, np.size(frequencies)).reshape((kernelpixel,kernelpixel)))
