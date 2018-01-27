@@ -389,7 +389,7 @@ class Imaging(object):
             return threshold
 
     def graphene_generator(self, imsize, impix, rotation, dopant_concentration=0, vacancy_concentration=0,
-                           dopant_intensity=4):
+                           dopant_intensity=4, interpolate_positions=True):
         rotation = rotation*np.pi/180
 
         #increase size of initially generated image by 20% to avoid missing atoms at the edges (image will be cropped
@@ -424,15 +424,21 @@ class Imaging(object):
                     # check if we need to put a vacancy here
                     if np.random.rand() >= vacancy_concentration*2:
                         y, x = cellposition + a1/3.0 + a2*(2.0/3.0)
-                        pixelvalues = np.array(self.distribute_intensity(x, y))
-                        # check if we need to put a dopant here
-                        if np.random.rand() < dopant_concentration/2:
-                            pixelvalues *= dopant_intensity
-                        pixelpositions = [(0, 0), (0, 1), (1, 1), (1, 0)]
-                        for i in range(len(pixelvalues)):
+                        if interpolate_positions:
+                            pixelvalues = np.array(self.distribute_intensity(x, y))
+                            # check if we need to put a dopant here
+                            if np.random.rand() < dopant_concentration/2:
+                                pixelvalues *= dopant_intensity
+                            pixelpositions = [(0, 0), (0, 1), (1, 1), (1, 0)]
+                            for i in range(len(pixelvalues)):
+                                try:
+                                    image[int(np.floor(y)+pixelpositions[i][0]),
+                                          int(np.floor(x)+pixelpositions[i][1])] = pixelvalues[i]
+                                except IndexError as e:
+                                    print(e)
+                        else:
                             try:
-                                image[int(np.floor(y)+pixelpositions[i][0]),
-                                      int(np.floor(x)+pixelpositions[i][1])] = pixelvalues[i]
+                                image[int(np.rint(y)), int(np.rint(x))] = 1
                             except IndexError as e:
                                 print(e)
                 else:
@@ -444,15 +450,21 @@ class Imaging(object):
                     # check if we need to put a vacancy here
                     if np.random.rand() >= vacancy_concentration*2:
                         y, x = cellposition + a2/3.0 + a1*(2.0/3.0)
-                        pixelvalues = np.array(self.distribute_intensity(x, y))
-                        # check if we need to put a dopant here
-                        if np.random.rand() < dopant_concentration/2:
-                            pixelvalues *= dopant_intensity
-                        pixelpositions = [(0, 0), (0, 1), (1, 1), (1, 0)]
-                        for i in range(len(pixelvalues)):
+                        if interpolate_positions:
+                            pixelvalues = np.array(self.distribute_intensity(x, y))
+                            # check if we need to put a dopant here
+                            if np.random.rand() < dopant_concentration/2:
+                                pixelvalues *= dopant_intensity
+                            pixelpositions = [(0, 0), (0, 1), (1, 1), (1, 0)]
+                            for i in range(len(pixelvalues)):
+                                try:
+                                    image[int(np.floor(y) + pixelpositions[i][0]), int(np.floor(x) +
+                                          pixelpositions[i][1])] = pixelvalues[i]
+                                except IndexError as e:
+                                    print(e)
+                        else:
                             try:
-                                image[int(np.floor(y) + pixelpositions[i][0]), int(np.floor(x) +
-                                      pixelpositions[i][1])] = pixelvalues[i]
+                                image[int(np.rint(y)), int(np.rint(x))] = 1
                             except IndexError as e:
                                 print(e)
                 else:
