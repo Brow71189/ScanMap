@@ -82,6 +82,7 @@ class Imaging(object):
         self.delta_graphene = None
         self.live_data_item_MAADF = None
         self.live_data_item_HAADF = None
+        self._vacuum_level = kwargs.get('vacuum_level', 0.002)
 
     @property
     def image(self):
@@ -142,6 +143,16 @@ class Imaging(object):
     @frame_parameters.deleter
     def frame_parameters(self):
         self._frame_parameters = {}
+        
+    @property
+    def vacuum_level(self):
+        return self._vacuum_level
+    
+    @vacuum_level.setter
+    def vacuum_level(self, vacuum_level):
+        if vacuum_level != self.vacuum_level:
+            self._vacuum_level = vacuum_level
+            self.delta_graphene = None
 
     def create_record_parameters(self, frame_parameters=None, detectors=None):
         """
@@ -435,12 +446,12 @@ class Imaging(object):
                                     image[int(np.floor(y)+pixelpositions[i][0]),
                                           int(np.floor(x)+pixelpositions[i][1])] = pixelvalues[i]
                                 except IndexError as e:
-                                    print(e)
+                                    pass#print(e)
                         else:
                             try:
                                 image[int(np.rint(y)), int(np.rint(x))] = 1
                             except IndexError as e:
-                                print(e)
+                                pass#print(e)
                 else:
                     success = False
 
@@ -461,12 +472,12 @@ class Imaging(object):
                                     image[int(np.floor(y) + pixelpositions[i][0]), int(np.floor(x) +
                                           pixelpositions[i][1])] = pixelvalues[i]
                                 except IndexError as e:
-                                    print(e)
+                                    pass#print(e)
                         else:
                             try:
                                 image[int(np.rint(y)), int(np.rint(x))] = 1
                             except IndexError as e:
-                                print(e)
+                                pass#print(e)
                 else:
                     success = False
 
@@ -548,6 +559,8 @@ class Imaging(object):
             self.shape = kwargs['shape']
         if kwargs.get('impix') is not None:
             self.shape = (kwargs['impix'], kwargs['impix'])
+        if kwargs.get('vacuum_level') is not None:
+            self.vacuum_level = kwargs['vacuum_level']
 
         if self.frame_parameters.get('fov') is not None:
             self.imsize = self.frame_parameters.get('fov')
@@ -789,7 +802,7 @@ class Imaging(object):
                     multiplicator = 1
                 else:
                     multiplicator = self.frame_parameters.get('pixeltime', 0)*100+1
-                im = fftconvolve((self.delta_graphene+0.002)*multiplicator, kernel, mode='valid')
+                im = fftconvolve((self.delta_graphene + self.vacuum_level)*multiplicator, kernel, mode='valid')
                 if self.frame_parameters.get('pixeltime', 0) >= 0:
                     im = np.random.poisson(lam=im.flatten(), size=np.size(im)).astype(im.dtype)
 
