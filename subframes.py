@@ -30,23 +30,23 @@ from ElectronCounting import c_electron_counting
 #######################################################################################################################
 #######################################################################################################################
 #######################################################################################################################
-dirpath = '/home/mittelberger2/Documents/electron_counting/CTS/cts_series_20180108'
-imsize = 16
+dirpath = '/home/mittelberger2/Downloads/christoph_ellipse'
+imsize = 8
 graphene_threshold = -1
 light_threshold = -1
-heavy_threshold = -1
+heavy_threshold = 0.033
 dirt_border = 60
 minimum_graphene_area = 0.0
 minimum_number_peaks = 0
 maximum_number_peaks = 12
 only_process_this_number_of_images = -1 # -1 all
 only_process_images_of_shape = None #(2048, 2048) #(1024, 1024) # None or tuple
-remove_left_edge_number_pixels = 25 # -1 nothing to remove
+remove_left_edge_number_pixels = -1 # -1 nothing to remove
 save_fft = True
 # Add 4 digit numbers to beginning of filenames
 rename_images = True
 # Should electron counting be done
-calculate_actual_counts = True
+calculate_actual_counts = False
 # Should we also save electron counted images when there are no peaks found
 always_save_images = True
 # parameters for electron counting
@@ -317,7 +317,7 @@ def subframes_preprocessing(filename, dirname, imsize, counts_threshold=1e-9, gr
         if save_fft and success:
             #fft = np.log(np.abs(np.fft.fftshift(np.fft.fft2(image_org)))).astype('float32')
             fft = np.log(np.abs(Peak.fft)).astype(np.float32)
-            center = np.array(np.shape(image), dtype=np.int)/2
+            center = (np.array(np.shape(image), dtype=np.int)/2).astype(np.int)
             ell = np.ones(np.shape(fft), dtype='float32')
             if np.mean(fft) > 0:
                 ellipse_color = 1.5
@@ -355,7 +355,7 @@ if __name__ == '__main__':
             splitname = os.path.splitext(filename)
             #int(splitname[0][-4:])
             #int(filename[:4])
-            if filename.startswith('SuperScan'):
+            if filename.startswith('mess'):
                 matched_dirlist.append(filename)
         except:
             pass
