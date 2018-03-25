@@ -389,12 +389,15 @@ class Imaging(object):
             return threshold
 
     def graphene_generator(self, imsize, impix, rotation, dopant_concentration=0, vacancy_concentration=0,
-                           dopant_intensity=4, interpolate_positions=True):
+                           dopant_intensity=4, interpolate_positions=True, return_defect_coordinates=False):
         rotation = rotation*np.pi/180
 
         #increase size of initially generated image by 20% to avoid missing atoms at the edges (image will be cropped
         #to actual size before returning it)
         image = np.zeros((int(impix*1.2), int(impix*1.2)))
+        visited_positions = np.zeros((int(impix*1.2), int(impix*1.2)))
+        if return_defect_coordinates:
+            defects = np.zeros((int(impix*1.2), int(impix*1.2)))
         rotation_matrix = np.array( ( (np.cos(2.0/3.0*np.pi), np.sin(2.0/3.0*np.pi)), (-np.sin(2.0/3.0*np.pi),
                                        np.cos(2.0/3.0*np.pi)) ) )
         #define basis vectors of unit cell, a1 and a2
@@ -407,6 +410,61 @@ class Imaging(object):
         a2position = np.array((0.0, 0.0))
         a2direction = 1.0
 
+        def put_atom(y, x):
+            try:
+                if visited_positions[int(np.rint(y)), int(np.rint(x))] > 0:
+                    return
+                visited_positions[int(np.rint(y)), int(np.rint(x))] = 1
+            except IndexError:
+                return
+
+            vacancy = False
+            dopant = False
+            # check if we need to put a vacancy here
+            if np.random.rand() < vacancy_concentration:
+                vacancy = True
+            # check if we need to put a dopant here
+            if np.random.rand() < dopant_concentration:
+                dopant = True
+
+            if interpolate_positions:
+                pixelvalues = np.array(self.distribute_intensity(x, y))
+                # check if we need to put a dopant here
+                if dopant:
+                    pixelvalues *= dopant_intensity
+
+                pixelpositions = [(0, 0), (0, 1), (1, 1), (1, 0)]
+                if not vacancy or dopant:
+                    for i in range(len(pixelvalues)):
+                        try:
+                            image[int(np.floor(y)+pixelpositions[i][0]),
+                                  int(np.floor(x)+pixelpositions[i][1])] = pixelvalues[i]
+                        except IndexError as e:
+                            print(e)
+
+                if return_defect_coordinates and (vacancy or dopant):
+                    if dopant:
+                        pixelvalues /= dopant_intensity
+                    for i in range(len(pixelvalues)):
+                        try:
+                            defects[int(np.floor(y)+pixelpositions[i][0]),
+                                    int(np.floor(x)+pixelpositions[i][1])] = pixelvalues[i]
+                        except IndexError as e:
+                            print(e)
+            else:
+                if not vacancy or dopant:
+                    try:
+                        if dopant:
+                            image[int(np.rint(y)), int(np.rint(x))] = dopant_intensity
+                        else:
+                            image[int(np.rint(y)), int(np.rint(x))] = 1
+                    except IndexError as e:
+                        print(e)
+                if return_defect_coordinates and (vacancy or dopant):
+                    try:
+                        defects[int(np.rint(y)), int(np.rint(x))] = 1
+                    except IndexError as e:
+                        print(e)
 
         while (a1position < impix*2.4).all():
             success = True
@@ -416,57 +474,21 @@ class Imaging(object):
                 cellposition = a1position + a2position
                 #print(str(a1position) + ', '  + str(a2position))
                 #print(cellposition)
-
                 #place atoms
                 if (cellposition+a1/3.0+a2*(2.0/3.0) < impix*1.2).all() and \
                 (cellposition+a1/3.0+a2*(2.0/3.0) >= 0).all():
                     success = True
-                    # check if we need to put a vacancy here
-                    if np.random.rand() >= vacancy_concentration*2:
-                        y, x = cellposition + a1/3.0 + a2*(2.0/3.0)
-                        if interpolate_positions:
-                            pixelvalues = np.array(self.distribute_intensity(x, y))
-                            # check if we need to put a dopant here
-                            if np.random.rand() < dopant_concentration/2:
-                                pixelvalues *= dopant_intensity
-                            pixelpositions = [(0, 0), (0, 1), (1, 1), (1, 0)]
-                            for i in range(len(pixelvalues)):
-                                try:
-                                    image[int(np.floor(y)+pixelpositions[i][0]),
-                                          int(np.floor(x)+pixelpositions[i][1])] = pixelvalues[i]
-                                except IndexError as e:
-                                    print(e)
-                        else:
-                            try:
-                                image[int(np.rint(y)), int(np.rint(x))] = 1
-                            except IndexError as e:
-                                print(e)
+                    y, x = cellposition + a1/3.0 + a2*(2.0/3.0)
+                    put_atom(y, x)
+
                 else:
                     success = False
 
                 if (cellposition+a2/3.0+a1*(2.0/3.0) < impix*1.2).all() and \
                    (cellposition+a2/3.0+a1*(2.0/3.0) >= 0).all():
                     success = True
-                    # check if we need to put a vacancy here
-                    if np.random.rand() >= vacancy_concentration*2:
-                        y, x = cellposition + a2/3.0 + a1*(2.0/3.0)
-                        if interpolate_positions:
-                            pixelvalues = np.array(self.distribute_intensity(x, y))
-                            # check if we need to put a dopant here
-                            if np.random.rand() < dopant_concentration/2:
-                                pixelvalues *= dopant_intensity
-                            pixelpositions = [(0, 0), (0, 1), (1, 1), (1, 0)]
-                            for i in range(len(pixelvalues)):
-                                try:
-                                    image[int(np.floor(y) + pixelpositions[i][0]), int(np.floor(x) +
-                                          pixelpositions[i][1])] = pixelvalues[i]
-                                except IndexError as e:
-                                    print(e)
-                        else:
-                            try:
-                                image[int(np.rint(y)), int(np.rint(x))] = 1
-                            except IndexError as e:
-                                print(e)
+                    y, x = cellposition + a2/3.0 + a1*(2.0/3.0)
+                    put_atom(y, x)
                 else:
                     success = False
 
@@ -483,7 +505,10 @@ class Imaging(object):
             a1position += a1
 
         start = int(impix * 0.1)
-        return image[start:start+impix, start:start+impix]
+        if return_defect_coordinates:
+            return image[start:start+impix, start:start+impix], defects[start:start+impix, start:start+impix]
+        else:
+            return image[start:start+impix, start:start+impix]
         #return image
 
     def image_grabber(self, acquire_image=True, debug_mode=False, show_live_image=False, **kwargs):
@@ -728,6 +753,8 @@ class Imaging(object):
 
             print(self.aberrations)
 
+            defects = None
+
             if acquire_image:
                 # Create x and y coordinates such that resulting beam has the same scale as the image.
                 # The size of the kernel which is used for image convolution is chosen to be "1/kernelsize"
@@ -739,11 +766,16 @@ class Imaging(object):
                     impix = self.shape[0]+kernelpixel-1
                     imsize = impix/self.shape[0]*self.imsize
                     rotation = self.frame_parameters.get('rotation', 0)
-                    self.delta_graphene = self.graphene_generator(imsize, impix, rotation,
+                    delta_graphene = self.graphene_generator(imsize, impix, rotation,
                                                                   vacancy_concentration=kwargs.get('vacancy_concentration', 0),
                                                                   dopant_concentration=kwargs.get('dopant_concentration', 0),
                                                                   dopant_intensity=kwargs.get('dopant_intensity', 4),
-                                                                  interpolate_positions=kwargs.get('interpolate_positions', True))
+                                                                  interpolate_positions=kwargs.get('interpolate_positions', True),
+                                                                  return_defect_coordinates=kwargs.get('return_defect_coordinates', False))
+                    if kwargs.get('return_defect_coordinates', False):
+                        self.delta_graphene, defects = delta_graphene
+                    else:
+                        self.delta_graphene = delta_graphene
 
                 frequencies = np.matrix(np.fft.fftshift(np.fft.fftfreq(kernelpixel, self.imsize/self.shape[0])))
                 x = np.array(np.tile(frequencies, np.size(frequencies)).reshape((kernelpixel,kernelpixel)))
@@ -797,6 +829,10 @@ class Imaging(object):
                     return_image = [im.reshape(self.shape).astype('float32'), kernel]
                 else:
                     return_image = [im.reshape(self.shape).astype('float32')]
+
+                if kwargs.get('return_defect_coordinates', False):
+                    return_image.append(defects[int(kernelpixel/2-1):-int(kernelpixel/2), int(kernelpixel/2-1):-int(kernelpixel/2)])
+
         #print(self.aberrations)
         return return_image
 
