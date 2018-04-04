@@ -69,7 +69,7 @@ class Imaging(object):
     def __init__(self, **kwargs):
         self._image = kwargs.get('image')
         self._shape = kwargs.get('shape')
-        self.imsize = kwargs.get('imsize')
+        self._imsize = kwargs.get('imsize')
         self._online = kwargs.get('online')
         self.dirt_threshold = kwargs.get('dirt_threshold')
         self._mask = kwargs.get('mask')
@@ -93,6 +93,16 @@ class Imaging(object):
         self._image = image
         self._shape = np.shape(image)
         self._mask = None
+    
+    @property
+    def imsize(self):
+        return self._imsize
+    
+    @imsize.setter
+    def imsize(self, imsize):
+        if imsize != self.imsize:
+            self._imsize = imsize
+            self.delta_graphene = None
 
     @property
     def shape(self):
