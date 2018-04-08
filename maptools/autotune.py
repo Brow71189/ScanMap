@@ -410,7 +410,7 @@ class Imaging(object):
             return threshold
         
     def dirt_generator(self, imsize, impix, thickness, interpolate_positions=True, intensity=1, int_dist_width=0.25,
-                       num_seeds=3, coverage=0.3, fade_distance=20, movement_radius=0.5, **kwargs):
+                       num_seeds=3, coverage=0.3, fade_distance=20, movement_radius=0.5, return_mask=False, **kwargs):
         image = np.zeros((impix+2, impix+2))
         for i in range(int(thickness*10)):
             positions = (impix+1) * np.random.rand(2, int(0.3*(imsize*10)**2))
@@ -450,12 +450,17 @@ class Imaging(object):
             mask = gaussian_filter(mask, fade_distance)
             image *= mask
             image = gaussian_filter(image, movement_radius*0.1/imsize*impix)
+        elif return_mask:
+            mask = np.ones_like(image)
             
-        return image[1:-1, 1:-1]     
+        if return_mask:
+            return (image[1:-1, 1:-1], mask[1:-1, 1:-1])
+        else:
+            return image[1:-1, 1:-1]
 
     def graphene_generator(self, imsize, impix, rotation, dopant_concentration=0, vacancy_concentration=0,
                            dopant_intensity=4, interpolate_positions=True, return_defect_coordinates=False,
-                           dirt_coverage=0, dirt_thickness=1, **kwargs):
+                           dirt_coverage=0, dirt_thickness=1, return_dirt_mask=False, **kwargs):
         """
         if dirt_coverage > 0 amorphous contamination is added to the image. kwargs are passed to dirt_generator
         """
@@ -467,8 +472,8 @@ class Imaging(object):
         visited_positions = np.zeros((int(impix*1.2), int(impix*1.2)))
         if return_defect_coordinates:
             defects = np.zeros((int(impix*1.2), int(impix*1.2)))
-        rotation_matrix = np.array( ( (np.cos(2.0/3.0*np.pi), np.sin(2.0/3.0*np.pi)), (-np.sin(2.0/3.0*np.pi),
-                                       np.cos(2.0/3.0*np.pi)) ) )
+        rotation_matrix = np.array((( np.cos(2.0/3.0*np.pi), np.sin(2.0/3.0*np.pi)),
+                                    (-np.sin(2.0/3.0*np.pi), np.cos(2.0/3.0*np.pi))))
         #define basis vectors of unit cell, a1 and a2
         basis_length = 0.142 * np.sqrt(3) * impix/float(imsize)
         a1 = np.array((np.cos(rotation), np.sin(rotation))) * basis_length
@@ -574,14 +579,26 @@ class Imaging(object):
 
         start = int(impix * 0.1)
         image = image[start:start+impix, start:start+impix]
+        
         if dirt_coverage > 0:
-            dirt = self.dirt_generator(imsize, impix, dirt_thickness, coverage=dirt_coverage, **kwargs)
+            if return_dirt_mask:
+                dirt, mask = self.dirt_generator(imsize, impix, dirt_thickness, coverage=dirt_coverage,
+                                                 return_mask=True, **kwargs)
+            else:
+                dirt = self.dirt_generator(imsize, impix, dirt_thickness, coverage=dirt_coverage, **kwargs)
             image += dirt
-        if return_defect_coordinates:
-            return image, defects[start:start+impix, start:start+impix]
+        
+        if return_defect_coordinates or return_dirt_mask:
+            return_value = (image, )
+            if return_defect_coordinates:
+                return_value += (defects[start:start+impix, start:start+impix], )
+            if return_dirt_mask:
+                return_value += (mask, )
+            
+            return return_value
+        
         else:
             return image
-        #return image
 
     def image_grabber(self, acquire_image=True, debug_mode=False, show_live_image=False, **kwargs):
         """
@@ -845,8 +862,15 @@ class Imaging(object):
                     imsize = impix/self.shape[0]*self.imsize
                     rotation = self.frame_parameters.get('rotation', 0)
                     delta_graphene = self.graphene_generator(imsize, impix, rotation, **kwargs)
-                    if kwargs.get('return_defect_coordinates', False):
-                        self.delta_graphene, defects = delta_graphene
+                    if kwargs.get('return_defect_coordinates', False) or kwargs.get('return_dirt_mask', False):
+                        self.delta_graphene = delta_graphene[0]
+                        if kwargs.get('return_defect_coordinates', False):
+                            defects = delta_graphene[1]
+                        if kwargs.get('return_dirt_mask', False):
+                            if kwargs.get('return_defect_coordinates', False):
+                                dirt_mask = delta_graphene[2]
+                            else:
+                                dirt_mask = delta_graphene[1]
                     else:
                         self.delta_graphene = delta_graphene
 
@@ -907,6 +931,8 @@ class Imaging(object):
 
                 if kwargs.get('return_defect_coordinates', False):
                     return_image.append(defects[int(kernelpixel/2-1):-int(kernelpixel/2), int(kernelpixel/2-1):-int(kernelpixel/2)])
+                if kwargs.get('return_dirt_mask', False):
+                    return_image.append(dirt_mask[int(kernelpixel/2-1):-int(kernelpixel/2), int(kernelpixel/2-1):-int(kernelpixel/2)])
 
         #print(self.aberrations)
         return return_image
