@@ -13,7 +13,7 @@ import time
 
 import numpy as np
 import scipy.optimize
-from scipy.ndimage import gaussian_filter, uniform_filter, distance_transform_cdt
+from scipy.ndimage import gaussian_filter, uniform_filter, distance_transform_cdt, binary_dilation
 from scipy.signal import fftconvolve
 import os
 import json
@@ -69,7 +69,7 @@ class Imaging(object):
     def __init__(self, **kwargs):
         self._image = kwargs.get('image')
         self._shape = kwargs.get('shape')
-        self.imsize = kwargs.get('imsize')
+        self._imsize = kwargs.get('imsize')
         self._online = kwargs.get('online')
         self.dirt_threshold = kwargs.get('dirt_threshold')
         self._mask = kwargs.get('mask')
@@ -93,6 +93,16 @@ class Imaging(object):
         self._image = image
         self._shape = np.shape(image)
         self._mask = None
+    
+    @property
+    def imsize(self):
+        return self._imsize
+    
+    @imsize.setter
+    def imsize(self, imsize):
+        if imsize != self.imsize:
+            self._imsize = imsize
+            self.delta_graphene = None
 
     @property
     def shape(self):
@@ -398,9 +408,62 @@ class Imaging(object):
             return (threshold, search_range, np.array(mask_sizes), dirt_start, dirt_end)
         else:
             return threshold
+        
+    def dirt_generator(self, imsize, impix, thickness, interpolate_positions=True, intensity=1, int_dist_width=0.25,
+                       num_seeds=3, coverage=0.3, fade_distance=20, movement_radius=0.5, return_mask=False, **kwargs):
+        image = np.zeros((impix+2, impix+2))
+        for i in range(int(thickness*10)):
+            positions = (impix+1) * np.random.rand(2, int(0.3*(imsize*10)**2))
+            intensities = int_dist_width * np.random.randn(positions.shape[1]) + intensity
+            if interpolate_positions:
+                intensities_inter = np.array(self.distribute_intensity(positions[1], [0]))
+                intensities = intensities_inter * intensities
+                pixelpositions = [(0, 0), (0, 1), (1, 1), (1, 0)]
+                positions = positions.astype(np.int16)
+                for i in range(len(pixelpositions)):
+                    offs = pixelpositions[i]
+                    image[positions[0]+offs[0], positions[1]+offs[1]] += intensities[i]
+            else:
+                positions = positions.astype(np.int16)
+                image[positions] += intensities
+        if coverage < 1:
+            mask = np.zeros_like(image)
+            dirt_patch_sizes = np.random.rand(num_seeds)
+            dirt_patch_sizes = dirt_patch_sizes/np.sum(dirt_patch_sizes)*coverage
+            for i in range(len(dirt_patch_sizes)):
+                temp_mask = np.zeros_like(mask)
+                while True:
+                    dirt_seed_position = ((mask.shape[0]) * np.random.rand(2)).astype(np.int16)
+                    if mask[tuple(dirt_seed_position)] == 0:
+                        temp_mask[tuple(dirt_seed_position)] = 1
+                        break
+
+                while np.sum(temp_mask)/np.size(temp_mask) < dirt_patch_sizes[i]:
+                    structure = np.zeros((17,17))
+                    draw_circle(structure, (8,8), 4, color=1)
+                    rand_angle = 2*np.pi*np.random.rand()
+                    rand_center = (4 * np.array((np.sin(rand_angle), np.cos(rand_angle))) + np.array((8,8))).astype(np.int16)
+                    draw_circle(structure, rand_center, 4, color=1)
+                    temp_mask = binary_dilation(temp_mask, structure=structure, iterations=int(impix/128) or 1)
+                mask[temp_mask == 1] = 1
+                
+            mask = gaussian_filter(mask, fade_distance)
+            image *= mask
+            image = gaussian_filter(image, movement_radius*0.1/imsize*impix)
+        elif return_mask:
+            mask = np.ones_like(image)
+            
+        if return_mask:
+            return (image[1:-1, 1:-1], mask[1:-1, 1:-1])
+        else:
+            return image[1:-1, 1:-1]
 
     def graphene_generator(self, imsize, impix, rotation, dopant_concentration=0, vacancy_concentration=0,
-                           dopant_intensity=4, interpolate_positions=True, return_defect_coordinates=False):
+                           dopant_intensity=4, interpolate_positions=True, return_defect_coordinates=False,
+                           dirt_coverage=0, dirt_thickness=1, return_dirt_mask=False, **kwargs):
+        """
+        if dirt_coverage > 0 amorphous contamination is added to the image. kwargs are passed to dirt_generator
+        """
         rotation = rotation*np.pi/180
 
         #increase size of initially generated image by 20% to avoid missing atoms at the edges (image will be cropped
@@ -409,8 +472,8 @@ class Imaging(object):
         visited_positions = np.zeros((int(impix*1.2), int(impix*1.2)))
         if return_defect_coordinates:
             defects = np.zeros((int(impix*1.2), int(impix*1.2)))
-        rotation_matrix = np.array( ( (np.cos(2.0/3.0*np.pi), np.sin(2.0/3.0*np.pi)), (-np.sin(2.0/3.0*np.pi),
-                                       np.cos(2.0/3.0*np.pi)) ) )
+        rotation_matrix = np.array((( np.cos(2.0/3.0*np.pi), np.sin(2.0/3.0*np.pi)),
+                                    (-np.sin(2.0/3.0*np.pi), np.cos(2.0/3.0*np.pi))))
         #define basis vectors of unit cell, a1 and a2
         basis_length = 0.142 * np.sqrt(3) * impix/float(imsize)
         a1 = np.array((np.cos(rotation), np.sin(rotation))) * basis_length
@@ -515,11 +578,27 @@ class Imaging(object):
             a1position += a1
 
         start = int(impix * 0.1)
-        if return_defect_coordinates:
-            return image[start:start+impix, start:start+impix], defects[start:start+impix, start:start+impix]
+        image = image[start:start+impix, start:start+impix]
+        
+        if dirt_coverage > 0:
+            if return_dirt_mask:
+                dirt, mask = self.dirt_generator(imsize, impix, dirt_thickness, coverage=dirt_coverage,
+                                                 return_mask=True, **kwargs)
+            else:
+                dirt = self.dirt_generator(imsize, impix, dirt_thickness, coverage=dirt_coverage, **kwargs)
+            image += dirt
+        
+        if return_defect_coordinates or return_dirt_mask:
+            return_value = (image, )
+            if return_defect_coordinates:
+                return_value += (defects[start:start+impix, start:start+impix], )
+            if return_dirt_mask:
+                return_value += (mask, )
+            
+            return return_value
+        
         else:
-            return image[start:start+impix, start:start+impix]
-        #return image
+            return image
 
     def image_grabber(self, acquire_image=True, debug_mode=False, show_live_image=False, **kwargs):
         """
@@ -571,16 +650,16 @@ class Imaging(object):
             self.delta_graphene = None
         if kwargs.get('interpolate_positions') is not None:
             self.delta_graphene = None
-        if kwargs.get('delta_graphene') is not None:
-            self.delta_graphene = kwargs.get('delta_graphene')
+        if kwargs.get('dirt_coverage', 0) > 0:
+            self.delta_graphene = None
         if kwargs.get('frame_parameters') is not None:
-            self.frame_parameters = kwargs.get('frame_parameters')
+            self.frame_parameters = kwargs.pop('frame_parameters')
         if kwargs.get('detectors') is not None:
-            self.detectors = kwargs.get('detectors')
+            self.detectors = kwargs.pop('detectors')
         if kwargs.get('imsize') is not None:
-            self.imsize = kwargs['imsize']
+            self.imsize = kwargs.pop('imsize')
         if kwargs.get('shape') is not None:
-            self.shape = kwargs['shape']
+            self.shape = kwargs.pop('shape')
         if kwargs.get('impix') is not None:
             self.shape = (kwargs['impix'], kwargs['impix'])
         if kwargs.get('vacuum_level') is not None:
@@ -590,6 +669,10 @@ class Imaging(object):
             self.imsize = self.frame_parameters.get('fov')
         if self.frame_parameters.get('size_pixels') is not None:
             self.shape = self.frame_parameters.get('size_pixels')
+            
+        # Need to set delta_graphene last to avoid that it is set to None because of setting another parameter
+        if kwargs.get('delta_graphene') is not None:
+            self.delta_graphene = kwargs.get('delta_graphene')
 
         # Set parameters for dealing with aberrration settings and apply correct defaults
         relative_aberrations = kwargs.get('relative_aberrations', True)
@@ -771,21 +854,23 @@ class Imaging(object):
                 # Create x and y coordinates such that resulting beam has the same scale as the image.
                 # The size of the kernel which is used for image convolution is chosen to be "1/kernelsize"
                 # of the image size (in pixels)
-                kernelsize = 2
+                kernelsize = 4
                 kernelpixel = int(self.shape[0]/kernelsize)
 
                 if self.delta_graphene is None:
                     impix = self.shape[0]+kernelpixel-1
                     imsize = impix/self.shape[0]*self.imsize
                     rotation = self.frame_parameters.get('rotation', 0)
-                    delta_graphene = self.graphene_generator(imsize, impix, rotation,
-                                                                  vacancy_concentration=kwargs.get('vacancy_concentration', 0),
-                                                                  dopant_concentration=kwargs.get('dopant_concentration', 0),
-                                                                  dopant_intensity=kwargs.get('dopant_intensity', 4),
-                                                                  interpolate_positions=kwargs.get('interpolate_positions', True),
-                                                                  return_defect_coordinates=kwargs.get('return_defect_coordinates', False))
-                    if kwargs.get('return_defect_coordinates', False):
-                        self.delta_graphene, defects = delta_graphene
+                    delta_graphene = self.graphene_generator(imsize, impix, rotation, **kwargs)
+                    if kwargs.get('return_defect_coordinates', False) or kwargs.get('return_dirt_mask', False):
+                        self.delta_graphene = delta_graphene[0]
+                        if kwargs.get('return_defect_coordinates', False):
+                            defects = delta_graphene[1]
+                        if kwargs.get('return_dirt_mask', False):
+                            if kwargs.get('return_defect_coordinates', False):
+                                dirt_mask = delta_graphene[2]
+                            else:
+                                dirt_mask = delta_graphene[1]
                     else:
                         self.delta_graphene = delta_graphene
 
@@ -834,6 +919,8 @@ class Imaging(object):
                 else:
                     multiplicator = self.frame_parameters.get('pixeltime', 0)*100+1
                 im = fftconvolve((self.delta_graphene + self.vacuum_level)*multiplicator, kernel, mode='valid')
+                if kwargs.get('source_size') is not None:
+                    im = gaussian_filter(im, kwargs['source_size']*0.05/self.imsize*im.shape[0])
                 if self.frame_parameters.get('pixeltime', 0) >= 0:
                     im = np.random.poisson(lam=im.flatten(), size=np.size(im)).astype(im.dtype)
 
@@ -844,6 +931,8 @@ class Imaging(object):
 
                 if kwargs.get('return_defect_coordinates', False):
                     return_image.append(defects[int(kernelpixel/2-1):-int(kernelpixel/2), int(kernelpixel/2-1):-int(kernelpixel/2)])
+                if kwargs.get('return_dirt_mask', False):
+                    return_image.append(dirt_mask[int(kernelpixel/2-1):-int(kernelpixel/2), int(kernelpixel/2-1):-int(kernelpixel/2)])
 
         #print(self.aberrations)
         return return_image
