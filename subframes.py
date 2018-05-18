@@ -4,9 +4,13 @@ Created on Tue Mar 17 13:22:52 2015
 
 @author: mittelberger
 """
-import cv2
+try:
+    import cv2
+except ModuleNotFoundError:
+    print('cv2 not found. Functions relying on cv2 will not work!')
 import numpy as np
 import os
+import re
 import logging
 from multiprocessing import Pool
 #import matplotlib.pyplot as plt
@@ -30,31 +34,34 @@ from ElectronCounting import c_electron_counting
 #######################################################################################################################
 #######################################################################################################################
 #######################################################################################################################
-dirpath = '/home/mittelberger2/Downloads/christoph_ellipse'
-imsize = 8
-graphene_threshold = -1
+dirpath = '/home/mittelberger2/Documents/reconstructions/low-dose-reconstruction/raw_data/map_2016_09_05_09_44'
+imsize = 12
+graphene_threshold = 0.023
 light_threshold = -1
-heavy_threshold = 0.033
-dirt_border = 60
-minimum_graphene_area = 0.0
-minimum_number_peaks = 0
+heavy_threshold = 0.038
+dirt_border = 50
+minimum_graphene_area = 0.3
+minimum_number_peaks = 8
 maximum_number_peaks = 12
 only_process_this_number_of_images = -1 # -1 all
-only_process_images_of_shape = None #(2048, 2048) #(1024, 1024) # None or tuple
+only_process_images_of_shape = None # None or tuple
 remove_left_edge_number_pixels = -1 # -1 nothing to remove
 save_fft = True
 # Add 4 digit numbers to beginning of filenames
-rename_images = True
+rename_images = False
 # Should electron counting be done
-calculate_actual_counts = False
+calculate_actual_counts = True
 # Should we also save electron counted images when there are no peaks found
-always_save_images = True
+always_save_images = False
 # parameters for electron counting
-baseline = 0.05
-countlevel = 0.188
-peakwidth = 0.624
+baseline = 0.0
+countlevel = 0.085
+peakwidth = 0.212
 # only integrate electron signal and do not convert to counts
-only_integrate = True
+only_integrate = False
+# Pattern that has to match the filename in order for the file
+# to be included into the processing
+filename_match_pattern = '\d{4}'
 #######################################################################################################################
 #######################################################################################################################
 #######################################################################################################################
@@ -292,7 +299,10 @@ def subframes_preprocessing(filename, dirname, imsize, counts_threshold=1e-9, gr
         # New version of calculating counts
             image = c_electron_counting.electron_counting(image, baseline=baseline, countlevel=countlevel,
                                                           peakwidth=peakwidth, only_integrate=only_integrate)
-            image = image.astype(np.float32)
+            if only_integrate:
+                image = image.astype(np.float32)
+            else:
+                image = image.astype(np.uint16)
         #dilate mask if dirt_border > 0
     #    if dirt_border > 0:
     #        mask = cv2.dilate(mask, np.ones((dirt_border, dirt_border)))
@@ -351,17 +361,17 @@ if __name__ == '__main__':
     dirlist=os.listdir(dirpath)
     matched_dirlist = []
     for filename in dirlist:
-        try:
-            splitname = os.path.splitext(filename)
-            #int(splitname[0][-4:])
-            #int(filename[:4])
-            if filename.startswith('mess'):
-                matched_dirlist.append(filename)
-        except:
-            pass
-        else:
-            pass
-            #matched_dirlist.append(filename)
+#        try:
+#            splitname = os.path.splitext(filename)
+#            #int(splitname[0][-4:])
+#            int(filename[:4])
+#            #if filename.startswith('mess'):
+#            #    matched_dirlist.append(filename)
+#        except:
+#            pass
+#        else:
+        if re.match(filename_match_pattern, filename):
+            matched_dirlist.append(filename)
     matched_dirlist.sort()
     if rename_images:
         number_list = list(np.arange(len(matched_dirlist), dtype=np.int32))
