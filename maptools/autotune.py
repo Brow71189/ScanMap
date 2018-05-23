@@ -93,11 +93,11 @@ class Imaging(object):
         self._image = image
         self._shape = np.shape(image)
         self._mask = None
-    
+
     @property
     def imsize(self):
         return self._imsize
-    
+
     @imsize.setter
     def imsize(self, imsize):
         if imsize != self.imsize:
@@ -153,11 +153,11 @@ class Imaging(object):
     @frame_parameters.deleter
     def frame_parameters(self):
         self._frame_parameters = {}
-        
+
     @property
     def vacuum_level(self):
         return self._vacuum_level
-    
+
     @vacuum_level.setter
     def vacuum_level(self, vacuum_level):
         if vacuum_level != self.vacuum_level:
@@ -408,7 +408,7 @@ class Imaging(object):
             return (threshold, search_range, np.array(mask_sizes), dirt_start, dirt_end)
         else:
             return threshold
-        
+
     def dirt_generator(self, imsize, impix, thickness, interpolate_positions=True, intensity=1, int_dist_width=0.25,
                        num_seeds=3, coverage=0.3, fade_distance=20, movement_radius=0.5, return_mask=False, **kwargs):
         image = np.zeros((impix+2, impix+2))
@@ -446,13 +446,13 @@ class Imaging(object):
                     draw_circle(structure, rand_center, 4, color=1)
                     temp_mask = binary_dilation(temp_mask, structure=structure, iterations=int(impix/128) or 1)
                 mask[temp_mask == 1] = 1
-                
+
             mask = gaussian_filter(mask, fade_distance)
             image *= mask
             image = gaussian_filter(image, movement_radius*0.1/imsize*impix)
         elif return_mask:
             mask = np.ones_like(image)
-            
+
         if return_mask:
             return (image[1:-1, 1:-1], mask[1:-1, 1:-1])
         else:
@@ -579,7 +579,7 @@ class Imaging(object):
 
         start = int(impix * 0.1)
         image = image[start:start+impix, start:start+impix]
-        
+
         if dirt_coverage > 0:
             if return_dirt_mask:
                 dirt, mask = self.dirt_generator(imsize, impix, dirt_thickness, coverage=dirt_coverage,
@@ -587,16 +587,16 @@ class Imaging(object):
             else:
                 dirt = self.dirt_generator(imsize, impix, dirt_thickness, coverage=dirt_coverage, **kwargs)
             image += dirt
-        
+
         if return_defect_coordinates or return_dirt_mask:
             return_value = (image, )
             if return_defect_coordinates:
                 return_value += (defects[start:start+impix, start:start+impix], )
             if return_dirt_mask:
                 return_value += (mask, )
-            
+
             return return_value
-        
+
         else:
             return image
 
@@ -669,7 +669,7 @@ class Imaging(object):
             self.imsize = self.frame_parameters.get('fov')
         if self.frame_parameters.get('size_pixels') is not None:
             self.shape = self.frame_parameters.get('size_pixels')
-            
+
         # Need to set delta_graphene last to avoid that it is set to None because of setting another parameter
         if kwargs.get('delta_graphene') is not None:
             self.delta_graphene = kwargs.get('delta_graphene')
@@ -1235,11 +1235,13 @@ class Peaking(Imaging):
                 for i in range(len(peaks)):
                     if i == 1:
                         position_tolerance = int(np.rint(position_tolerance * np.sqrt(3)))
-                    for coord in peaks[i]:
+                    for coord1 in peaks[i]:
+                        coord = coord1.astype(np.int)
                         fft[coord[0]-position_tolerance:coord[0]+position_tolerance+1,
                             coord[1]-position_tolerance:coord[1]+position_tolerance+1] *= 4.0
             else:
-                for coord in peaks:
+                for coord1 in peaks:
+                    coord = coord1.astype(np.int)
                     fft[coord[0]-position_tolerance:coord[0]+position_tolerance+1,
                         coord[1]-position_tolerance:coord[1]+position_tolerance+1] *= 4.0
             return (peaks, fft)
