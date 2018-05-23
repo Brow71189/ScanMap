@@ -1099,6 +1099,8 @@ class Peaking(Imaging):
             self.imsize = kwargs['imsize']
         if kwargs.get('integration_radius') is not None:
             self.integration_radius = kwargs['integration_radius']
+        first_peak_intensity_tolerance = kwargs.get('first_peak_intensity_tolerance', 6)
+        next_peaks_intensity_tolerance = kwargs.get('next_peaks_intensity_tolerance', 5)
 
         fft = np.abs(self.fft)
         fft_raw = fft.copy()
@@ -1149,7 +1151,7 @@ class Peaking(Imaging):
             area_first_peak = fft[first_peak[0]-position_tolerance:first_peak[0]+position_tolerance+1,
                                   first_peak[1]-position_tolerance:first_peak[1]+position_tolerance+1]
 
-            if first_peak[2] < np.mean(area_first_peak)+6*np.std(area_first_peak):
+            if first_peak[2] < np.mean(area_first_peak)+first_peak_intensity_tolerance*np.std(area_first_peak):
                 fft[first_peak[0]-position_tolerance:first_peak[0]+position_tolerance+1,
                     first_peak[1]-position_tolerance:first_peak[1]+position_tolerance+1] = 1
             elif np.sqrt(np.sum((np.array(first_peak[0:2])-self.center)**2)) < first_order * 0.6667 or \
@@ -1180,7 +1182,7 @@ class Peaking(Imaging):
                                              next_peak[1] - position_tolerance:next_peak[1] + position_tolerance+1]
                         max_next_peak = np.amax(area_next_peak)
 
-                        if max_next_peak > np.mean(area_next_peak)+5*np.std(area_next_peak):
+                        if max_next_peak > np.mean(area_next_peak)+next_peaks_intensity_tolerance*np.std(area_next_peak):
                             next_peak += np.array(np.unravel_index(np.argmax(area_next_peak),
                                                                    np.shape(area_next_peak))) - position_tolerance
                             if second_order:
@@ -1214,7 +1216,7 @@ class Peaking(Imaging):
                                                  next_peak[1]-position_tolerance:next_peak[1]+position_tolerance+1]
                             max_next_peak = np.amax(area_next_peak)
                             #if  max_next_peak > mean_fft + 4.0*std_dev_fft:#peaks[0][2]/4:
-                            if max_next_peak > np.mean(area_next_peak)+5*np.std(area_next_peak):
+                            if max_next_peak > np.mean(area_next_peak)+next_peaks_intensity_tolerance*np.std(area_next_peak):
                                 next_peak += np.array(np.unravel_index(np.argmax(area_next_peak),
                                                                        np.shape(area_next_peak))) - position_tolerance
                                 peaks[1,i] = np.array(tuple(next_peak) +
