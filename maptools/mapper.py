@@ -42,7 +42,8 @@ class Mapping(object):
         self.switches = kwargs.get('switches', {'do_retuning': False, 'use_z_drive': False,
                                                 'abort_series_on_dirt': False, 'compensate_stage_error': False,
                                                 'acquire_overview': True, 'show_last_frames_average': False,
-                                                'aligned_average': False})
+                                                'aligned_average': False, 'abort_series_on_intensity_drop': False,
+                                                'exclude_contamination': True})
         self.number_of_images = kwargs.get('number_of_images', 1)
         self.dirt_area = kwargs.get('dirt_area', 0.5)
         self.peak_intensity_reference = kwargs.get('peak_intensity_reference')
@@ -68,6 +69,7 @@ class Mapping(object):
         self.sleeptime = kwargs.get('sleeptime', 2)
         self.nion_frame_parameters = {}
         self.number_samples = 4
+        self.intensity_threshold_for_abort = 0.1
 
     @property
     def online(self):
@@ -267,7 +269,7 @@ class Mapping(object):
 #                        frame_info.append(None)
 
         return (map_coords, frame_info)
-    
+
     def create_sample_points(self):
         self.create_map_coordinates()
         width = self.rightX - self.leftX
@@ -285,7 +287,7 @@ class Mapping(object):
                     point += (stagez, fine_focus)
                     points.append(point)
         return points
-                    
+
 
     def tuning_necessary(self, frame_info, message):
         """
@@ -739,6 +741,7 @@ class Mapping(object):
             config_file.write('offset: ' + str(self.offset) + '\n')
             config_file.write('retuning_mode: ' + str(self.retuning_mode) + '\n')
             config_file.write('dirt_area: ' + str(self.dirt_area) + '\n')
+            config_file.write('intensity_threshold_for_abort: ' + str(self.intensity_threshold_for_abort) + '\n')
             config_file.write('sleeptime: ' + str(self.sleeptime) + '\n')
             config_file.write('average_number: ' + str(self.average_number) + '\n')
             config_file.write('max_align_dist: ' + str(self.max_align_dist) + '\n')
@@ -1062,7 +1065,7 @@ class Mapping(object):
         if self.gui_communication.get(button) is not None:
             self.gui_communication[button].text = text
 
-    def wait_for_focused(self, message, timeout=360, accept_timeout=30):
+    def wait_for_focused(self, message, timeout=600, accept_timeout=30):
 
         self.document_controller.queue_task(lambda: self.update_button('done_button', 'Done tuning'))
         self.tune_event.set()
@@ -1119,37 +1122,35 @@ class Mapping(object):
         return (message, (self.gui_communication.pop('new_z'), self.gui_communication.pop('new_EHTFocus')))
 
     def write_map_info_file(self):
+        def translator(switch_state):
+            if switch_state:
+                return 'ON'
+            else:
+                return 'OFF'
+        config_file = open(os.path.join(self.store, 'map_info.txt'), 'w')
+        config_file.write('#This file contains all parameters used for the mapping.\n\n')
+        config_file.write('#Map parameters:\n')
+        map_paras = {'Autofocus': translator(self.switches.get('do_autotuning')),
+                     'Auto Rotation': translator(self.switches.get('auto_rotation')),
+                     'Auto Offset': translator(self.switches.get('auto_offset')),
+                     'Z Drive': translator(self.switches.get('use_z_drive')),
+                     'Acquire_Overview': translator(self.switches.get('acquire_overview')),
+                     'Number of frames': str(self.num_subframes[0])+'x'+str(self.num_subframes[1]),
+                     'Compensate stage error': translator(self.switches.get('compensate_stage_error'))}
+        for key, value in map_paras.items():
+            config_file.write('{0:18}{1:}\n'.format(key+':', value))
 
-            def translator(switch_state):
-                if switch_state:
-                    return 'ON'
-                else:
-                    return 'OFF'
+        config_file.write('\n#Scan parameters:\n')
+        scan_paras = {'SuperScan FOV value': str(self.frame_parameters.get('fov')) + ' nm',
+                      'Image size': str(self.frame_parameters.get('size_pixels'))+' px',
+                      'Pixel time': str(self.frame_parameters.get('pixeltime'))+' us',
+                      'Offset between images': str(self.offset)+' x image size',
+                      'Scan rotation': str(self.frame_parameters.get('rotation')) +' deg',
+                      'Detectors': str(self.detectors)}
+        for key, value in scan_paras.items():
+            config_file.write('{0:25}{1:}\n'.format(key+':', value))
 
-            config_file = open(os.path.join(self.store, 'map_info.txt'), 'w')
-            config_file.write('#This file contains all parameters used for the mapping.\n\n')
-            config_file.write('#Map parameters:\n')
-            map_paras = {'Autofocus': translator(self.switches.get('do_autotuning')),
-                         'Auto Rotation': translator(self.switches.get('auto_rotation')),
-                         'Auto Offset': translator(self.switches.get('auto_offset')),
-                         'Z Drive': translator(self.switches.get('use_z_drive')),
-                         'Acquire_Overview': translator(self.switches.get('acquire_overview')),
-                         'Number of frames': str(self.num_subframes[0])+'x'+str(self.num_subframes[1]),
-                         'Compensate stage error': translator(self.switches.get('compensate_stage_error'))}
-            for key, value in map_paras.items():
-                config_file.write('{0:18}{1:}\n'.format(key+':', value))
-
-            config_file.write('\n#Scan parameters:\n')
-            scan_paras = {'SuperScan FOV value': str(self.frame_parameters.get('fov')) + ' nm',
-                          'Image size': str(self.frame_parameters.get('size_pixels'))+' px',
-                          'Pixel time': str(self.frame_parameters.get('pixeltime'))+' us',
-                          'Offset between images': str(self.offset)+' x image size',
-                          'Scan rotation': str(self.frame_parameters.get('rotation')) +' deg',
-                          'Detectors': str(self.detectors)}
-            for key, value in scan_paras.items():
-                config_file.write('{0:25}{1:}\n'.format(key+':', value))
-
-            config_file.close()
+        config_file.close()
 
 class AcquisitionLoop(object):
     """
@@ -1216,6 +1217,8 @@ class AcquisitionLoop(object):
             if counter == self._n - 1:
                 self.superscan.stop_playing()
                 image['is_last'] = True
+            if counter == 0:
+                image['is_first'] = True
             image['data'] = self.superscan.grab_next_to_finish()
             try:
                 if callable(self.get_info_dict):
@@ -1418,6 +1421,8 @@ class SuperScanMapper(Mapping):
             self.tasks.append({'function': self.show_average_of_last_frames})
         if self.switches.get('abort_series_on_dirt'):
             self.tasks.append({'function': self.Tuner.dirt_detector})
+        if self.switches.get('abort_series_on_intensity_drop'):
+            self.tasks.append({'function': self.compare_intensity})
 #        if self.switches.get('do_retuning'):
 #            self.tasks.append({'function': self.tuning_necessary})
         self.tasks.append({'function': self.processing_finished})
@@ -1562,6 +1567,13 @@ class SuperScanMapper(Mapping):
                     self.acquisition_loop.abort()
                     self._processing_finished_event.set()
                     self.write_log('Aborted series because of too high dirt coverage.')
+        elif taskname == 'compare_intensity':
+            self.acquisition_loop.abort()
+            self._processing_finished_event.set()
+            if self.intensity_threshold_for_abort < 0:
+                self.write_log('Aborted series because the image intensity ({:g}) exceeded the threshold ({:g}).'.format(*obj))
+            else:
+                self.write_log('Aborted series because the image intensity ({:g}) dropped below the threshold ({:g}).'.format(*obj))
 
     def handle_retuning(self, *args, **kwargs):
         self.pause()
@@ -1683,6 +1695,25 @@ class SuperScanMapper(Mapping):
         self.nion_frame_parameters['fov_nm'] = self.frame_parameters['fov']
         self.nion_frame_parameters['rotation_rad'] = self.frame_parameters['rotation']/180*np.pi
         self.nion_frame_parameters['flyback_time_us'] = 120
+
+    def compare_intensity(self, image, *args, **kwargs):
+        if self.switches.get('exclude_contamination'):
+            mask = self.Tuner.dirt_detector(image=image)
+            image = image.copy() #make a copy because we are changing it
+            image[mask==1] = np.nan
+
+        if kwargs.get('is_first'):
+            self.intensity_reference = np.nanmean(image)
+        else:
+            intensity = np.nanmean(image)
+            if self.intensity_threshold_for_abort < 0:
+                if intensity > (1-self.intensity_threshold_for_abort)*self.intensity_reference:
+                    return (intensity, self.intensity_reference)
+            else:
+                if intensity < (1-self.intensity_threshold_for_abort)*self.intensity_reference:
+                    return (intensity, (1-self.intensity_threshold_for_abort)*self.intensity_reference)
+
+
 
     def close(self):
         self.logfile.close()

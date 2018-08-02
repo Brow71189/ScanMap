@@ -177,6 +177,17 @@ class ScanMapPanelDelegate(object):
 
             dirt_area_line_edit.text = '{:.0f}'.format(self.Mapper.dirt_area*100)
 
+        def intensity_threshold_finished(text):
+            if len(text) > 0:
+                try:
+                    threshold = float(text)/100
+                except ValueError:
+                    pass
+                else:
+                    self.Mapper.intensity_threshold_for_abort = threshold
+
+            intensity_threshold_line_edit.text = '{:.0f}'.format(self.Mapper.intensity_threshold_for_abort*100)
+
         def saving_finished(text):
             if len(text) > 0:
                 if os.path.isabs(text):
@@ -196,8 +207,6 @@ class ScanMapPanelDelegate(object):
                     self.Mapper.average_number = average_number
 
             average_number_line_edit.text = '{:.0f}'.format(self.Mapper.average_number)
-
-
 
         def max_align_dist_finished(text):
             if len(text) > 0:
@@ -240,7 +249,7 @@ class ScanMapPanelDelegate(object):
             self.Mapper.retuning_mode[0] = item.replace(' ', '_')
         def mode_combo_box_changed(item):
             self.Mapper.retuning_mode[1] = item.replace(' ', '_')
-            
+
         def number_samples_changed(item):
             self.Mapper.number_samples = int(item)
             samples = list(self.coord_dict.keys())
@@ -258,12 +267,12 @@ class ScanMapPanelDelegate(object):
             self._dropdowns['select_sample'].items = select_sample_items
             for key, value in self.coord_dict.items():
                 print('{:s}: {:s}'.format(key, str(value)))
-        
+
         def select_sample_changed(item):
             if time.time() - self._last_time_updated_items < 0.25 or self._creating_panel:
                 return
             self.drive_coords(item)
-        
+
         def save_sample_button_clicked():
             self.save_coords(self._dropdowns['select_sample'].current_item)
 
@@ -474,7 +483,7 @@ class ScanMapPanelDelegate(object):
 #            sleeptime_line_edit.text = '{:.1f}'.format(self.sleeptime)
 
             self.sync_gui_working = False
-            
+
         self._creating_panel = True
 
         mode_row = ui.create_row_widget()
@@ -497,7 +506,8 @@ class ScanMapPanelDelegate(object):
         checkbox_row2 = ui.create_row_widget()
         checkbox_row3 = ui.create_row_widget()
         checkbox_row4 = ui.create_row_widget()
-        #checkbox_row5 = ui.create_row_widget()
+        checkbox_row5 = ui.create_row_widget()
+        checkbox_row5_1 = ui.create_row_widget()
         checkbox_row6 = ui.create_row_widget()
         checkbox_row7 = ui.create_row_widget()
         number_samples_row = ui.create_row_widget()
@@ -547,8 +557,9 @@ class ScanMapPanelDelegate(object):
         column.add_spacing(5)
         column.add(checkbox_row4)
         column.add_spacing(5)
-#        column.add(checkbox_row5)
-#        column.add_spacing(5)
+        column.add(checkbox_row5)
+        column.add(checkbox_row5_1)
+        column.add_spacing(5)
         column.add(checkbox_row6)
         column.add_spacing(5)
         column.add(checkbox_row7)
@@ -643,6 +654,8 @@ class ScanMapPanelDelegate(object):
 
         dirt_area_line_edit = ui.create_line_edit_widget()
         dirt_area_line_edit.on_editing_finished = dirt_area_finished
+        intensity_threshold_line_edit = ui.create_line_edit_widget()
+        intensity_threshold_line_edit.on_editing_finished = intensity_threshold_finished
         average_number_line_edit = ui.create_line_edit_widget()
         average_number_line_edit.on_editing_finished = average_number_finished
         max_align_dist_line_edit = ui.create_line_edit_widget()
@@ -681,6 +694,10 @@ class ScanMapPanelDelegate(object):
         z_drive_checkbox = ui.create_check_box_widget(_("Use Z Drive"))
         z_drive_checkbox.on_check_state_changed = checkbox_changed
         abort_series_on_dirt_checkbox = ui.create_check_box_widget(_("Abort series on more than "))
+        abort_series_on_intensity_change_checkbox = ui.create_check_box_widget(_("Abort series on intensity change of "))
+        abort_series_on_intensity_change_checkbox.on_check_state_changed = checkbox_changed
+        exclude_contamination_checkbox = ui.create_check_box_widget(_("Exclude containation "))
+        exclude_contamination_checkbox.on_check_state_changed = checkbox_changed
         correct_stage_errors_checkbox.on_check_state_changed = checkbox_changed
         show_average_checkbox = ui.create_check_box_widget(_("Show average of last "))
         show_average_checkbox.on_check_state_changed = checkbox_changed
@@ -748,8 +765,14 @@ class ScanMapPanelDelegate(object):
         checkbox_row4.add(ui.create_label_widget(_('% dirt in image')))
         checkbox_row4.add_stretch()
 
-#        checkbox_row5.add(isotope_mapping_checkbox)
-#        checkbox_row5.add_stretch()
+        checkbox_row5.add(abort_series_on_intensity_change_checkbox)
+        checkbox_row5.add(intensity_threshold_line_edit)
+        checkbox_row5.add(ui.create_label_widget(_('%')))
+        checkbox_row5.add_stretch()
+
+        checkbox_row5_1.add_spacing(20)
+        checkbox_row5_1.add(exclude_contamination_checkbox)
+        checkbox_row5_1.add_stretch()
 
         checkbox_row6.add(show_average_checkbox)
         checkbox_row6.add(average_number_line_edit)
@@ -763,7 +786,7 @@ class ScanMapPanelDelegate(object):
         checkbox_row7.add(align_average_checkbox)
         checkbox_row7.add(max_align_dist_line_edit)
         checkbox_row7.add_stretch()
-        
+
         number_samples_row.add(number_samples_label)
         number_samples_row.add(number_samples_combo_box)
         number_samples_row.add_spacing(5)
@@ -790,6 +813,8 @@ class ScanMapPanelDelegate(object):
         self._checkboxes['abort_series_on_dirt'] = abort_series_on_dirt_checkbox
         self._checkboxes['show_last_frames_average'] = show_average_checkbox
         self._checkboxes['aligned_average'] = align_average_checkbox
+        self._checkboxes['abort_series_on_intensity_drop'] = abort_series_on_intensity_change_checkbox
+        self._checkboxes['exclude_contamination'] = exclude_contamination_checkbox
 
         self._buttons['test'] = test_button
         self._buttons['done'] = done_button
@@ -818,6 +843,7 @@ class ScanMapPanelDelegate(object):
         self._text_fields['average_number'] = average_number_line_edit
         self._text_fields['max_align_dist'] = max_align_dist_line_edit
         self._text_fields['savepath'] = savepath_line_edit
+        self._text_fields['intensity_threshold_for_abort'] = intensity_threshold_line_edit
 
         self._dropdowns['mode'] = mode_combo_box
         self._dropdowns['method'] = method_combo_box
@@ -825,7 +851,7 @@ class ScanMapPanelDelegate(object):
         self._dropdowns['select_sample'] = select_sample_combo_box
 
         sync_gui()
-        
+
         self._creating_panel = False
         return column
 

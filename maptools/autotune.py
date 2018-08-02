@@ -263,6 +263,8 @@ class Imaging(object):
         #self.mask = np.rint(uniform_filter(self.mask, median_blur_diam)).astype('uint8')
         return np.rint(uniform_filter(mask, median_blur_diam)).astype('uint8')
 
+
+
     def distribute_intensity(self, x, y):
         """
         Distributes the intensity of a pixel at a non-integer-position (x,y) over four pixels.
