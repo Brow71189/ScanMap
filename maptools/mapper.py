@@ -286,6 +286,8 @@ class Mapping(object):
                     stagez, fine_focus = self.interpolation_spline(point, order=1)
                     point += (stagez, fine_focus)
                     points.append(point)
+        if hasattr(self, 'interpolator'):
+            delattr(self, 'interpolator')
         return points
 
 
@@ -631,7 +633,6 @@ class Mapping(object):
             z = []
             focus = []
             weigths = []
-
             for key, value in self.coord_dict.items():
                 splitkey = key.split('_')
                 if splitkey[0] == 'new':
@@ -1118,7 +1119,7 @@ class Mapping(object):
         if self.switches.get('blank_beam'):
             self.as2.set_property_as_float('C_Blank', 1)
         # add short wait time to make sure abort_playing is finished
-        time.sleep(0.1)
+        time.sleep(0.5)
         return (message, (self.gui_communication.pop('new_z'), self.gui_communication.pop('new_EHTFocus')))
 
     def write_map_info_file(self):
@@ -1236,6 +1237,8 @@ class AcquisitionLoop(object):
             self._pause_event.wait(timeout=self._pause_timeout)
             counter += 1
         #self.superscan.stop_playing()
+        if (np.array(self.nion_frame_parameters['size']) > 2048).any():
+            time.sleep(2)
         self._acquisition_finished_event.set()
         self._n = -1
 
@@ -1349,7 +1352,6 @@ class MappingLoop(object):
         self._current_position = next(self._coordinate_iterator)
         stagex, stagey, stagex_corrected, stagey_corrected = self.current_position
         stagez, fine_focus = self.interpolation((stagex, stagey))
-        print(fine_focus)
         self.as2.set_property_as_float('StageOutX', stagex_corrected)
         self.as2.set_property_as_float('StageOutY', stagey_corrected)
         if self.switches.get('use_z_drive'):
@@ -1381,7 +1383,6 @@ class SuperScanMapper(Mapping):
         self.on_low_level_event_occured = None
 
     def start(self):
-        print(self.retuning_mode)
         if self._t is not None and self._t.is_alive():
             return
         self._abort_event.clear()
@@ -1398,7 +1399,7 @@ class SuperScanMapper(Mapping):
             delattr(self, '_dirt_threshold')
         self.create_nion_frame_parameters()
         # Sort coordinates in case they were not in the right order
-        self.coord_dict = self.sort_quadrangle()
+        #self.coord_dict = self.sort_quadrangle()
         self.map_coords, self.map_infos = self.create_map_coordinates(compensate_stage_error=
                                                             self.switches['compensate_stage_error'])
         self.mapping_loop = MappingLoop(self.map_coords, coordinate_info=self.map_infos, as2=self.as2,
