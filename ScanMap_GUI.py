@@ -877,7 +877,7 @@ class ScanMapPanelDelegate(object):
 
             def disable_checkboxes():
                 for key, value in self._checkboxes.items():
-                    if key in ['compensate_stage_error', 'use_z_drive']:
+                    if key in ['compensate_stage_error', 'use_z_drive', 'abort_series_on_intensity_drop']:
                         value._widget.enabled = False
             self.document_controller.queue_task(disable_checkboxes)
 
@@ -901,7 +901,7 @@ class ScanMapPanelDelegate(object):
 
             def enable_checkboxes():
                 for key, value in self._checkboxes.items():
-                    if key in ['compensate_stage_error', 'use_z_drive']:
+                    if key in ['compensate_stage_error', 'use_z_drive', 'abort_series_on_intensity_drop']:
                         value._widget.enabled = True
             self.document_controller.queue_task(enable_checkboxes)
 

@@ -767,9 +767,9 @@ class Mapping(object):
                                            'Average of last {:.0f} frames (MAADF)'.format(self.average_number))
 
         if self.detectors['HAADF']:
-            self.average_data_item_HAADF.set_data(np.mean(self.last_frames_HAADF, axis=0))
+            self.document_controller.queue_task(lambda: self.average_data_item_HAADF.set_data(np.mean(self.last_frames_HAADF, axis=0)))
         elif self.detectors['MAADF']:
-            self.average_data_item_MAADF.set_data(np.mean(self.last_frames_MAADF, axis=0))
+            self.document_controller.queue_task(lambda: self.average_data_item_MAADF.set_data(np.mean(self.last_frames_MAADF, axis=0)))
 
     def sort_quadrangle(self, *args):
         """
@@ -1171,6 +1171,7 @@ class AcquisitionLoop(object):
         self._abort_event = threading.Event()
         self._abort_event.set()
         self._acquisition_finished_event = threading.Event()
+        self._single_acquisition_finished_event = threading.Event()
         self._t = None
         self.get_info_dict = kwargs.get('get_info_dict')
 
@@ -1207,6 +1208,9 @@ class AcquisitionLoop(object):
 
     def wait_for_acquisition(self, timeout=None):
         return self._acquisition_finished_event.wait(timeout=timeout)
+    
+    def wait_for_single_acquisition(self, timeout=None):
+        return self._single_acquisition_finished_event.wait(timeout=timeout)
 
     def _acquisition_thread(self):
         counter = 0
@@ -1214,6 +1218,7 @@ class AcquisitionLoop(object):
         self.superscan.start_playing()
         while self._n < 0 or counter < self._n:
             self._acquisition_finished_event.clear()
+            self._single_acquisition_finished_event.clear()
             image = {}
             if counter == self._n - 1:
                 self.superscan.stop_playing()
@@ -1230,11 +1235,18 @@ class AcquisitionLoop(object):
             else:
                 if len(image['data']) > 0:
                     self.buffer.put(image, timeout=self.buffer_timeout)
-            if not self._pause_event.is_set() or self._abort_event.is_set():
-                self._acquisition_finished_event.set()
-                if self._abort_event.is_set():
-                    break
+            self._single_acquisition_finished_event.set()
+#            if not self._pause_event.is_set() or self._abort_event.is_set():
+#                self._acquisition_finished_event.set()
+            if self._abort_event.is_set():
+                break
+            pausing = False
+            if not self._pause_event.is_set():
+                print('Pausing acquisition loop')
+                pausing = True
             self._pause_event.wait(timeout=self._pause_timeout)
+            if pausing:
+                print('Unpaused acquisition loop')
             counter += 1
         #self.superscan.stop_playing()
         if (np.array(self.nion_frame_parameters['size']) > 2048).any():
@@ -1487,7 +1499,7 @@ class SuperScanMapper(Mapping):
 #                                                                                                   stagey_corrected,
 #                                                                                                   stagez,
 #                                                                                                   focus))
-        basename = '{:04d}_{:.3f}_{:.3f}'.format(info_dict['number'], stagex_corrected, stagey_corrected)
+        basename = '{:04d}_{:g}_{:g}'.format(info_dict['number'], stagex_corrected, stagey_corrected)
 
         self.processing_loop.start()
         while not self._abort_event.is_set():
@@ -1506,8 +1518,8 @@ class SuperScanMapper(Mapping):
                                                     superscan=self.superscan,
                                                     nion_frame_parameters=self.nion_frame_parameters)
             self.acquisition_loop.start(n=self.number_of_images)
-            self._pause_event.wait()
             self.wait_for_message_or_finished()
+            self._pause_event.wait()
             try:
                 stagex, stagey, stagex_corrected, stagey_corrected, stagez, focus, counter, info_dict = self.mapping_loop.next()
             except StopIteration:
@@ -1580,7 +1592,7 @@ class SuperScanMapper(Mapping):
         self.pause()
         if self.acquisition_loop is not None:
             self.acquisition_loop.pause()
-            self.acquisition_loop.wait_for_acquisition()
+            self.acquisition_loop.wait_for_single_acquisition()
         focused = None
         if self.retuning_mode[1] == 'manual':
             message = ''
