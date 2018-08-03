@@ -70,9 +70,13 @@ class HackerPanelDelegate(object):
         self.input_field = ui.create_line_edit_widget()
         self.input_field._LineEditWidget__line_edit_widget.on_return_pressed = send_button_clicked
         #self.input_field.on_editing_finished = send_button_clicked
-        self.back_button = ui.create_push_button_widget('<')
+        #self.back_button = ui.create_push_button_widget('<')
+        self.back_button = PushButtonWidget(ui._ui, text='<', properties={"stylesheet": "background-color: '#e5446d'"})
         self.back_button.on_clicked = back_button_clicked
         self.forward_button = ui.create_push_button_widget('>')
+        #properties={"stylesheet": "background-color: '#ABABAB'"}
+        #self.forward_button._widget._Widget__behavior.properties = properties
+        #self.forward_button._widget._Widget__behavior.update_properties()
         self.forward_button.on_clicked = forward_button_clicked
 
         description_row = ui.create_row_widget()
@@ -94,6 +98,32 @@ class HackerPanelDelegate(object):
         column.add_stretch()
         self.column = column
         return column
+
+class PushButtonWidget:
+
+    def __init__(self, ui, text=None, properties=None):
+        self.__ui = ui
+        self.__push_button_widget = self.__ui.create_push_button_widget(text=text, properties=properties)
+
+    @property
+    def _widget(self):
+        return self.__push_button_widget
+
+    @property
+    def text(self):
+        return self.__push_button_widget.text
+
+    @text.setter
+    def text(self, value):
+        self.__push_button_widget.text = value
+
+    @property
+    def on_clicked(self):
+        return self.__push_button_widget.on_clicked
+
+    @on_clicked.setter
+    def on_clicked(self, value):
+        self.__push_button_widget.on_clicked = value
 
 class HackerExtension(object):
     extension_id = 'univie.swifthacker'
