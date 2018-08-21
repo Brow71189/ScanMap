@@ -462,15 +462,17 @@ class Imaging(object):
 
     def graphene_generator(self, imsize, impix, rotation, dopant_concentration=0, vacancy_concentration=0,
                            dopant_intensity=4, interpolate_positions=True, return_defect_coordinates=False,
-                           dirt_coverage=0, dirt_thickness=1, return_dirt_mask=False, **kwargs):
+                           dirt_coverage=0, dirt_thickness=1, return_dirt_mask=False, stretch=(1, 1), **kwargs):
         """
         if dirt_coverage > 0 amorphous contamination is added to the image. kwargs are passed to dirt_generator
+        stretch is given as a (x, y) tuple and will be used to deform the unit cell. values > 1 are actual stretch,
+        values < 1 a compression.
         """
         rotation = rotation*np.pi/180
-
+        stretch = np.array(stretch)
         #increase size of initially generated image by 20% to avoid missing atoms at the edges (image will be cropped
         #to actual size before returning it)
-        image = np.zeros((int(impix*1.2), int(impix*1.2)))
+        image = np.zeros((int(impix*1.2), int(impix*1.2)), dtype=np.float32)
         visited_positions = np.zeros((int(impix*1.2), int(impix*1.2)))
         if return_defect_coordinates:
             defects = np.zeros((int(impix*1.2), int(impix*1.2)))
@@ -478,8 +480,8 @@ class Imaging(object):
                                     (-np.sin(2.0/3.0*np.pi), np.cos(2.0/3.0*np.pi))))
         #define basis vectors of unit cell, a1 and a2
         basis_length = 0.142 * np.sqrt(3) * impix/float(imsize)
-        a1 = np.array((np.cos(rotation), np.sin(rotation))) * basis_length
-        a2 = np.dot(a1, rotation_matrix)
+        a1 = np.dot(np.array((np.cos(rotation), np.sin(rotation))) * basis_length, stretch)
+        a2 = np.dot(np.dot(a1, rotation_matrix), stretch)
         #print(a1)
         #print(a2)
         a1position = np.array((0.0, 0.0))
@@ -589,6 +591,8 @@ class Imaging(object):
             else:
                 dirt = self.dirt_generator(imsize, impix, dirt_thickness, coverage=dirt_coverage, **kwargs)
             image += dirt
+        elif return_dirt_mask:
+            mask = np.zeros_like(image)
 
         if return_defect_coordinates or return_dirt_mask:
             return_value = (image, )
@@ -602,7 +606,7 @@ class Imaging(object):
         else:
             return image
 
-    def image_grabber(self, acquire_image=True, debug_mode=False, show_live_image=False, **kwargs):
+    def image_grabber(self, acquire_image=True, debug_mode=False, show_live_image=False, verbose=False, **kwargs):
         """
         acquire_image defines if an image is taken and returned or if just the correctors are updated.
 
@@ -848,7 +852,8 @@ class Imaging(object):
                 for key in self.aberrations.keys():
                     global_aberrations[key] = self.aberrations[key]
 
-            print(self.aberrations)
+            if verbose:
+                print(self.aberrations)
 
             defects = None
 
@@ -932,9 +937,9 @@ class Imaging(object):
                     return_image = [im.reshape(self.shape).astype('float32')]
 
                 if kwargs.get('return_defect_coordinates', False):
-                    return_image.append(defects[int(kernelpixel/2-1):-int(kernelpixel/2), int(kernelpixel/2-1):-int(kernelpixel/2)])
+                    return_image.append((defects[int(kernelpixel/2-1):-int(kernelpixel/2), int(kernelpixel/2-1):-int(kernelpixel/2)]).astype(np.float32))
                 if kwargs.get('return_dirt_mask', False):
-                    return_image.append(dirt_mask[int(kernelpixel/2-1):-int(kernelpixel/2), int(kernelpixel/2-1):-int(kernelpixel/2)])
+                    return_image.append((dirt_mask[int(kernelpixel/2-1):-int(kernelpixel/2), int(kernelpixel/2-1):-int(kernelpixel/2)]).astype(np.float32))
 
         #print(self.aberrations)
         return return_image
