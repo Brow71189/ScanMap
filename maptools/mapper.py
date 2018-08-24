@@ -1053,8 +1053,8 @@ class Mapping(object):
         #Find center of mapped area:
         map_center = (self.leftX + (self.rightX - self.leftX)/2, self.botY + (self.topY - self.botY)/2)
         #Goto center
-        self.as2.set_property_as_float('StageOutX', map_center[0])
-        self.as2.set_property_as_float('StageOutY', map_center[1])
+        self.as2.set_control_output('StageOutX', map_center[0], options={'confirm': True})
+        self.as2.set_control_output('StageOutY', map_center[1], options={'confirm': True})
         time.sleep(5)
         #acquire image and save it
         overview_parameters = {'size_pixels': (4096, 4096), 'center': (0,0), 'pixeltime': 4, \
@@ -1531,7 +1531,7 @@ class SuperScanMapper(Mapping):
                                                                                                    stagey_corrected,
                                                                                                    float(stagez),
                                                                                                    float(focus)))
-            basename = '{:04d}_{:.3f}_{:.3f}'.format(info_dict['number'], stagex_corrected, stagey_corrected)
+            basename = '{:04d}_{:g}_{:g}'.format(info_dict['number'], stagex_corrected, stagey_corrected)
 
         if self.switches.get('acquire_overview'):
             self.acquire_overview()
