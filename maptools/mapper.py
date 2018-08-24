@@ -1248,7 +1248,7 @@ class AcquisitionLoop(object):
             if pausing:
                 print('Unpaused acquisition loop')
             counter += 1
-        #self.superscan.stop_playing()
+        self.superscan.abort_playing()
         if (np.array(self.nion_frame_parameters['size']) > 2048).any():
             time.sleep(2)
         self._acquisition_finished_event.set()
