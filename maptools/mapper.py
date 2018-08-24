@@ -1208,7 +1208,7 @@ class AcquisitionLoop(object):
 
     def wait_for_acquisition(self, timeout=None):
         return self._acquisition_finished_event.wait(timeout=timeout)
-    
+
     def wait_for_single_acquisition(self, timeout=None):
         return self._single_acquisition_finished_event.wait(timeout=timeout)
 
@@ -1411,7 +1411,7 @@ class SuperScanMapper(Mapping):
             delattr(self, '_dirt_threshold')
         self.create_nion_frame_parameters()
         # Sort coordinates in case they were not in the right order
-        #self.coord_dict = self.sort_quadrangle()
+        self.coord_dict = self.sort_quadrangle()
         self.map_coords, self.map_infos = self.create_map_coordinates(compensate_stage_error=
                                                             self.switches['compensate_stage_error'])
         self.mapping_loop = MappingLoop(self.map_coords, coordinate_info=self.map_infos, as2=self.as2,
