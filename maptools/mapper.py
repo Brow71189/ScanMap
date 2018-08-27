@@ -1364,11 +1364,13 @@ class MappingLoop(object):
         self._current_position = next(self._coordinate_iterator)
         stagex, stagey, stagex_corrected, stagey_corrected = self.current_position
         stagez, fine_focus = self.interpolation((stagex, stagey))
-        self.as2.set_property_as_float('StageOutX', stagex_corrected)
-        self.as2.set_property_as_float('StageOutY', stagey_corrected)
+        #self.as2.set_property_as_float('StageOutX', stagex_corrected)
+        self.as2.set_control_output('StageOutX', stagex_corrected, options={'confirm': True})
+        self.as2.set_control_output('StageOutY', stagey_corrected, options={'confirm': True})
+        #self.as2.set_property_as_float('StageOutY', stagey_corrected)
         if self.switches.get('use_z_drive'):
-            self.as2.set_property_as_float('StageOutZ', stagez)
-        self.as2.set_property_as_float('EHTFocus', fine_focus)
+            self.as2.set_control_output('StageOutZ', stagez, options={'confirm': True})
+        self.as2.set_control_output('EHTFocus', fine_focus, options={'confirm': True})
         time.sleep(wait_time)
         return_value = (stagex, stagey, stagex_corrected, stagey_corrected, stagez, fine_focus, self.counter)
         if self._coordinate_info_iterator is not None:
