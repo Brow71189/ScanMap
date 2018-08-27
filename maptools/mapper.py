@@ -792,7 +792,7 @@ class Mapping(object):
         else:
             points = []
             for corner in self._corners:
-                points.append(self.coord_dict[corner])
+                points.append(self.coord_dict.pop(corner))
 
         points.sort()
 
@@ -809,6 +809,8 @@ class Mapping(object):
         elif points[2][1] < points[3][1]:
             result['top-right'] = points[3]
             result['bottom-right'] = points[2]
+            
+        result.update(self.coord_dict)
 
         return result
 
@@ -1365,12 +1367,15 @@ class MappingLoop(object):
         stagex, stagey, stagex_corrected, stagey_corrected = self.current_position
         stagez, fine_focus = self.interpolation((stagex, stagey))
         #self.as2.set_property_as_float('StageOutX', stagex_corrected)
-        self.as2.set_control_output('StageOutX', stagex_corrected, options={'confirm': True})
-        self.as2.set_control_output('StageOutY', stagey_corrected, options={'confirm': True})
-        #self.as2.set_property_as_float('StageOutY', stagey_corrected)
-        if self.switches.get('use_z_drive'):
-            self.as2.set_control_output('StageOutZ', stagez, options={'confirm': True})
-        self.as2.set_control_output('EHTFocus', fine_focus, options={'confirm': True})
+        try:
+            self.as2.set_control_output('StageOutX', stagex_corrected, options={'confirm': True})
+            self.as2.set_control_output('StageOutY', stagey_corrected, options={'confirm': True})
+            #self.as2.set_property_as_float('StageOutY', stagey_corrected)
+            if self.switches.get('use_z_drive'):
+                self.as2.set_control_output('StageOutZ', stagez, options={'confirm': True})
+            self.as2.set_control_output('EHTFocus', fine_focus, options={'confirm': True})
+        except TimeoutError:
+            pass
         time.sleep(wait_time)
         return_value = (stagex, stagey, stagex_corrected, stagey_corrected, stagez, fine_focus, self.counter)
         if self._coordinate_info_iterator is not None:
