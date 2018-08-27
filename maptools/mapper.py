@@ -1053,8 +1053,8 @@ class Mapping(object):
         #Find center of mapped area:
         map_center = (self.leftX + (self.rightX - self.leftX)/2, self.botY + (self.topY - self.botY)/2)
         #Goto center
-        self.as2.set_property_as_float('StageOutX', map_center[0])
-        self.as2.set_property_as_float('StageOutY', map_center[1])
+        self.as2.set_control_output('StageOutX', map_center[0], options={'confirm': True})
+        self.as2.set_control_output('StageOutY', map_center[1], options={'confirm': True})
         time.sleep(5)
         #acquire image and save it
         overview_parameters = {'size_pixels': (4096, 4096), 'center': (0,0), 'pixeltime': 4, \
@@ -1208,7 +1208,7 @@ class AcquisitionLoop(object):
 
     def wait_for_acquisition(self, timeout=None):
         return self._acquisition_finished_event.wait(timeout=timeout)
-    
+
     def wait_for_single_acquisition(self, timeout=None):
         return self._single_acquisition_finished_event.wait(timeout=timeout)
 
@@ -1248,7 +1248,7 @@ class AcquisitionLoop(object):
             if pausing:
                 print('Unpaused acquisition loop')
             counter += 1
-        #self.superscan.stop_playing()
+        self.superscan.abort_playing()
         if (np.array(self.nion_frame_parameters['size']) > 2048).any():
             time.sleep(2)
         self._acquisition_finished_event.set()
@@ -1413,7 +1413,7 @@ class SuperScanMapper(Mapping):
             delattr(self, '_dirt_threshold')
         self.create_nion_frame_parameters()
         # Sort coordinates in case they were not in the right order
-        #self.coord_dict = self.sort_quadrangle()
+        self.coord_dict = self.sort_quadrangle()
         self.map_coords, self.map_infos = self.create_map_coordinates(compensate_stage_error=
                                                             self.switches['compensate_stage_error'])
         self.mapping_loop = MappingLoop(self.map_coords, coordinate_info=self.map_infos, as2=self.as2,
@@ -1533,7 +1533,7 @@ class SuperScanMapper(Mapping):
                                                                                                    stagey_corrected,
                                                                                                    float(stagez),
                                                                                                    float(focus)))
-            basename = '{:04d}_{:.3f}_{:.3f}'.format(info_dict['number'], stagex_corrected, stagey_corrected)
+            basename = '{:04d}_{:g}_{:g}'.format(info_dict['number'], stagex_corrected, stagey_corrected)
 
         if self.switches.get('acquire_overview'):
             self.acquire_overview()
